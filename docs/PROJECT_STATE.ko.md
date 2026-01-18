@@ -51,6 +51,7 @@
 - `/api/health`, `/api/status`, `/api/config`, `/api/bot/start`, `/api/bot/stop` 등 기본 엔드포인트 존재
 - UI 템플릿(대시보드/설정) 정적 화면 구성
 - Upbit 개인 API 클라이언트(JWT 서명 + 주문/잔고 엔드포인트) 구현 완료
+- Upbit 조회용 API 라우트 추가(`/api/upbit/*`)
 - Telegram은 아직 수신/제어 로직 없음
 
 ### 실행 방법 (로컬)
