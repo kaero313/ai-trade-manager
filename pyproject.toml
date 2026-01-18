@@ -1,0 +1,24 @@
+﻿[project]
+name = "trading-bot"
+version = "0.1.0"
+description = "Upbit KRW spot trading bot (FastAPI)"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "pydantic>=2.6",
+  "pydantic-settings>=2.2",
+  "httpx>=0.27",
+  "websockets>=12.0",
+  "jinja2>=3.1",
+  "python-dotenv>=1.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4",
+  "ruff>=0.3"
+]
+
+[tool.ruff]
+line-length = 100
