@@ -1,7 +1,7 @@
 ﻿from fastapi import APIRouter, HTTPException, Query
 
 from app.core.config import settings
-from app.services.upbit_client import upbit_client
+from app.services.upbit_client import UpbitAPIError, upbit_client
 
 router = APIRouter()
 
@@ -21,10 +21,17 @@ def _parse_csv(value: str | None) -> list[str] | None:
     return items or None
 
 
+async def _safe_call(coro):
+    try:
+        return await coro
+    except UpbitAPIError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.to_dict()) from exc
+
+
 @router.get("/upbit/accounts")
 async def get_accounts() -> list[dict]:
     _require_keys()
-    return await upbit_client.get_accounts()
+    return await _safe_call(upbit_client.get_accounts())
 
 
 @router.get("/upbit/order")
@@ -33,7 +40,7 @@ async def get_order(
     identifier: str | None = None,
 ) -> dict:
     _require_keys()
-    return await upbit_client.get_order(uuid_=uuid, identifier=identifier)
+    return await _safe_call(upbit_client.get_order(uuid_=uuid, identifier=identifier))
 
 
 @router.get("/upbit/orders/open")
@@ -45,12 +52,14 @@ async def get_orders_open(
     order_by: str | None = None,
 ) -> list[dict]:
     _require_keys()
-    return await upbit_client.get_orders_open(
-        market=market,
-        states=_parse_csv(states),
-        page=page,
-        limit=limit,
-        order_by=order_by,
+    return await _safe_call(
+        upbit_client.get_orders_open(
+            market=market,
+            states=_parse_csv(states),
+            page=page,
+            limit=limit,
+            order_by=order_by,
+        )
     )
 
 
@@ -63,12 +72,14 @@ async def get_orders_closed(
     order_by: str | None = None,
 ) -> list[dict]:
     _require_keys()
-    return await upbit_client.get_orders_closed(
-        market=market,
-        states=_parse_csv(states),
-        page=page,
-        limit=limit,
-        order_by=order_by,
+    return await _safe_call(
+        upbit_client.get_orders_closed(
+            market=market,
+            states=_parse_csv(states),
+            page=page,
+            limit=limit,
+            order_by=order_by,
+        )
     )
 
 
@@ -82,8 +93,10 @@ async def get_orders_by_uuids(
     parsed_uuids = _parse_csv(uuids)
     if not parsed_uuids:
         raise HTTPException(status_code=400, detail="uuids is required")
-    return await upbit_client.get_orders_by_uuids(
-        uuids=parsed_uuids,
-        states=_parse_csv(states),
-        order_by=order_by,
+    return await _safe_call(
+        upbit_client.get_orders_by_uuids(
+            uuids=parsed_uuids,
+            states=_parse_csv(states),
+            order_by=order_by,
+        )
     )

@@ -12,6 +12,30 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+class UpbitAPIError(Exception):
+    def __init__(
+        self,
+        status_code: int,
+        detail: Any,
+        error_name: str | None = None,
+        message: str | None = None,
+    ) -> None:
+        super().__init__(str(detail))
+        self.status_code = status_code
+        self.detail = detail
+        self.error_name = error_name
+        self.message = message
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"status_code": self.status_code}
+        if self.error_name:
+            payload["error_name"] = self.error_name
+        if self.message:
+            payload["message"] = self.message
+        payload["detail"] = self.detail
+        return payload
+
+
 def _normalize_params(params: dict[str, Any] | list[tuple[str, Any]] | None) -> list[tuple[str, Any]]:
     if params is None:
         return []
@@ -128,14 +152,26 @@ class UpbitClient:
             self._update_remaining(resp.headers)
             try:
                 resp.raise_for_status()
-            except httpx.HTTPStatusError:
-                detail = None
+            except httpx.HTTPStatusError as exc:
+                detail: Any
                 try:
                     detail = resp.json()
                 except Exception:
                     detail = resp.text
+                error_name = None
+                message = None
+                if isinstance(detail, dict) and "error" in detail:
+                    error = detail.get("error") or {}
+                    if isinstance(error, dict):
+                        error_name = error.get("name")
+                        message = error.get("message")
                 logger.error("Upbit API error: %s", detail)
-                raise
+                raise UpbitAPIError(
+                    status_code=resp.status_code,
+                    detail=detail,
+                    error_name=error_name,
+                    message=message,
+                ) from exc
             return resp.json()
 
     async def get_markets(self) -> list[dict[str, Any]]:

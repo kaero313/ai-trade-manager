@@ -1,4 +1,4 @@
-﻿[project]
+[project]
 name = "trading-bot"
 version = "0.1.0"
 description = "Upbit KRW spot trading bot (FastAPI)"
