@@ -176,3 +176,18 @@ uvicorn app.main:app --reload
 # 계좌 조회
 Invoke-RestMethod http://127.0.0.1:8000/api/upbit/accounts
 ```
+
+---
+
+# 5) 텔레그램 명령 (봇)
+
+텔레그램 봇 토큰/채팅 ID 설정 시, 아래 명령을 받을 수 있습니다.
+
+- `/start` : 봇 시작
+- `/stop` : 봇 중지
+- `/status` : 봇 상태 확인
+- `/balance` : Upbit 계좌 잔고 조회
+- `/pnl` : 수익률(현재 미구현 안내)
+- `/positions` : 포지션(현재 미구현 안내)
+- `/setrisk daily_loss=5 max_capital=10 position=20 max_positions=3 cooldown=60`
+- `/help` : 도움말

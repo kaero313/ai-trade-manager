@@ -19,6 +19,7 @@
 
 - 현재는 FastAPI 서버가 핵심이며, UI와 API를 동시에 제공합니다.
 - 텔레그램 제어/알림은 다음 단계에서 붙일 예정입니다.
+- 텔레그램 폴링 기반 명령 처리(기본 명령)는 구현됨.
 - Upbit 개인 API는 인증(JWT)까지 연결되어 있고, **조회 테스트**가 가능합니다.
 
 ---
@@ -32,6 +33,7 @@
    - API: `app/api/router.py`
    - UI: `app/ui/routes.py`
 4. 로그 설정: `app/core/logging.py`
+5. 텔레그램 폴링 시작: `app/services/telegram_bot.py`
 
 ### 2.2 상태/설정
 - 런타임 상태: `app/core/state.py`
@@ -62,7 +64,8 @@ app/
     schemas.py           # Pydantic 모델
   services/
     upbit_client.py      # Upbit REST 클라이언트 (JWT 인증 포함)
-    telegram.py          # Telegram 클라이언트(송신 스텁)
+    telegram.py          # Telegram 클라이언트(송/수신)
+    telegram_bot.py      # Telegram 폴링/명령 처리
   ui/
     routes.py            # UI 라우터
     templates/           # HTML 템플릿
@@ -91,7 +94,11 @@ docs/                    # 문서
 - GET/POST/DELETE 래핑
 - Upbit 에러 발생 시 명확한 메시지로 변환
 
-### 4.4 UI (`app/ui`)
+### 4.4 Telegram (`app/services/telegram_bot.py`)
+- getUpdates 롱폴링으로 명령 수신
+- /start, /stop, /status, /balance, /pnl, /positions, /setrisk, /help 처리
+
+### 4.5 UI (`app/ui`)
 - 대시보드: 현재는 정적 화면
 - 설정 화면: 향후 `/api/config`와 연동 예정
 

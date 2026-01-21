@@ -49,7 +49,7 @@
 - API 엔드포인트: `app/api/routes/*.py`
 - 설정/상태: `app/core/config.py`, `app/core/state.py`
 - 스키마: `app/models/schemas.py`
-- 서비스: `app/services/upbit_client.py`(JWT 인증/주문·잔고/에러 변환), `app/services/telegram.py`(스텁)
+- 서비스: `app/services/upbit_client.py`(JWT 인증/주문·잔고/에러 변환), `app/services/telegram.py`(송수신), `app/services/telegram_bot.py`(폴링/명령 처리)
 - UI: `app/ui/routes.py`, `app/ui/templates/*.html`, `app/ui/static/style.css`
 - 프로젝트 설정: `pyproject.toml`, `README.md`, `.env.example`, `.gitignore`
 
@@ -60,7 +60,10 @@
 - Upbit 개인 API 클라이언트(JWT 서명 + 주문/잔고 엔드포인트) 구현 완료
 - Upbit 조회용 API 라우트 추가(`/api/upbit/*`)
 - Upbit 오류를 HTTP 상태/메시지로 명확히 반환
-- Telegram은 아직 수신/제어 로직 없음
+- Telegram 폴링 기반 명령 처리 구현
+  - /start, /stop, /status, /balance, /pnl, /positions, /setrisk, /help
+  - /balance는 Upbit 계좌 조회 연동
+  - /pnl, /positions는 아직 미구현 메시지
 
 ### 실행 방법 (로컬)
 ```bash
@@ -84,9 +87,9 @@ uvicorn app.main:app --reload
 - 현재 민감 정보 파일 없음
 
 ## 8) 다음 해야 할 일 (우선순위)
-1) **텔레그램 제어/알림 구현**
-   - 롱폴링 수신 (getUpdates)
-   - 명령 파서 (/start, /stop, /status, /balance, /pnl, /buy, /sell, /setrisk)
+1) **텔레그램 기능 보강**
+   - /buy, /sell, /config 등 확장
+   - 체결/오류 알림 자동 발송
 2) **전략/리스크 엔진**
    - EMA/RSI 계산, 진입/청산
    - 트레일링 스탑
@@ -119,4 +122,4 @@ TELEGRAM_CHAT_ID=
 ```
 
 ---
-마지막 업데이트: 2026-01-18
+마지막 업데이트: 2026-01-21
