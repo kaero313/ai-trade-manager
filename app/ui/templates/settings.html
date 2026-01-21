@@ -1,39 +1,39 @@
 ﻿{% extends "base.html" %}
 {% block content %}
 <section class="panel">
-  <h1>Settings</h1>
-  <p>Define symbols, allocations, strategy params, risk, and schedule.</p>
+  <h1>설정</h1>
+  <p>종목, 비중, 전략 파라미터, 리스크, 스케줄을 설정하세요.</p>
 
   <div class="form-grid">
     <div class="field">
-      <label>Symbols (KRW)</label>
+      <label>종목 (KRW)</label>
       <input type="text" placeholder="KRW-BTC, KRW-ETH" />
     </div>
     <div class="field">
-      <label>Allocation per Symbol</label>
+      <label>종목별 비중</label>
       <input type="text" placeholder="0.5, 0.5" />
     </div>
     <div class="field">
-      <label>EMA Fast / Slow</label>
+      <label>EMA 빠름 / 느림</label>
       <input type="text" placeholder="12 / 26" />
     </div>
     <div class="field">
-      <label>RSI / Min</label>
+      <label>RSI / 최소값</label>
       <input type="text" placeholder="14 / 50" />
     </div>
     <div class="field">
-      <label>Trailing Stop (%)</label>
+      <label>트레일링 스탑 (%)</label>
       <input type="text" placeholder="3" />
     </div>
     <div class="field">
-      <label>Daily Loss Limit (%)</label>
+      <label>일일 손실 한도 (%)</label>
       <input type="text" placeholder="5" />
     </div>
     <div class="field">
-      <label>Trading Window</label>
-      <input type="text" placeholder="Always on" />
+      <label>매매 시간대</label>
+      <input type="text" placeholder="항상 실행" />
     </div>
   </div>
-  <button class="btn">Save</button>
+  <button class="btn">저장</button>
 </section>
 {% endblock %}

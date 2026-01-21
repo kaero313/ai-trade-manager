@@ -2,32 +2,32 @@
 {% block content %}
 <section class="hero">
   <div class="hero-text">
-    <h1>Live control for Upbit KRW trading.</h1>
-    <p>Configure symbols, risk, and schedules. Monitor PnL and execution in real time.</p>
+    <h1>업비트 KRW 매매를 실시간으로 제어합니다.</h1>
+    <p>종목, 리스크, 스케줄을 설정하고 손익/체결을 실시간으로 확인하세요.</p>
   </div>
   <div class="hero-card">
-    <div class="label">Bot Status</div>
-    <div class="value">Stopped</div>
-    <div class="meta">Last heartbeat: --</div>
-    <button class="btn">Start Bot</button>
+    <div class="label">봇 상태</div>
+    <div class="value">중지됨</div>
+    <div class="meta">마지막 하트비트: --</div>
+    <button class="btn">봇 시작</button>
   </div>
 </section>
 
 <section class="grid">
   <div class="card">
-    <div class="label">Allocated Capital</div>
-    <div class="value">10% of equity</div>
-    <div class="meta">Daily loss limit: 5%</div>
+    <div class="label">할당 자본</div>
+    <div class="value">계좌 자산의 10%</div>
+    <div class="meta">일일 손실 한도: 5%</div>
   </div>
   <div class="card">
-    <div class="label">Positions</div>
-    <div class="value">0 open</div>
-    <div class="meta">Max concurrent: 3</div>
+    <div class="label">보유 포지션</div>
+    <div class="value">0개 보유</div>
+    <div class="meta">최대 동시 보유: 3</div>
   </div>
   <div class="card">
-    <div class="label">Strategy</div>
+    <div class="label">전략</div>
     <div class="value">EMA 12/26 + RSI 14</div>
-    <div class="meta">Trailing stop: 3%</div>
+    <div class="meta">트레일링 스탑: 3%</div>
   </div>
 </section>
 {% endblock %}
