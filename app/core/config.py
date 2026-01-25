@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     slack_bot_token: str | None = None
     slack_app_token: str | None = None
     slack_signing_secret: str | None = None
+    slack_allowed_user_ids: str | None = None
+    slack_trade_channel_ids: str | None = None
 
     model_config = SettingsConfigDict(env_file=str(ENV_FILE), env_file_encoding="utf-8")
 
