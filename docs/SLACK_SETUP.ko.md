@@ -17,6 +17,8 @@
 ```
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_APP_TOKEN=xapp-...
+SLACK_ALLOWED_USER_IDS=U12345678
+SLACK_TRADE_CHANNEL_IDS=C12345678
 ```
 
 ## 3) 실행
@@ -29,3 +31,7 @@ uvicorn app.main:app --reload
   - `잔고` / `balance`
   - `status`
   - `help`
+  - `매수 KRW-BTC 100000`
+  - `매수 KRW-BTC 10%`
+  - `매수 KRW-BTC 100000 지정가 50000000`
+  - `확인 <토큰>`
