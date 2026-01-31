@@ -72,7 +72,7 @@
 - Slack Socket Mode 메시지 수신(앱 멘션/DM) + 잔고/상태/도움말 응답
   - 잔고 응답에 계좌 KRW, 보유 코인 평균단가/수량/추정금액, 총자산 포함
   - KRW 마켓 없는 자산은 추정금액에서 제외(표시만)
-- Slack 매수 명령(시장가/지정가) + 2단계 확인 + 1회 20% 상한 적용
+- Slack 매수/매도 명령(시장가/지정가) + 2단계 확인 + 1회 20% 상한 적용(매수)
 - Slack Socket Mode 의존성 추가(`slack-sdk`, `aiohttp`)
 
 ### 실행 방법 (로컬)
@@ -141,6 +141,8 @@ SLACK_TIMEOUT=10
 SLACK_BOT_TOKEN=
 SLACK_APP_TOKEN=
 SLACK_SIGNING_SECRET=
+SLACK_ALLOWED_USER_IDS=
+SLACK_TRADE_CHANNEL_IDS=
 ```
 
 ---

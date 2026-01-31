@@ -34,4 +34,7 @@ uvicorn app.main:app --reload
   - `매수 KRW-BTC 100000`
   - `매수 KRW-BTC 10%`
   - `매수 KRW-BTC 100000 지정가 50000000`
+  - `매도 KRW-BTC 0.01`
+  - `매도 KRW-BTC 10%`
+  - `매도 KRW-BTC 0.01 지정가 50000000`
   - `확인 <토큰>`
