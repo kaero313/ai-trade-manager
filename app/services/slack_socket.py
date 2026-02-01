@@ -251,6 +251,7 @@ class SlackSocketService:
             "- 취소 내역 (또는 취소 내역 KRW-BTC)\n"
             "- 취소 <주문 UUID>\n"
             "- 확인 <토큰>\n"
+            "- 마켓은 BTC처럼 입력하면 기본 KRW로 인식\n"
             "- help\n"
         )
         await self._post_message(channel, text)
@@ -385,6 +386,7 @@ class SlackSocketService:
             return
 
         market = parsed["market"]
+        base_currency, _ = self._split_market(market)
         order_type = parsed["order_type"]
         amount_value = parsed["amount_value"]
         amount_is_pct = parsed["amount_is_pct"]
@@ -407,9 +409,9 @@ class SlackSocketService:
             )
             return
 
-        available_krw = self._available_krw(accounts)
-        if available_krw <= 0:
-            await self._post_message(channel, "사용 가능한 KRW 잔고가 없습니다.")
+        available_base = self._available_currency(accounts, base_currency)
+        if available_base <= 0:
+            await self._post_message(channel, f"사용 가능한 {base_currency} 잔고가 없습니다.")
             return
 
         if amount_is_pct:
@@ -420,24 +422,24 @@ class SlackSocketService:
             if pct > MAX_BUY_PCT:
                 await self._post_message(
                     channel,
-                    f"1회 매수 상한은 사용 가능한 KRW의 {int(MAX_BUY_PCT*100)}%입니다.",
+                    f"1회 매수 상한은 사용 가능한 {base_currency}의 {int(MAX_BUY_PCT*100)}%입니다.",
                 )
                 return
-            amount_krw = available_krw * pct
+            amount_krw = available_base * pct
         else:
             amount_krw = amount_value
             if amount_krw <= 0:
                 await self._post_message(channel, "매수 금액이 올바르지 않습니다.")
                 return
-            if amount_krw > available_krw * MAX_BUY_PCT:
+            if amount_krw > available_base * MAX_BUY_PCT:
                 await self._post_message(
                     channel,
-                    f"1회 매수 상한은 사용 가능한 KRW의 {int(MAX_BUY_PCT*100)}%입니다.",
+                    f"1회 매수 상한은 사용 가능한 {base_currency}의 {int(MAX_BUY_PCT*100)}%입니다.",
                 )
                 return
 
-        if amount_krw > available_krw:
-            await self._post_message(channel, "KRW 잔고가 부족합니다.")
+        if amount_krw > available_base:
+            await self._post_message(channel, f"{base_currency} 잔고가 부족합니다.")
             return
 
         volume = None
@@ -508,7 +510,7 @@ class SlackSocketService:
             )
             return
 
-        currency = market.split("-", 1)[1]
+        _, currency = self._split_market(market)
         available_volume = self._available_coin(accounts, currency)
         if available_volume <= 0:
             await self._post_message(channel, "매도 가능한 코인 잔고가 없습니다.")
@@ -692,17 +694,20 @@ class SlackSocketService:
     def _format_pending_summary(self, pending: PendingOrder) -> str:
         action = "매수" if pending.side == "bid" else "매도"
         order_type = "시장가" if pending.order_type == "market" else "지정가"
+        base_currency, _ = self._split_market(pending.market)
+        amount_text = self._format_currency_amount(pending.amount_krw or 0, base_currency)
+        price_text = self._format_currency_amount(pending.price or 0, base_currency)
         lines = [
             f"[{action} 확인]",
             f"- 마켓: {pending.market}",
             f"- 타입: {order_type}",
         ]
         if pending.side == "bid":
-            lines.append(f"- 금액: {self._fmt_krw(pending.amount_krw or 0)} KRW")
+            lines.append(f"- 금액: {amount_text} {base_currency}")
         else:
             lines.append(f"- 수량: {self._fmt_amount(pending.volume or 0)}")
         if pending.order_type == "limit":
-            lines.append(f"- 가격: {self._fmt_krw(pending.price or 0)} KRW")
+            lines.append(f"- 가격: {price_text} {base_currency}")
         return "\n".join(lines)
 
     def _register_pending(self, user_id: str, pending: PendingOrder) -> None:
@@ -740,8 +745,8 @@ class SlackSocketService:
         tokens = raw.split()
         if len(tokens) < 3:
             return None
-        market = tokens[1].upper()
-        if not market.startswith("KRW-"):
+        market = self._normalize_market_token(tokens[1])
+        if not market:
             return None
         rest_tokens = tokens[2:]
         rest_text = " ".join(rest_tokens)
@@ -827,14 +832,12 @@ class SlackSocketService:
             return None
 
     def _available_krw(self, accounts: list[dict[str, Any]]) -> float:
-        for item in accounts:
-            if item.get("currency") == "KRW":
-                balance = self._to_float(item.get("balance"))
-                locked = self._to_float(item.get("locked"))
-                return max(balance - locked, 0.0)
-        return 0.0
+        return self._available_currency(accounts, "KRW")
 
     def _available_coin(self, accounts: list[dict[str, Any]], currency: str) -> float:
+        return self._available_currency(accounts, currency)
+
+    def _available_currency(self, accounts: list[dict[str, Any]], currency: str) -> float:
         for item in accounts:
             if item.get("currency") == currency:
                 balance = self._to_float(item.get("balance"))
@@ -850,11 +853,28 @@ class SlackSocketService:
     def _fmt_number(self, value: float) -> str:
         return f"{value:.8f}".rstrip("0").rstrip(".") or "0"
 
+    def _normalize_market_token(self, token: str) -> str | None:
+        clean = token.strip().upper()
+        if not clean:
+            return None
+        if "-" in clean:
+            return clean
+        if re.fullmatch(r"(?=.*[A-Z])[A-Z0-9]+", clean):
+            return f"KRW-{clean}"
+        return None
+
+    def _split_market(self, market: str) -> tuple[str, str]:
+        parts = market.split("-", 1)
+        if len(parts) == 2:
+            return parts[0], parts[1]
+        return "KRW", market
+
     def _extract_market(self, raw: str) -> str | None:
         tokens = raw.split()
         for token in tokens[1:]:
-            if token.upper().startswith("KRW-"):
-                return token.upper()
+            market = self._normalize_market_token(token)
+            if market:
+                return market
         return None
 
     def _extract_balances(self, accounts: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1031,6 +1051,11 @@ class SlackSocketService:
         pct = (current / avg - 1.0) * 100.0
         sign = "+" if pct > 0 else ""
         return f"{sign}{pct:.2f}%"
+
+    def _format_currency_amount(self, value: float, currency: str) -> str:
+        if currency == "KRW":
+            return self._fmt_krw(value)
+        return self._fmt_amount(value)
 
     @staticmethod
     def _looks_like_uuid(value: str) -> bool:

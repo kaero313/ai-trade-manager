@@ -45,3 +45,4 @@ uvicorn app.main:app --reload
   - `취소 내역 KRW-BTC`
   - `취소 <UUID>`
   - `확인 <토큰>`
+  - 마켓 입력은 `BTC`처럼 입력하면 기본 `KRW-BTC`로 인식
