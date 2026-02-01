@@ -31,6 +31,16 @@ class PendingOrder:
     created_at: datetime
 
 
+@dataclass
+class PendingCancel:
+    token: str
+    user_id: str
+    channel: str
+    channel_type: str | None
+    order_uuid: str
+    created_at: datetime
+
+
 class SlackSocketService:
     def __init__(self) -> None:
         self._task: asyncio.Task | None = None
@@ -39,6 +49,7 @@ class SlackSocketService:
         self._web_client = None
         self._bot_user_id: str | None = None
         self._pending_orders: dict[str, PendingOrder] = {}
+        self._pending_cancels: dict[str, PendingCancel] = {}
         self._pending_by_user: dict[str, str] = {}
 
     @property
@@ -191,6 +202,14 @@ class SlackSocketService:
             await self._prepare_sell(user_id, channel, channel_type, raw)
             return
 
+        if cmd.startswith("취소") or cmd.startswith("주문취소") or cmd.startswith("cancel"):
+            await self._prepare_cancel(user_id, channel, channel_type, raw)
+            return
+
+        if cmd.startswith("주문") or cmd.startswith("orders"):
+            await self._send_orders(channel, raw)
+            return
+
         if cmd in ("help", "/help", "도움말", "도움"):
             await self._send_help(channel)
             return
@@ -216,6 +235,10 @@ class SlackSocketService:
             "- 매도 KRW-BTC 0.01 (시장가, 수량)\n"
             "- 매도 KRW-BTC 10% (시장가, 보유비율)\n"
             "- 매도 KRW-BTC 0.01 지정가 50000000\n"
+            "- 주문 (미체결)\n"
+            "- 주문 KRW-BTC (미체결)\n"
+            "- 주문 완료 (체결/취소)\n"
+            "- 취소 <주문 UUID>\n"
             "- 확인 <토큰>\n"
             "- help\n"
         )
@@ -257,6 +280,56 @@ class SlackSocketService:
 
         price_map, valid_markets = await self._load_prices(balances)
         lines = self._format_balances(balances, price_map, valid_markets)
+        await self._post_message(channel, "\n".join(lines))
+
+    async def _send_orders(self, channel: str, raw: str) -> None:
+        if not settings.upbit_access_key or not settings.upbit_secret_key:
+            await self._post_message(
+                channel,
+                "Upbit 키가 설정되지 않았습니다. .env의 UPBIT_ACCESS_KEY/SECRET_KEY를 확인하세요.",
+            )
+            return
+
+        market = self._extract_market(raw)
+        show_closed = "완료" in raw or "closed" in raw or "체결" in raw
+        try:
+            if show_closed:
+                orders = await upbit_client.get_orders_closed(
+                    market=market,
+                    states=["done", "cancel"],
+                    limit=10,
+                    order_by="desc",
+                )
+                title = "[완료 주문]"
+            else:
+                orders = await upbit_client.get_orders_open(
+                    market=market,
+                    states=["wait", "watch"],
+                    limit=10,
+                    order_by="desc",
+                )
+                title = "[미체결 주문]"
+        except UpbitAPIError as exc:
+            payload = exc.to_dict()
+            await self._post_message(
+                channel,
+                f"Upbit 오류: {payload.get('error_name')} {payload.get('message')}",
+            )
+            return
+
+        if not orders:
+            await self._post_message(channel, "표시할 주문이 없습니다.")
+            return
+
+        lines = [title]
+        for item in orders:
+            market_name = item.get("market", "-")
+            side = "매수" if item.get("side") == "bid" else "매도"
+            state = item.get("state", "-")
+            price = item.get("price") or item.get("avg_price") or "-"
+            volume = item.get("volume") or item.get("remaining_volume") or "-"
+            uuid_ = item.get("uuid", "-")
+            lines.append(f"{side} {market_name} {state} 가격 {price} 수량 {volume} uuid {uuid_}")
         await self._post_message(channel, "\n".join(lines))
 
     def _is_authorized(self, user_id: str, channel: str, channel_type: str | None) -> bool:
@@ -464,6 +537,35 @@ class SlackSocketService:
             f"{summary}\n확인하려면 `확인 {token}` 을 입력하세요. (유효 {int(PENDING_TTL.total_seconds()/60)}분)",
         )
 
+    async def _prepare_cancel(
+        self,
+        user_id: str,
+        channel: str,
+        channel_type: str | None,
+        raw: str,
+    ) -> None:
+        parts = raw.split()
+        order_uuid = parts[1] if len(parts) > 1 else ""
+        if not order_uuid:
+            await self._post_message(channel, "취소할 주문 UUID를 입력하세요.")
+            return
+
+        token = uuid.uuid4().hex[:6]
+        pending = PendingCancel(
+            token=token,
+            user_id=user_id,
+            channel=channel,
+            channel_type=channel_type,
+            order_uuid=order_uuid,
+            created_at=datetime.now(timezone.utc),
+        )
+        self._register_pending_cancel(user_id, pending)
+        await self._post_message(
+            channel,
+            f"[주문 취소 확인]\n- uuid: {order_uuid}\n확인하려면 `확인 {token}` 을 입력하세요. "
+            f"(유효 {int(PENDING_TTL.total_seconds()/60)}분)",
+        )
+
     async def _confirm_order(self, user_id: str, channel: str, raw: str) -> None:
         self._cleanup_pending()
         parts = raw.split()
@@ -473,20 +575,51 @@ class SlackSocketService:
             return
 
         pending = self._pending_orders.get(token)
-        if not pending:
+        if pending:
+            if pending.user_id != user_id:
+                await self._post_message(channel, "다른 사용자 주문은 확인할 수 없습니다.")
+                return
+
+            if pending.channel != channel:
+                await self._post_message(channel, "주문을 생성한 채널에서만 확인할 수 있습니다.")
+                return
+
+            try:
+                result = await self._submit_order(pending)
+            except UpbitAPIError as exc:
+                payload = exc.to_dict()
+                await self._post_message(
+                    channel,
+                    f"Upbit 오류: {payload.get('error_name')} {payload.get('message')}",
+                )
+                return
+
+            order_uuid = result.get("uuid") if isinstance(result, dict) else None
+            action = "매수" if pending.side == "bid" else "매도"
+            message = f"{action} 주문이 접수되었습니다."
+            if order_uuid:
+                message += f" (uuid: {order_uuid})"
+            await self._post_message(channel, message)
+            self._pending_orders.pop(token, None)
+            if self._pending_by_user.get(user_id) == token:
+                self._pending_by_user.pop(user_id, None)
+            return
+
+        pending_cancel = self._pending_cancels.get(token)
+        if not pending_cancel:
             await self._post_message(channel, "해당 토큰의 주문이 없습니다.")
             return
 
-        if pending.user_id != user_id:
+        if pending_cancel.user_id != user_id:
             await self._post_message(channel, "다른 사용자 주문은 확인할 수 없습니다.")
             return
 
-        if pending.channel != channel:
+        if pending_cancel.channel != channel:
             await self._post_message(channel, "주문을 생성한 채널에서만 확인할 수 있습니다.")
             return
 
         try:
-            result = await self._submit_order(pending)
+            result = await upbit_client.cancel_order(uuid_=pending_cancel.order_uuid)
         except UpbitAPIError as exc:
             payload = exc.to_dict()
             await self._post_message(
@@ -496,12 +629,11 @@ class SlackSocketService:
             return
 
         order_uuid = result.get("uuid") if isinstance(result, dict) else None
-        action = "매수" if pending.side == "bid" else "매도"
-        message = f"{action} 주문이 접수되었습니다."
+        message = "주문이 취소되었습니다."
         if order_uuid:
             message += f" (uuid: {order_uuid})"
         await self._post_message(channel, message)
-        self._pending_orders.pop(token, None)
+        self._pending_cancels.pop(token, None)
         if self._pending_by_user.get(user_id) == token:
             self._pending_by_user.pop(user_id, None)
 
@@ -553,11 +685,28 @@ class SlackSocketService:
             lines.append(f"- 가격: {self._fmt_krw(pending.price or 0)} KRW")
         return "\n".join(lines)
 
+    def _extract_market(self, raw: str) -> str | None:
+        tokens = raw.split()
+        for token in tokens[1:]:
+            if token.upper().startswith("KRW-"):
+                return token.upper()
+        return None
+
     def _register_pending(self, user_id: str, pending: PendingOrder) -> None:
         previous_token = self._pending_by_user.get(user_id)
         if previous_token:
             self._pending_orders.pop(previous_token, None)
+            self._pending_cancels.pop(previous_token, None)
         self._pending_orders[pending.token] = pending
+        self._pending_by_user[user_id] = pending.token
+        self._cleanup_pending()
+
+    def _register_pending_cancel(self, user_id: str, pending: PendingCancel) -> None:
+        previous_token = self._pending_by_user.get(user_id)
+        if previous_token:
+            self._pending_orders.pop(previous_token, None)
+            self._pending_cancels.pop(previous_token, None)
+        self._pending_cancels[pending.token] = pending
         self._pending_by_user[user_id] = pending.token
         self._cleanup_pending()
 
@@ -566,6 +715,11 @@ class SlackSocketService:
         expired = [key for key, item in self._pending_orders.items() if now - item.created_at > PENDING_TTL]
         for key in expired:
             pending = self._pending_orders.pop(key, None)
+            if pending and self._pending_by_user.get(pending.user_id) == key:
+                self._pending_by_user.pop(pending.user_id, None)
+        expired_cancels = [key for key, item in self._pending_cancels.items() if now - item.created_at > PENDING_TTL]
+        for key in expired_cancels:
+            pending = self._pending_cancels.pop(key, None)
             if pending and self._pending_by_user.get(pending.user_id) == key:
                 self._pending_by_user.pop(pending.user_id, None)
 
