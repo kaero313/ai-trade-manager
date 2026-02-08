@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 import uuid
+from decimal import Decimal, ROUND_DOWN
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -468,7 +469,19 @@ class SlackSocketService:
                     self._err("제한", f"호가 단위는 {tick_text} {base_currency}입니다."),
                 )
                 return
-            volume = amount_krw / limit_price
+            volume = self._floor_decimals(amount_krw / limit_price, MAX_VOLUME_DECIMALS)
+            if volume <= 0:
+                await self._post_message(channel, self._err("제한", "계산된 수량이 너무 작습니다."))
+                return
+            if min_amount:
+                order_value = volume * limit_price
+                if order_value < min_amount:
+                    min_text = self._format_currency_amount(min_amount, base_currency)
+                    await self._post_message(
+                        channel,
+                        self._err("제한", f"최소 주문 금액은 {min_text} {base_currency}입니다."),
+                    )
+                    return
 
         token = uuid.uuid4().hex[:6]
         pending = PendingOrder(
@@ -1131,6 +1144,13 @@ class SlackSocketService:
             return 0
         decimals = text.split(".", 1)[1].rstrip("0")
         return len(decimals)
+
+    @staticmethod
+    def _floor_decimals(value: float, decimals: int) -> float:
+        if decimals <= 0:
+            return float(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_DOWN))
+        quant = Decimal("1").scaleb(-decimals)
+        return float(Decimal(str(value)).quantize(quant, rounding=ROUND_DOWN))
 
     def _tick_size(self, base_currency: str, price: float) -> float | None:
         if base_currency == "KRW":

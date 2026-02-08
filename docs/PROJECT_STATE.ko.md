@@ -78,6 +78,7 @@
 - Slack 최소 주문 금액 검증(베이스 통화 기준, Upbit 정책)
 - Slack 호가 단위(틱 사이즈) 검증(지정가 기준, Upbit 정책)
 - Slack 매도 수량 소수 자릿수 검증(최대 8자리)
+- Slack 지정가 매수 수량 소수 8자리 내림 적용
 - Slack 주문 조회/취소 명령 추가(2단계 확인)
 - Slack Socket Mode 의존성 추가(`slack-sdk`, `aiohttp`)
 
