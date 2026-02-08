@@ -1106,40 +1106,74 @@ class SlackSocketService:
 
     def _format_currency_amount(self, value: float, currency: str) -> str:
         if currency == "KRW":
-            if value < 1:
-                return f"{value:.2f}".rstrip("0").rstrip(".")
-            return self._fmt_krw(value)
+            if value >= 1:
+                return self._fmt_krw(value)
+            return self._fmt_amount(value, decimals=8)
         return self._fmt_amount(value)
 
     def _min_order_amount(self, base_currency: str) -> float | None:
         return MIN_ORDER_BY_BASE.get(base_currency)
 
     def _tick_size(self, base_currency: str, price: float) -> float | None:
-        if base_currency != "KRW":
-            return None
-        return self._tick_size_krw(price)
+        if base_currency == "KRW":
+            return self._tick_size_krw(price)
+        if base_currency == "BTC":
+            return 0.00000001
+        if base_currency == "USDT":
+            return self._tick_size_usdt(price)
+        return None
 
     @staticmethod
     def _tick_size_krw(price: float) -> float:
-        if price < 10:
-            return 0.01
-        if price < 100:
-            return 0.1
-        if price < 1000:
-            return 1
-        if price < 10000:
-            return 5
-        if price < 100000:
-            return 10
-        if price < 1000000:
-            return 50
-        if price < 2000000:
-            return 100
-        if price < 10000000:
-            return 500
-        if price < 100000000:
+        if price >= 2_000_000:
             return 1000
-        return 10000
+        if price >= 1_000_000:
+            return 1000
+        if price >= 500_000:
+            return 500
+        if price >= 100_000:
+            return 100
+        if price >= 50_000:
+            return 50
+        if price >= 10_000:
+            return 10
+        if price >= 5_000:
+            return 5
+        if price >= 1_000:
+            return 1
+        if price >= 100:
+            return 1
+        if price >= 10:
+            return 0.1
+        if price >= 1:
+            return 0.01
+        if price >= 0.1:
+            return 0.001
+        if price >= 0.01:
+            return 0.0001
+        if price >= 0.001:
+            return 0.00001
+        if price >= 0.0001:
+            return 0.000001
+        if price >= 0.00001:
+            return 0.0000001
+        return 0.00000001
+
+    @staticmethod
+    def _tick_size_usdt(price: float) -> float:
+        if price >= 10:
+            return 0.01
+        if price >= 1:
+            return 0.001
+        if price >= 0.1:
+            return 0.0001
+        if price >= 0.01:
+            return 0.00001
+        if price >= 0.001:
+            return 0.000001
+        if price >= 0.0001:
+            return 0.0000001
+        return 0.00000001
 
     @staticmethod
     def _is_tick_aligned(price: float, tick: float) -> bool:
