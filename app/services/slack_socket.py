@@ -786,6 +786,8 @@ class SlackSocketService:
         volume = self._format_amount_field(item.get("volume"))
         executed = self._format_amount_field(item.get("executed_volume"))
         remaining = self._format_amount_field(item.get("remaining_volume"))
+        order_value = self._format_order_value(item, base_currency)
+        fee_value = self._format_order_fee(item, base_currency)
         created_at = self._format_time(item.get("created_at"))
         uuid_ = item.get("uuid")
 
@@ -802,6 +804,10 @@ class SlackSocketService:
             parts.append(f"체결량 {executed}")
         if remaining:
             parts.append(f"잔량 {remaining}")
+        if order_value:
+            parts.append(f"거래대금 {order_value} {base_currency}")
+        if fee_value:
+            parts.append(f"수수료 {fee_value} {base_currency}")
         if created_at:
             parts.append(f"시간 {created_at}")
         if uuid_:
@@ -1195,6 +1201,40 @@ class SlackSocketService:
         if numeric <= 0:
             return None
         return self._fmt_amount(numeric)
+
+    def _format_order_value(self, item: dict[str, Any], base_currency: str) -> str | None:
+        avg_price = self._to_float(item.get("avg_price"))
+        executed = self._to_float(item.get("executed_volume"))
+        price = self._to_float(item.get("price"))
+        volume = self._to_float(item.get("volume"))
+        ord_type = item.get("ord_type")
+
+        value: float | None = None
+        if avg_price > 0 and executed > 0:
+            value = avg_price * executed
+        elif ord_type == "price" and price > 0:
+            value = price
+        elif price > 0 and executed > 0:
+            value = price * executed
+        elif price > 0 and volume > 0:
+            value = price * volume
+
+        if value is None or value <= 0:
+            return None
+        return self._format_currency_amount(value, base_currency)
+
+    def _format_order_fee(self, item: dict[str, Any], base_currency: str) -> str | None:
+        fee_candidates = (
+            item.get("paid_fee"),
+            item.get("reserved_fee"),
+            item.get("remaining_fee"),
+            item.get("total_fee"),
+        )
+        for candidate in fee_candidates:
+            numeric = self._to_float(candidate)
+            if numeric > 0:
+                return self._format_currency_amount(numeric, base_currency)
+        return None
 
     @staticmethod
     def _format_time(value: Any) -> str | None:

@@ -80,6 +80,7 @@
 - Slack 매도 수량 소수 자릿수 검증(최대 8자리)
 - Slack 지정가 매수 수량 소수 8자리 내림 적용
 - Slack 주문/체결/취소 내역 요약 + 상세 포맷 개선
+- Slack 주문 내역에 거래대금/수수료 표시
 - Slack 주문 조회/취소 명령 추가(2단계 확인)
 - Slack Socket Mode 의존성 추가(`slack-sdk`, `aiohttp`)
 
