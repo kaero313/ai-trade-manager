@@ -351,13 +351,7 @@ class SlackSocketService:
 
         lines = [title, summary]
         for item in orders:
-            market_name = item.get("market", "-")
-            side = "매수" if item.get("side") == "bid" else "매도"
-            state = item.get("state", "-")
-            price = item.get("price") or item.get("avg_price") or "-"
-            volume = item.get("volume") or item.get("remaining_volume") or "-"
-            uuid_ = item.get("uuid", "-")
-            lines.append(f"{side} {market_name} {state} 가격 {price} 수량 {volume} uuid {uuid_}")
+            lines.append(self._format_order_line(item))
         await self._post_message(channel, "\n".join(lines))
 
     def _is_authorized(self, user_id: str, channel: str, channel_type: str | None) -> bool:
@@ -781,6 +775,39 @@ class SlackSocketService:
             lines.append(f"- 가격: {price_text} {base_currency}")
         return "\n".join(lines)
 
+    def _format_order_line(self, item: dict[str, Any]) -> str:
+        market = item.get("market", "-")
+        base_currency, _ = self._split_market(market)
+        side = "매수" if item.get("side") == "bid" else "매도"
+        state = item.get("state", "-")
+        ord_type = self._format_ord_type(item.get("ord_type"), item.get("side"))
+        price = self._format_order_price(item.get("price"), base_currency)
+        avg_price = self._format_order_price(item.get("avg_price"), base_currency)
+        volume = self._format_amount_field(item.get("volume"))
+        executed = self._format_amount_field(item.get("executed_volume"))
+        remaining = self._format_amount_field(item.get("remaining_volume"))
+        created_at = self._format_time(item.get("created_at"))
+        uuid_ = item.get("uuid")
+
+        parts = [f"{side} {market}", f"{ord_type}", f"상태 {state}"]
+        if item.get("ord_type") == "price" and price:
+            parts.append(f"금액 {price} {base_currency}")
+        elif price:
+            parts.append(f"주문가 {price} {base_currency}")
+        if avg_price:
+            parts.append(f"평균가 {avg_price} {base_currency}")
+        if volume:
+            parts.append(f"주문량 {volume}")
+        if executed:
+            parts.append(f"체결량 {executed}")
+        if remaining:
+            parts.append(f"잔량 {remaining}")
+        if created_at:
+            parts.append(f"시간 {created_at}")
+        if uuid_:
+            parts.append(f"uuid {uuid_}")
+        return " | ".join(parts)
+
     def _register_pending(self, user_id: str, pending: PendingOrder) -> None:
         previous_token = self._pending_by_user.get(user_id)
         if previous_token:
@@ -1152,6 +1179,45 @@ class SlackSocketService:
             return 0
         decimals = text.split(".", 1)[1].rstrip("0")
         return len(decimals)
+
+    def _format_order_price(self, value: Any, base_currency: str) -> str | None:
+        if value is None:
+            return None
+        numeric = self._to_float(value)
+        if numeric <= 0:
+            return None
+        return self._format_currency_amount(numeric, base_currency)
+
+    def _format_amount_field(self, value: Any) -> str | None:
+        if value is None:
+            return None
+        numeric = self._to_float(value)
+        if numeric <= 0:
+            return None
+        return self._fmt_amount(numeric)
+
+    @staticmethod
+    def _format_time(value: Any) -> str | None:
+        if not value:
+            return None
+        if isinstance(value, str):
+            cleaned = value.replace("Z", "+00:00")
+            try:
+                dt = datetime.fromisoformat(cleaned)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return value
+        return str(value)
+
+    @staticmethod
+    def _format_ord_type(value: Any, side: Any) -> str:
+        if value == "limit":
+            return "지정가"
+        if value == "market":
+            return "시장가"
+        if value == "price":
+            return "시장가(금액)"
+        return str(value) if value is not None else "-"
 
     @staticmethod
     def _floor_decimals(value: float, decimals: int) -> float:
