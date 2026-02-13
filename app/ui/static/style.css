@@ -491,6 +491,12 @@ body {
   filter: brightness(1.08);
 }
 
+.btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  filter: none;
+}
+
 .btn-compact {
   height: 30px;
   padding: 0 10px;
