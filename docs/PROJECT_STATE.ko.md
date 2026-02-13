@@ -68,6 +68,9 @@
   - 다중 페이지 체결 조회(최대 1000건) + 60초 캐시 적용
   - 원가 누락/조회 상한 시 `warnings`에 보정 경고 제공
 - Upbit 개인 API 클라이언트(JWT 서명 + 주문/잔고 엔드포인트) 구현 완료
+- Upbit JWT query_hash 정합성 보강
+  - 배열 파라미터를 `states[]`, `uuids[]` 형식으로 직렬화
+  - query_hash 문자열을 Upbit 권장 형식(`unquote(urlencode(...))`)으로 생성
 - Upbit 조회용 API 라우트 추가(`/api/upbit/*`)
 - Upbit 오류를 HTTP 상태/메시지로 명확히 반환
 - Telegram 폴링 기반 명령 처리 구현

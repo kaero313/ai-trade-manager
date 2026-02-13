@@ -2,7 +2,7 @@
 import logging
 import uuid
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 import httpx
 import jwt
@@ -40,15 +40,17 @@ def _normalize_params(params: dict[str, Any] | list[tuple[str, Any]] | None) -> 
     if params is None:
         return []
     if isinstance(params, list):
-        return params
+        return [item for item in params if len(item) == 2 and item[1] is not None]
 
     items: list[tuple[str, Any]] = []
     for key, value in params.items():
         if value is None:
             continue
         if isinstance(value, (list, tuple)):
-            list_key = key
+            list_key = key if key.endswith("[]") else f"{key}[]"
             for item in value:
+                if item is None:
+                    continue
                 items.append((list_key, item))
         else:
             items.append((key, value))
@@ -59,7 +61,8 @@ def _build_query_string(params: dict[str, Any] | list[tuple[str, Any]] | None) -
     items = _normalize_params(params)
     if not items:
         return ""
-    return str(httpx.QueryParams(items))
+    # Upbit query_hash expects non-percent-encoded query form (e.g. states[]=wait).
+    return unquote(urlencode(items, doseq=True))
 
 
 def _parse_remaining_req(value: str | None) -> dict[str, str] | None:
@@ -130,8 +133,9 @@ class UpbitClient:
         if json is not None:
             json_payload = {key: value for key, value in json.items() if value is not None}
 
-        query_params = params if params is not None else json_payload
-        query_string = _build_query_string(query_params)
+        normalized_params = _normalize_params(params) if params is not None else None
+        query_params_for_hash = normalized_params if normalized_params is not None else json_payload
+        query_string = _build_query_string(query_params_for_hash)
         headers: dict[str, str] = {
             "Accept": "application/json",
         }
@@ -145,7 +149,7 @@ class UpbitClient:
             resp = await client.request(
                 method,
                 url,
-                params=_normalize_params(params) if params is not None else None,
+                params=normalized_params,
                 json=json_payload,
                 headers=headers,
             )
