@@ -8,6 +8,14 @@ from app.core.state import state
 from app.services.upbit_client import UpbitAPIError, upbit_client
 
 router = APIRouter()
+KST = timezone(timedelta(hours=9))
+DONE_HISTORY_MAX_PAGES = 10
+DONE_HISTORY_LIMIT = 100
+REALIZED_CACHE_TTL = timedelta(seconds=60)
+
+_realized_cache_at: datetime | None = None
+_realized_cache_day: str | None = None
+_realized_cache_value: dict[str, Any] | None = None
 
 
 def _to_float(value: Any) -> float:
@@ -51,10 +59,156 @@ def _schedule_text() -> str:
     return f"KST {schedule.start_hour:02d}:00-{schedule.end_hour:02d}:00"
 
 
+async def _fetch_done_orders_history(
+    max_pages: int = DONE_HISTORY_MAX_PAGES,
+    limit: int = DONE_HISTORY_LIMIT,
+) -> tuple[list[dict[str, Any]], bool]:
+    history: list[dict[str, Any]] = []
+    reached_cap = False
+
+    for page in range(1, max_pages + 1):
+        rows = await upbit_client.get_orders_closed(
+            states=["done"],
+            page=page,
+            limit=limit,
+            order_by="desc",
+        )
+        if not isinstance(rows, list) or not rows:
+            break
+
+        for row in rows:
+            if isinstance(row, dict):
+                history.append(row)
+
+        if len(rows) < limit:
+            break
+
+        if page == max_pages:
+            reached_cap = True
+
+    return history, reached_cap
+
+
+def _order_fill_values(order: dict[str, Any]) -> tuple[float, float, float]:
+    qty = _to_float(order.get("executed_volume"))
+    if qty <= 0:
+        qty = _to_float(order.get("volume"))
+
+    funds = _to_float(order.get("funds"))
+    avg_price = _to_float(order.get("avg_price"))
+    if funds <= 0 and qty > 0 and avg_price > 0:
+        funds = qty * avg_price
+
+    fee = _to_float(order.get("paid_fee"))
+    return qty, funds, fee
+
+
+def _estimate_daily_realized_pnl(
+    done_orders: list[dict[str, Any]],
+    day_start_utc: datetime,
+    now_utc: datetime,
+) -> dict[str, Any]:
+    inventory: dict[str, dict[str, float]] = {}
+    daily_realized_pnl = 0.0
+    wins = 0
+    losses = 0
+    missing_cost_events = 0
+    analyzed_orders = 0
+
+    sortable: list[tuple[datetime, dict[str, Any]]] = []
+    for order in done_orders:
+        created_at = _parse_dt(order.get("created_at"))
+        if created_at is None:
+            continue
+        sortable.append((created_at, order))
+
+    sortable.sort(key=lambda pair: pair[0])
+
+    for created_at, order in sortable:
+        side = str(order.get("side") or "").lower()
+        market = str(order.get("market") or "").upper()
+        if not market or side not in ("bid", "ask"):
+            continue
+
+        qty, funds, fee = _order_fill_values(order)
+        if qty <= 0:
+            continue
+        analyzed_orders += 1
+
+        position = inventory.setdefault(market, {"qty": 0.0, "cost": 0.0})
+
+        if side == "bid":
+            cost_add = max(funds, 0.0) + max(fee, 0.0)
+            position["qty"] += qty
+            position["cost"] += cost_add
+            continue
+
+        proceeds = max(funds, 0.0) - max(fee, 0.0)
+        if position["qty"] <= 1e-12 or position["cost"] <= 0:
+            cost_removed = max(funds, 0.0)
+            missing_cost_events += 1
+        else:
+            avg_cost = position["cost"] / position["qty"]
+            matched_qty = min(qty, position["qty"])
+            cost_removed = avg_cost * matched_qty
+            position["qty"] -= matched_qty
+            position["cost"] -= cost_removed
+            if position["qty"] <= 1e-12:
+                position["qty"] = 0.0
+                position["cost"] = 0.0
+
+            remainder_qty = qty - matched_qty
+            if remainder_qty > 1e-12:
+                sell_unit_price = (max(funds, 0.0) / qty) if qty > 0 else 0.0
+                cost_removed += sell_unit_price * remainder_qty
+                missing_cost_events += 1
+
+        pnl = proceeds - cost_removed
+        if day_start_utc <= created_at <= now_utc:
+            daily_realized_pnl += pnl
+            if pnl > 1e-9:
+                wins += 1
+            elif pnl < -1e-9:
+                losses += 1
+
+    return {
+        "daily_realized_pnl_krw": daily_realized_pnl,
+        "wins": wins,
+        "losses": losses,
+        "missing_cost_events": missing_cost_events,
+        "analyzed_orders": analyzed_orders,
+    }
+
+
+async def _get_daily_realized_stats(day_start_utc: datetime, now_utc: datetime) -> dict[str, Any]:
+    global _realized_cache_at, _realized_cache_day, _realized_cache_value
+
+    today_key = day_start_utc.date().isoformat()
+    if (
+        _realized_cache_at is not None
+        and _realized_cache_day == today_key
+        and _realized_cache_value is not None
+        and now_utc - _realized_cache_at <= REALIZED_CACHE_TTL
+    ):
+        return _realized_cache_value
+
+    orders, reached_cap = await _fetch_done_orders_history()
+    stats = _estimate_daily_realized_pnl(orders, day_start_utc=day_start_utc, now_utc=now_utc)
+    stats["history_capped"] = reached_cap
+
+    _realized_cache_at = now_utc
+    _realized_cache_day = today_key
+    _realized_cache_value = stats
+    return stats
+
+
 @router.get("/dashboard")
 async def get_dashboard_snapshot() -> dict[str, Any]:
     now_utc = datetime.now(timezone.utc)
-    now_kst = now_utc.astimezone(timezone(timedelta(hours=9)))
+    now_kst = now_utc.astimezone(KST)
+    day_start_utc = now_kst.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(
+        timezone.utc
+    )
     cfg = state.config
     status = state.status()
 
@@ -79,6 +233,7 @@ async def get_dashboard_snapshot() -> dict[str, Any]:
         },
         "metrics": {
             "total_asset_krw": 0.0,
+            "daily_realized_pnl_krw": 0.0,
             "unrealized_pnl_krw": 0.0,
             "capital_usage_pct": 0.0,
             "capital_limit_pct": cfg.risk.max_capital_pct * 100.0,
@@ -193,8 +348,6 @@ async def get_dashboard_snapshot() -> dict[str, Any]:
     positions: list[dict[str, Any]] = []
     total_coin_value = 0.0
     total_unrealized = 0.0
-    wins = 0
-    losses = 0
 
     for item in positions_raw:
         market = item["market"]
@@ -214,10 +367,6 @@ async def get_dashboard_snapshot() -> dict[str, Any]:
             pnl_pct = (now_price / avg_buy - 1.0) * 100.0
             pnl_krw = (now_price - avg_buy) * qty
             total_unrealized += pnl_krw
-            if pnl_pct > 0:
-                wins += 1
-            elif pnl_pct < 0:
-                losses += 1
 
         positions.append(
             {
@@ -239,14 +388,39 @@ async def get_dashboard_snapshot() -> dict[str, Any]:
         (abs(total_unrealized) / total_asset * 100.0) if total_asset > 0 and total_unrealized < 0 else 0.0
     )
 
+    realized_daily_pnl = 0.0
+    realized_wins = 0
+    realized_losses = 0
+    try:
+        realized_stats = await _get_daily_realized_stats(day_start_utc=day_start_utc, now_utc=now_utc)
+        realized_daily_pnl = _to_float(realized_stats.get("daily_realized_pnl_krw"))
+        realized_wins = int(realized_stats.get("wins") or 0)
+        realized_losses = int(realized_stats.get("losses") or 0)
+
+        if realized_stats.get("history_capped"):
+            result["warnings"].append(
+                f"PnL history capped at {DONE_HISTORY_MAX_PAGES * DONE_HISTORY_LIMIT} fills."
+            )
+        missing_cost_events = int(realized_stats.get("missing_cost_events") or 0)
+        if missing_cost_events > 0:
+            result["warnings"].append(
+                f"PnL includes {missing_cost_events} sell fills with inferred cost basis."
+            )
+    except UpbitAPIError as exc:
+        payload = exc.to_dict()
+        name = payload.get("error_name") or f"HTTP {exc.status_code}"
+        message = payload.get("message") or "daily realized pnl fetch failed"
+        result["warnings"].append(f"PnL error: {name} {message}")
+
     result["positions"] = positions[:10]
     result["metrics"] = {
         "total_asset_krw": total_asset,
+        "daily_realized_pnl_krw": realized_daily_pnl,
         "unrealized_pnl_krw": total_unrealized,
         "capital_usage_pct": capital_usage_pct,
         "capital_limit_pct": cfg.risk.max_capital_pct * 100.0,
-        "wins": wins,
-        "losses": losses,
+        "wins": realized_wins,
+        "losses": realized_losses,
     }
     result["risk"] = {
         "capital_usage_pct": capital_usage_pct,

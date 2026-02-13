@@ -292,7 +292,7 @@
 
     const dailyPnlValue = byId("dailyPnlValue");
     if (dailyPnlValue) {
-      const pnl = Number(metrics.unrealized_pnl_krw);
+      const pnl = Number(metrics.daily_realized_pnl_krw);
       dailyPnlValue.textContent = formatSignedKrw(pnl);
       setTrendClass(dailyPnlValue, pnl);
     }
