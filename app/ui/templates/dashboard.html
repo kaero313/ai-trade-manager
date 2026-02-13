@@ -1,33 +1,223 @@
 ﻿{% extends "base.html" %}
 {% block content %}
-<section class="hero">
-  <div class="hero-text">
-    <h1>업비트 KRW 매매를 실시간으로 제어합니다.</h1>
-    <p>종목, 리스크, 스케줄을 설정하고 손익/체결을 실시간으로 확인하세요.</p>
+<section class="ops-shell">
+  <div class="ops-top">
+    <div class="ops-tags">
+      <span class="chip chip-live">LIVE</span>
+      <span class="chip">UPBIT KRW SPOT</span>
+      <span class="chip">EMA 12/26 + RSI 14</span>
+    </div>
+    <div class="ops-meta">
+      <span>KST 24H</span>
+      <span>Last Sync 14:32:10</span>
+    </div>
   </div>
-  <div class="hero-card">
-    <div class="label">봇 상태</div>
-    <div class="value">중지됨</div>
-    <div class="meta">마지막 하트비트: --</div>
-    <button class="btn">봇 시작</button>
-  </div>
-</section>
 
-<section class="grid">
-  <div class="card">
-    <div class="label">할당 자본</div>
-    <div class="value">계좌 자산의 10%</div>
-    <div class="meta">일일 손실 한도: 5%</div>
-  </div>
-  <div class="card">
-    <div class="label">보유 포지션</div>
-    <div class="value">0개 보유</div>
-    <div class="meta">최대 동시 보유: 3</div>
-  </div>
-  <div class="card">
-    <div class="label">전략</div>
-    <div class="value">EMA 12/26 + RSI 14</div>
-    <div class="meta">트레일링 스탑: 3%</div>
-  </div>
+  <section class="metrics-grid">
+    <article class="metric-card">
+      <div class="metric-label">Total Asset</div>
+      <div class="metric-value mono">KRW 12,430,000</div>
+      <div class="metric-foot">
+        <span class="metric-delta up">+1.90%</span>
+        <span class="metric-sub">vs 24h</span>
+      </div>
+    </article>
+    <article class="metric-card">
+      <div class="metric-label">Daily PnL</div>
+      <div class="metric-value mono">+KRW 236,000</div>
+      <div class="metric-foot">
+        <span class="metric-delta up">3 Wins</span>
+        <span class="metric-sub">1 Loss</span>
+      </div>
+    </article>
+    <article class="metric-card">
+      <div class="metric-label">Capital Usage</div>
+      <div class="metric-value mono">8.4%</div>
+      <div class="metric-foot">
+        <span class="metric-delta">Limit 10%</span>
+        <span class="metric-sub">Safe</span>
+      </div>
+    </article>
+    <article class="metric-card">
+      <div class="metric-label">Bot State</div>
+      <div class="metric-value">Running</div>
+      <div class="metric-foot">
+        <span class="metric-delta">Heartbeat 5s</span>
+        <button class="btn btn-compact">Pause</button>
+      </div>
+    </article>
+  </section>
+
+  <section class="panel-grid">
+    <article class="panel monitor-panel">
+      <div class="panel-head">
+        <div class="panel-title">Symbol Pulse</div>
+        <div class="panel-meta">Top 5</div>
+      </div>
+      <ul class="pulse-list">
+        <li>
+          <span class="mono">KRW-BTC</span>
+          <div class="pulse-track"><span style="width: 72%;"></span></div>
+          <span class="pulse-change up">+1.82%</span>
+        </li>
+        <li>
+          <span class="mono">KRW-ETH</span>
+          <div class="pulse-track"><span style="width: 61%;"></span></div>
+          <span class="pulse-change up">+1.23%</span>
+        </li>
+        <li>
+          <span class="mono">KRW-XRP</span>
+          <div class="pulse-track"><span style="width: 48%;"></span></div>
+          <span class="pulse-change down">-0.44%</span>
+        </li>
+        <li>
+          <span class="mono">KRW-SOL</span>
+          <div class="pulse-track"><span style="width: 56%;"></span></div>
+          <span class="pulse-change up">+0.92%</span>
+        </li>
+        <li>
+          <span class="mono">KRW-ADA</span>
+          <div class="pulse-track"><span style="width: 35%;"></span></div>
+          <span class="pulse-change down">-1.02%</span>
+        </li>
+      </ul>
+    </article>
+
+    <article class="panel monitor-panel">
+      <div class="panel-head">
+        <div class="panel-title">Order Throughput</div>
+        <div class="panel-meta">1H</div>
+      </div>
+      <div class="spark-box">
+        <div class="spark-bars">
+          <span style="height: 28%;"></span>
+          <span style="height: 42%;"></span>
+          <span style="height: 37%;"></span>
+          <span style="height: 59%;"></span>
+          <span style="height: 74%;"></span>
+          <span style="height: 48%;"></span>
+          <span style="height: 66%;"></span>
+          <span style="height: 81%;"></span>
+          <span style="height: 52%;"></span>
+          <span style="height: 45%;"></span>
+          <span style="height: 61%;"></span>
+          <span style="height: 39%;"></span>
+        </div>
+      </div>
+      <div class="spark-scale mono">
+        <span>09</span>
+        <span>12</span>
+        <span>15</span>
+        <span>18</span>
+        <span>21</span>
+      </div>
+    </article>
+
+    <article class="panel monitor-panel">
+      <div class="panel-head">
+        <div class="panel-title">Alerts</div>
+        <div class="panel-meta">Realtime</div>
+      </div>
+      <ul class="alert-list">
+        <li class="alert-item warn">
+          <div class="alert-main">
+            <strong>Risk Threshold 80%</strong>
+            <p>KRW-BTC position sizing reached warning zone.</p>
+          </div>
+          <span class="mono">1m</span>
+        </li>
+        <li class="alert-item ok">
+          <div class="alert-main">
+            <strong>Order Filled</strong>
+            <p>KRW-ETH buy order completed at 4,512,000.</p>
+          </div>
+          <span class="mono">4m</span>
+        </li>
+        <li class="alert-item danger">
+          <div class="alert-main">
+            <strong>Trailing Stop Hit</strong>
+            <p>KRW-ADA position exited with -1.4%.</p>
+          </div>
+          <span class="mono">9m</span>
+        </li>
+      </ul>
+    </article>
+  </section>
+
+  <section class="panel-grid lower">
+    <article class="panel monitor-panel">
+      <div class="panel-head">
+        <div class="panel-title">Open Positions</div>
+        <div class="panel-meta">3 / 3</div>
+      </div>
+      <div class="table-wrap">
+        <table class="position-table">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Qty</th>
+              <th>Avg</th>
+              <th>Now</th>
+              <th>PnL</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">KRW-BTC</td>
+              <td class="mono">0.0182</td>
+              <td class="mono">143,120,000</td>
+              <td class="mono">145,460,000</td>
+              <td class="up mono">+1.64%</td>
+            </tr>
+            <tr>
+              <td class="mono">KRW-ETH</td>
+              <td class="mono">0.3400</td>
+              <td class="mono">4,512,000</td>
+              <td class="mono">4,498,000</td>
+              <td class="down mono">-0.31%</td>
+            </tr>
+            <tr>
+              <td class="mono">KRW-SOL</td>
+              <td class="mono">4.8800</td>
+              <td class="mono">238,000</td>
+              <td class="mono">241,300</td>
+              <td class="up mono">+1.39%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="panel monitor-panel">
+      <div class="panel-head">
+        <div class="panel-title">Risk Control</div>
+        <div class="panel-meta">Policy</div>
+      </div>
+      <div class="risk-list">
+        <div class="risk-item">
+          <div class="risk-row">
+            <span>Capital Usage</span>
+            <span class="mono">8.4% / 10%</span>
+          </div>
+          <div class="risk-track"><span style="width: 84%;"></span></div>
+        </div>
+        <div class="risk-item">
+          <div class="risk-row">
+            <span>Daily Loss</span>
+            <span class="mono">1.2% / 5%</span>
+          </div>
+          <div class="risk-track"><span style="width: 24%;"></span></div>
+        </div>
+        <div class="risk-item">
+          <div class="risk-row">
+            <span>Max Positions</span>
+            <span class="mono">3 / 3</span>
+          </div>
+          <div class="risk-track"><span style="width: 100%;"></span></div>
+        </div>
+      </div>
+      <button class="btn btn-block">리스크 설정 열기</button>
+    </article>
+  </section>
 </section>
 {% endblock %}
