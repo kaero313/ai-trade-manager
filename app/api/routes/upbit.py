@@ -1,6 +1,8 @@
-﻿from fastapi import APIRouter, HTTPException, Query
+﻿from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.session import get_db
 from app.services.upbit_client import UpbitAPIError, upbit_client
 
 router = APIRouter()
@@ -29,7 +31,7 @@ async def _safe_call(coro):
 
 
 @router.get("/upbit/accounts")
-async def get_accounts() -> list[dict]:
+async def get_accounts(_db: AsyncSession = Depends(get_db)) -> list[dict]:
     _require_keys()
     return await _safe_call(upbit_client.get_accounts())
 
@@ -38,6 +40,7 @@ async def get_accounts() -> list[dict]:
 async def get_order(
     uuid: str | None = None,
     identifier: str | None = None,
+    _db: AsyncSession = Depends(get_db),
 ) -> dict:
     _require_keys()
     return await _safe_call(upbit_client.get_order(uuid_=uuid, identifier=identifier))
@@ -50,6 +53,7 @@ async def get_orders_open(
     page: int | None = None,
     limit: int | None = None,
     order_by: str | None = None,
+    _db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
     _require_keys()
     return await _safe_call(
@@ -70,6 +74,7 @@ async def get_orders_closed(
     page: int | None = None,
     limit: int | None = None,
     order_by: str | None = None,
+    _db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
     _require_keys()
     return await _safe_call(
@@ -88,6 +93,7 @@ async def get_orders_by_uuids(
     uuids: str = Query(..., description="Comma-separated UUIDs"),
     states: str | None = Query(None, description="Comma-separated states"),
     order_by: str | None = None,
+    _db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
     _require_keys()
     parsed_uuids = _parse_csv(uuids)
