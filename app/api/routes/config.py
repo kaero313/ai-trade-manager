@@ -1,17 +1,23 @@
-﻿from fastapi import APIRouter
+﻿from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.state import state
+from app.db.repository import get_or_create_bot_config
+from app.db.session import get_db
 from app.models.schemas import BotConfig
 
 router = APIRouter()
 
 
 @router.get("/config", response_model=BotConfig)
-def get_config() -> BotConfig:
-    return state.config
+async def get_config(db: AsyncSession = Depends(get_db)) -> BotConfig:
+    bot_config = await get_or_create_bot_config(db)
+    return BotConfig.model_validate(bot_config.config_json or {})
 
 
 @router.post("/config", response_model=BotConfig)
-def update_config(config: BotConfig) -> BotConfig:
-    state.config = config
-    return state.config
+async def update_config(config: BotConfig, db: AsyncSession = Depends(get_db)) -> BotConfig:
+    bot_config = await get_or_create_bot_config(db)
+    bot_config.config_json = config.model_dump()
+    await db.commit()
+    await db.refresh(bot_config)
+    return BotConfig.model_validate(bot_config.config_json or {})

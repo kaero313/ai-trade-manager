@@ -1,10 +1,14 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.state import state
+from app.db.repository import get_or_create_bot_config
+from app.db.session import get_db
+from app.models.schemas import BotConfig as BotConfigSchema
+from app.services.bot_service import get_bot_status
 from app.services.upbit_client import UpbitAPIError, upbit_client
 
 router = APIRouter()
@@ -50,8 +54,8 @@ def _dedupe_markets(markets: list[str]) -> list[str]:
     return out
 
 
-def _schedule_text() -> str:
-    schedule = state.config.schedule
+def _schedule_text(cfg: BotConfigSchema) -> str:
+    schedule = cfg.schedule
     if not schedule.enabled:
         return "Disabled"
     if schedule.start_hour is None or schedule.end_hour is None:
@@ -203,14 +207,15 @@ async def _get_daily_realized_stats(day_start_utc: datetime, now_utc: datetime) 
 
 
 @router.get("/dashboard")
-async def get_dashboard_snapshot() -> dict[str, Any]:
+async def get_dashboard_snapshot(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     now_utc = datetime.now(timezone.utc)
     now_kst = now_utc.astimezone(KST)
     day_start_utc = now_kst.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(
         timezone.utc
     )
-    cfg = state.config
-    status = state.status()
+    bot_config = await get_or_create_bot_config(db)
+    cfg = BotConfigSchema.model_validate(bot_config.config_json or {})
+    status = await get_bot_status(db)
 
     strategy_text = (
         f"EMA {cfg.strategy.ema_fast}/{cfg.strategy.ema_slow} + "
@@ -224,7 +229,7 @@ async def get_dashboard_snapshot() -> dict[str, Any]:
     result: dict[str, Any] = {
         "synced_at": now_kst.strftime("%H:%M:%S KST"),
         "strategy_text": strategy_text,
-        "schedule_text": _schedule_text(),
+        "schedule_text": _schedule_text(cfg),
         "status": {
             "running": status.running,
             "last_heartbeat": status.last_heartbeat,

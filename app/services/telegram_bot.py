@@ -4,8 +4,10 @@ from contextlib import suppress
 from typing import Any
 
 from app.core.config import settings
-from app.core.state import state
-from app.services.bot_service import start_bot, stop_bot
+from app.db.repository import get_or_create_bot_config
+from app.db.session import AsyncSessionLocal
+from app.models.schemas import BotConfig as BotConfigSchema
+from app.services.bot_service import get_bot_status, start_bot, stop_bot
 from app.services.telegram import TelegramClient, telegram
 from app.services.upbit_client import UpbitAPIError, upbit_client
 
@@ -82,17 +84,21 @@ class TelegramBotService:
         cmd = command.split("@", 1)[0].lower()
 
         if cmd in ("/start", "/run"):
-            status = start_bot()
+            async with AsyncSessionLocal() as db:
+                status = await start_bot(db)
             await self.client.send_message(self._format_status(status), chat_id=chat_id)
             return
 
         if cmd in ("/stop", "/halt"):
-            status = stop_bot()
+            async with AsyncSessionLocal() as db:
+                status = await stop_bot(db)
             await self.client.send_message(self._format_status(status), chat_id=chat_id)
             return
 
         if cmd in ("/status", "/health"):
-            await self.client.send_message(self._format_status(state.status()), chat_id=chat_id)
+            async with AsyncSessionLocal() as db:
+                status = await get_bot_status(db)
+            await self.client.send_message(self._format_status(status), chat_id=chat_id)
             return
 
         if cmd in ("/balance", "/accounts"):
@@ -168,48 +174,53 @@ class TelegramBotService:
             await self.client.send_message(self._risk_usage(), chat_id=chat_id)
             return
 
-        risk = state.config.risk
-        changed = []
+        async with AsyncSessionLocal() as db:
+            bot_config = await get_or_create_bot_config(db)
+            config = BotConfigSchema.model_validate(bot_config.config_json or {})
+            risk = config.risk
+            changed = []
 
-        def set_pct(field: str, raw: str) -> None:
-            nonlocal risk
-            try:
-                val = float(raw)
-            except ValueError:
-                return
-            if val > 1:
-                val = val / 100.0
-            setattr(risk, field, val)
-            changed.append(f"{field}={val}")
+            def set_pct(field: str, raw: str) -> None:
+                nonlocal risk
+                try:
+                    val = float(raw)
+                except ValueError:
+                    return
+                if val > 1:
+                    val = val / 100.0
+                setattr(risk, field, val)
+                changed.append(f"{field}={val}")
 
-        def set_int(field: str, raw: str) -> None:
-            nonlocal risk
-            try:
-                val = int(raw)
-            except ValueError:
-                return
-            setattr(risk, field, val)
-            changed.append(f"{field}={val}")
+            def set_int(field: str, raw: str) -> None:
+                nonlocal risk
+                try:
+                    val = int(raw)
+                except ValueError:
+                    return
+                setattr(risk, field, val)
+                changed.append(f"{field}={val}")
 
-        if "daily_loss" in updates:
-            set_pct("max_daily_loss_pct", updates["daily_loss"])
-        if "max_capital" in updates:
-            set_pct("max_capital_pct", updates["max_capital"])
-        if "position" in updates:
-            set_pct("position_size_pct", updates["position"])
-        if "max_positions" in updates:
-            set_int("max_concurrent_positions", updates["max_positions"])
-        if "cooldown" in updates:
-            set_int("cooldown_minutes", updates["cooldown"])
+            if "daily_loss" in updates:
+                set_pct("max_daily_loss_pct", updates["daily_loss"])
+            if "max_capital" in updates:
+                set_pct("max_capital_pct", updates["max_capital"])
+            if "position" in updates:
+                set_pct("position_size_pct", updates["position"])
+            if "max_positions" in updates:
+                set_int("max_concurrent_positions", updates["max_positions"])
+            if "cooldown" in updates:
+                set_int("cooldown_minutes", updates["cooldown"])
 
-        state.config.risk = risk
-        if changed:
-            await self.client.send_message(
-                "리스크 설정 변경: " + ", ".join(changed),
-                chat_id=chat_id,
-            )
-        else:
-            await self.client.send_message(self._risk_usage(), chat_id=chat_id)
+            if changed:
+                config.risk = risk
+                bot_config.config_json = config.model_dump()
+                await db.commit()
+                await self.client.send_message(
+                    "리스크 설정 변경: " + ", ".join(changed),
+                    chat_id=chat_id,
+                )
+            else:
+                await self.client.send_message(self._risk_usage(), chat_id=chat_id)
 
     def _format_status(self, status) -> str:
         heartbeat = status.last_heartbeat or "-"

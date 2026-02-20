@@ -7,8 +7,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from sqlalchemy import select
+
 from app.core.config import settings
-from app.core.state import state
+from app.db.session import AsyncSessionLocal
+from app.models.domain import Asset, Position
+from app.services.bot_service import get_bot_status, start_bot, stop_bot
 from app.services.upbit_client import UpbitAPIError, upbit_client
 
 logger = logging.getLogger(__name__)
@@ -232,7 +236,15 @@ class SlackSocketService:
             await self._prepare_cancel(user_id, channel, channel_type, raw)
             return
 
-        if cmd in ("status", "/status", "상태"):
+        if cmd in ("start", "/start", "시작", "/시작"):
+            await self._send_start(channel)
+            return
+
+        if cmd in ("stop", "/stop", "정지", "/정지"):
+            await self._send_stop(channel)
+            return
+
+        if cmd in ("status", "/status", "상태", "/상태"):
             await self._send_status(channel)
             return
 
@@ -263,39 +275,61 @@ class SlackSocketService:
         )
         await self._post_message(channel, text)
 
+    async def _send_start(self, channel: str) -> None:
+        async with AsyncSessionLocal() as db:
+            status = await start_bot(db)
+        await self._post_message(channel, self._format_runtime_status(status))
+
+    async def _send_stop(self, channel: str) -> None:
+        async with AsyncSessionLocal() as db:
+            status = await stop_bot(db)
+        await self._post_message(channel, self._format_runtime_status(status))
+
     async def _send_status(self, channel: str) -> None:
-        status = state.status()
+        async with AsyncSessionLocal() as db:
+            status = await get_bot_status(db)
+        await self._post_message(channel, self._format_runtime_status(status))
+
+    async def _send_balance(self, channel: str) -> None:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(
+                select(Position, Asset)
+                .join(Asset, Position.asset_id == Asset.id)
+                .order_by(Position.updated_at.desc())
+            )
+            rows = result.all()
+
+        if not rows:
+            await self._post_message(channel, "DB에 저장된 포지션이 없습니다.")
+            return
+
+        lines = ["[DB 포지션 잔고]"]
+        for position, asset in rows:
+            if position.quantity <= 0:
+                continue
+            base_currency = asset.base_currency or "KRW"
+            avg_entry = self._format_currency_amount(position.avg_entry_price, base_currency)
+            updated_at = position.updated_at.isoformat() if position.updated_at else "-"
+            lines.append(
+                f"{asset.symbol}: 수량 {self._fmt_amount(position.quantity)}"
+                f" | 평균진입가 {avg_entry} {base_currency}"
+                f" | 상태 {position.status}"
+                f" | 업데이트 {updated_at}"
+            )
+
+        if len(lines) == 1:
+            lines.append("DB에 저장된 포지션이 없습니다.")
+        await self._post_message(channel, "\n".join(lines))
+
+    def _format_runtime_status(self, status: Any) -> str:
         heartbeat = status.last_heartbeat or "-"
         err = status.last_error or "-"
-        text = (
-            f"봇 상태: {'실행 중' if status.running else '중지'}\n"
+        running_text = "실행 중" if status.running else "중지"
+        return (
+            f"봇 상태: {running_text}\n"
             f"마지막 하트비트: {heartbeat}\n"
             f"최근 오류: {err}"
         )
-        await self._post_message(channel, text)
-
-    async def _send_balance(self, channel: str) -> None:
-        if not settings.upbit_access_key or not settings.upbit_secret_key:
-            await self._post_message(
-                channel,
-                self._err("설정", "Upbit 키가 설정되지 않았습니다. .env의 UPBIT_ACCESS_KEY/SECRET_KEY를 확인하세요."),
-            )
-            return
-
-        try:
-            accounts = await upbit_client.get_accounts()
-        except UpbitAPIError as exc:
-            await self._post_message(channel, self._format_upbit_error(exc))
-            return
-
-        balances = self._extract_balances(accounts)
-        if not balances:
-            await self._post_message(channel, "표시할 잔고가 없습니다.")
-            return
-
-        price_map, valid_markets = await self._load_prices(balances)
-        lines = self._format_balances(balances, price_map, valid_markets)
-        await self._post_message(channel, "\n".join(lines))
 
     async def _send_orders(self, channel: str, raw: str, order_mode: str) -> None:
         if not settings.upbit_access_key or not settings.upbit_secret_key:
