@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    app_name: str = "trading-bot"
+    app_name: str = "ai-trade-manager"
     log_level: str = "INFO"
 
     upbit_access_key: str | None = None
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     postgres_user: str = "postgres"
     postgres_password: str = "postgres"
-    postgres_db: str = "trading_bot"
+    postgres_db: str = "ai_trade_manager"
     postgres_host: str = "localhost"
     postgres_port: int = 5432
 

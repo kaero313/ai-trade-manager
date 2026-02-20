@@ -1,5 +1,5 @@
 [project]
-name = "trading-bot"
+name = "ai-trade-manager"
 version = "0.1.0"
 description = "Upbit KRW spot trading bot (FastAPI)"
 requires-python = ">=3.11"
