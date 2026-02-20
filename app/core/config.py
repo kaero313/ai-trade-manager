@@ -1,9 +1,4 @@
-from pathlib import Path
-
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-BASE_DIR = Path(__file__).resolve().parents[2]
-ENV_FILE = BASE_DIR / ".env"
 
 
 class Settings(BaseSettings):
@@ -26,7 +21,24 @@ class Settings(BaseSettings):
     slack_allowed_user_ids: str | None = None
     slack_trade_channel_ids: str | None = None
 
-    model_config = SettingsConfigDict(env_file=str(ENV_FILE), env_file_encoding="utf-8")
+    postgres_user: str = "postgres"
+    postgres_password: str = "postgres"
+    postgres_db: str = "trading_bot"
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+
+    @property
+    def async_database_url(self) -> str:
+        return (
+            "postgresql+asyncpg://"
+            f"{self.postgres_user}:{self.postgres_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+
+    model_config = SettingsConfigDict(
+        env_file=(".env.prod", ".env.local"),
+        env_file_encoding="utf-8",
+    )
 
 
 settings = Settings()
