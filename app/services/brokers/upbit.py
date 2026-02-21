@@ -8,6 +8,7 @@ import httpx
 import jwt
 
 from app.core.config import settings
+from app.services.brokers.base import BaseBrokerClient
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ def _parse_remaining_req(value: str | None) -> dict[str, str] | None:
     return parsed or None
 
 
-class UpbitClient:
+class UpbitBroker(BaseBrokerClient):
     def __init__(
         self,
         base_url: str = "https://api.upbit.com",
@@ -285,7 +286,7 @@ class UpbitClient:
         return await self._request("DELETE", "/v1/order", params=params, auth=True)
 
 
-upbit_client = UpbitClient(
+upbit_broker = UpbitBroker(
     base_url=settings.upbit_base_url,
     access_key=settings.upbit_access_key,
     secret_key=settings.upbit_secret_key,
