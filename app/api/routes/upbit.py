@@ -3,9 +3,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import get_db
-from app.services.upbit_client import UpbitAPIError, upbit_client
+from app.services.brokers.factory import BrokerFactory
+from app.services.brokers.upbit import UpbitAPIError
 
 router = APIRouter()
+broker = BrokerFactory.get_broker("UPBIT")
 
 
 def _require_keys() -> None:
@@ -33,7 +35,7 @@ async def _safe_call(coro):
 @router.get("/upbit/accounts")
 async def get_accounts(_db: AsyncSession = Depends(get_db)) -> list[dict]:
     _require_keys()
-    return await _safe_call(upbit_client.get_accounts())
+    return await _safe_call(broker.get_accounts())
 
 
 @router.get("/upbit/order")
@@ -43,7 +45,7 @@ async def get_order(
     _db: AsyncSession = Depends(get_db),
 ) -> dict:
     _require_keys()
-    return await _safe_call(upbit_client.get_order(uuid_=uuid, identifier=identifier))
+    return await _safe_call(broker.get_order(uuid_=uuid, identifier=identifier))
 
 
 @router.get("/upbit/orders/open")
@@ -57,7 +59,7 @@ async def get_orders_open(
 ) -> list[dict]:
     _require_keys()
     return await _safe_call(
-        upbit_client.get_orders_open(
+        broker.get_orders_open(
             market=market,
             states=_parse_csv(states),
             page=page,
@@ -78,7 +80,7 @@ async def get_orders_closed(
 ) -> list[dict]:
     _require_keys()
     return await _safe_call(
-        upbit_client.get_orders_closed(
+        broker.get_orders_closed(
             market=market,
             states=_parse_csv(states),
             page=page,
@@ -100,7 +102,7 @@ async def get_orders_by_uuids(
     if not parsed_uuids:
         raise HTTPException(status_code=400, detail="uuids is required")
     return await _safe_call(
-        upbit_client.get_orders_by_uuids(
+        broker.get_orders_by_uuids(
             uuids=parsed_uuids,
             states=_parse_csv(states),
             order_by=order_by,

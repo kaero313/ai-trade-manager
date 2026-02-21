@@ -9,9 +9,11 @@ from app.db.session import AsyncSessionLocal
 from app.models.schemas import BotConfig as BotConfigSchema
 from app.services.bot_service import get_bot_status, start_bot, stop_bot
 from app.services.telegram import TelegramClient, telegram
-from app.services.upbit_client import UpbitAPIError, upbit_client
+from app.services.brokers.factory import BrokerFactory
+from app.services.brokers.upbit import UpbitAPIError
 
 logger = logging.getLogger(__name__)
+broker = BrokerFactory.get_broker("UPBIT")
 
 
 class TelegramBotService:
@@ -132,7 +134,7 @@ class TelegramBotService:
             return
 
         try:
-            accounts = await upbit_client.get_accounts()
+            accounts = await broker.get_accounts()
         except UpbitAPIError as exc:
             payload = exc.to_dict()
             await self.client.send_message(

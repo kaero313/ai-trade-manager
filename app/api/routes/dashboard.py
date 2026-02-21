@@ -9,9 +9,11 @@ from app.db.repository import get_or_create_bot_config
 from app.db.session import get_db
 from app.models.schemas import BotConfig as BotConfigSchema
 from app.services.bot_service import get_bot_status
-from app.services.upbit_client import UpbitAPIError, upbit_client
+from app.services.brokers.factory import BrokerFactory
+from app.services.brokers.upbit import UpbitAPIError
 
 router = APIRouter()
+broker = BrokerFactory.get_broker("UPBIT")
 KST = timezone(timedelta(hours=9))
 DONE_HISTORY_MAX_PAGES = 10
 DONE_HISTORY_LIMIT = 100
@@ -71,7 +73,7 @@ async def _fetch_done_orders_history(
     reached_cap = False
 
     for page in range(1, max_pages + 1):
-        rows = await upbit_client.get_orders_closed(
+        rows = await broker.get_orders_closed(
             states=["done"],
             page=page,
             limit=limit,
@@ -273,7 +275,7 @@ async def get_dashboard_snapshot(db: AsyncSession = Depends(get_db)) -> dict[str
         return result
 
     try:
-        accounts = await upbit_client.get_accounts()
+        accounts = await broker.get_accounts()
     except UpbitAPIError as exc:
         payload = exc.to_dict()
         name = payload.get("error_name") or f"HTTP {exc.status_code}"
@@ -324,7 +326,7 @@ async def get_dashboard_snapshot(db: AsyncSession = Depends(get_db)) -> dict[str
 
     valid_markets: set[str] | None = None
     try:
-        market_rows = await upbit_client.get_markets()
+        market_rows = await broker.get_markets()
         valid_markets = {
             str(item.get("market")).upper()
             for item in market_rows
@@ -339,7 +341,7 @@ async def get_dashboard_snapshot(db: AsyncSession = Depends(get_db)) -> dict[str
     ticker_map: dict[str, dict[str, Any]] = {}
     if markets:
         try:
-            tickers = await upbit_client.get_ticker(markets)
+            tickers = await broker.get_ticker(markets)
             for item in tickers:
                 market = str(item.get("market") or "").upper()
                 if market:
@@ -454,7 +456,7 @@ async def get_dashboard_snapshot(db: AsyncSession = Depends(get_db)) -> dict[str
 
     throughput = [0] * 12
     try:
-        orders = await upbit_client.get_orders_closed(
+        orders = await broker.get_orders_closed(
             states=["done", "cancel"],
             limit=100,
             order_by="desc",

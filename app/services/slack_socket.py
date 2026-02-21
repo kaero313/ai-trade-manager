@@ -13,9 +13,11 @@ from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.domain import Asset, Position
 from app.services.bot_service import get_bot_status, start_bot, stop_bot
-from app.services.upbit_client import UpbitAPIError, upbit_client
+from app.services.brokers.factory import BrokerFactory
+from app.services.brokers.upbit import UpbitAPIError
 
 logger = logging.getLogger(__name__)
+broker = BrokerFactory.get_broker("UPBIT")
 
 MAX_BUY_PCT = 0.20
 PENDING_TTL = timedelta(minutes=5)
@@ -349,7 +351,7 @@ class SlackSocketService:
                 else:
                     states = ["cancel"]
                     title = "[취소 내역]"
-                orders = await upbit_client.get_orders_closed(
+                orders = await broker.get_orders_closed(
                     market=market,
                     states=states,
                     limit=10,
@@ -357,7 +359,7 @@ class SlackSocketService:
                 )
             else:
                 states = ["wait", "watch"]
-                orders = await upbit_client.get_orders_open(
+                orders = await broker.get_orders_open(
                     market=market,
                     states=states,
                     limit=10,
@@ -442,7 +444,7 @@ class SlackSocketService:
             return
 
         try:
-            accounts = await upbit_client.get_accounts()
+            accounts = await broker.get_accounts()
         except UpbitAPIError as exc:
             await self._post_message(channel, self._format_upbit_error(exc))
             return
@@ -577,7 +579,7 @@ class SlackSocketService:
             return
 
         try:
-            accounts = await upbit_client.get_accounts()
+            accounts = await broker.get_accounts()
         except UpbitAPIError as exc:
             await self._post_message(channel, self._format_upbit_error(exc))
             return
@@ -618,7 +620,7 @@ class SlackSocketService:
                 order_value = limit_price * volume
             elif order_type == "market":
                 try:
-                    tickers = await upbit_client.get_ticker([market])
+                    tickers = await broker.get_ticker([market])
                 except UpbitAPIError as exc:
                     await self._post_message(channel, self._format_upbit_error(exc))
                     return
@@ -747,7 +749,7 @@ class SlackSocketService:
             return
 
         try:
-            result = await upbit_client.cancel_order(uuid_=pending_cancel.order_uuid)
+            result = await broker.cancel_order(uuid_=pending_cancel.order_uuid)
         except UpbitAPIError as exc:
             await self._post_message(channel, self._format_upbit_error(exc))
             return
@@ -764,13 +766,13 @@ class SlackSocketService:
     async def _submit_order(self, pending: PendingOrder) -> dict[str, Any]:
         if pending.side == "bid":
             if pending.order_type == "market":
-                return await upbit_client.create_order(
+                return await broker.create_order(
                     market=pending.market,
                     side="bid",
                     ord_type="price",
                     price=self._fmt_number(pending.amount_krw or 0),
                 )
-            return await upbit_client.create_order(
+            return await broker.create_order(
                 market=pending.market,
                 side="bid",
                 ord_type="limit",
@@ -779,13 +781,13 @@ class SlackSocketService:
             )
 
         if pending.order_type == "market":
-            return await upbit_client.create_order(
+            return await broker.create_order(
                 market=pending.market,
                 side="ask",
                 ord_type="market",
                 volume=self._fmt_number(pending.volume or 0),
             )
-        return await upbit_client.create_order(
+        return await broker.create_order(
             market=pending.market,
             side="ask",
             ord_type="limit",
@@ -1057,7 +1059,7 @@ class SlackSocketService:
 
         valid_markets: set[str] | None = None
         try:
-            market_list = await upbit_client.get_markets()
+            market_list = await broker.get_markets()
             valid_markets = {
                 item.get("market")
                 for item in market_list
@@ -1072,7 +1074,7 @@ class SlackSocketService:
                 return {}, valid_markets
 
         try:
-            tickers = await upbit_client.get_ticker(markets)
+            tickers = await broker.get_ticker(markets)
         except UpbitAPIError as exc:
             logger.warning("Upbit ticker error: %s", exc)
             return {}, valid_markets
@@ -1293,7 +1295,7 @@ class SlackSocketService:
                 enriched.append(item)
                 continue
             try:
-                detail = await upbit_client.get_order(uuid_=uuid_)
+                detail = await broker.get_order(uuid_=uuid_)
             except UpbitAPIError:
                 enriched.append(item)
                 continue
