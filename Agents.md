@@ -16,8 +16,10 @@ Codex는 세션을 시작하거나 코드를 수정할 때 반드시 아래의 *
 - **In-Memory State 금지:** 전역 변수나 싱글턴 인스턴스(`app/core/state.py` 등)를 이용한 상태 관리를 완전히 배제하고, 모든 상태는 PostgreSQL(`bot_configs`, `positions`)을 신뢰할 수 있는 단일 출처(SSOT)로 사용합니다.
 - **프론트엔드 분리:** FastAPI 라우터는 순수한 JSON 데이터만 서빙(`dict` 또는 `Pydantic Model` 반환)해야 합니다. `Jinja2` 템플릿과 같은 서버 사이드 웹 렌더링 로직의 추가를 금지합니다.
 - **추상화 원칙 (Abstraction First):** 새로운 거래소(주식, 코인 등) 로직을 추가할 때는 반드시 `BaseBrokerClient` 와 같은 공통 인터페이스를 상속받아 구현해야 하며, 특정 거래소에 종속된 코드를 비즈니스 로직(Service/API) 레이어에 하드코딩하지 않습니다.
+- **포트폴리오 집계 (단일 진실 공급원):** 거래소 잔고와 수익률 등 자산 정보 조회는 오직 `app/services/portfolio/aggregator.py`의 `PortfolioService`를 통해서만 접근하며, 파편화된 개별 API 호출을 금지합니다.
 
 ## 3. 작업 수행 가이드 (Execution Workflow)
+- **현재 컨텍스트 (Current Context):** Phase 1(DB 설계), Phase 2(상태 마이그레이션), Phase 3(거래소 추상화), Phase 4(포트폴리오 통합)가 **100% 완료된 상태**입니다. 이제 백엔드의 핵심 구조는 불변으로 취급하며, 프론트엔드 분리 작업(Phase 5)으로 나아갑니다.
 - **범위 엄수:** Gemini가 제공한 [Task] 지시서의 목표를 정확히 수행하되, 묻지 않은 과도한 리팩토링이나 오버엔지니어링(Over-engineering)을 자제하십시오.
 - **안전 중단:** 워크트리에 알 수 없는 변경이 있거나, 지시를 수행하기에 앞서 심각한 아키텍처 결함이 예상되면 코딩을 즉각 멈추고 사용자에게 보고하십시오.
 
