@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,6 +9,9 @@ from app.db.repository import get_or_create_bot_config
 from app.db.session import AsyncSessionLocal
 from app.services.slack_socket import slack_socket_service
 from app.services.telegram_bot import telegram_bot
+from app.services.trading.engine import TradingEngine
+
+trading_engine = TradingEngine(AsyncSessionLocal)
 
 
 def create_app() -> FastAPI:
@@ -28,9 +33,11 @@ def create_app() -> FastAPI:
             await get_or_create_bot_config(db)
         await telegram_bot.start()
         await slack_socket_service.start()
+        asyncio.create_task(trading_engine.run_loop())
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:
+        trading_engine._is_running = False
         await telegram_bot.stop()
         await slack_socket_service.stop()
 
