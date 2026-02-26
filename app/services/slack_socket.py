@@ -14,7 +14,7 @@ from app.services.bot_service import get_bot_status, start_bot, stop_bot
 from app.services.brokers.factory import BrokerFactory
 from app.services.brokers.upbit import UpbitAPIError
 from app.services.portfolio.aggregator import PortfolioService
-from app.services.slack_blocks import build_portfolio_blocks
+from app.services.slack_blocks import build_portfolio_blocks, build_error_blocks
 
 logger = logging.getLogger(__name__)
 broker = BrokerFactory.get_broker("UPBIT")
@@ -261,6 +261,10 @@ class SlackSocketService:
             await self._send_balance(channel)
             return
 
+        if cmd in ("비상버튼", "/비상버튼"):
+            await self._send_emergency_buttons(channel)
+            return
+
         await self._post_message(channel, self._err("형식", "지원하지 않는 명령입니다. 'help'를 입력하세요."))
 
     async def _send_help(self, channel: str) -> None:
@@ -310,6 +314,17 @@ class SlackSocketService:
             await self._post_message(
                 channel,
                 self._err("잔고", "잔고 조회 중 오류가 발생했습니다."),
+            )
+
+    async def _send_emergency_buttons(self, channel: str) -> None:
+        try:
+            blocks = build_error_blocks("수동 비상 조치 버튼이 호출되었습니다.")
+            await self._post_message(channel, "비상 조치 버튼", blocks=blocks)
+        except Exception:
+            logger.exception("비상 버튼 블록 메시지 생성 또는 전송 중 오류가 발생했습니다.")
+            await self._post_message(
+                channel,
+                self._err("비상버튼", "비상 버튼 카드 생성 중 오류가 발생했습니다."),
             )
 
     def _format_runtime_status(self, status: Any) -> str:
