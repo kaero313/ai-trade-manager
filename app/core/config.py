@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     slack_signing_secret: str | None = None
     slack_allowed_user_ids: str | None = None
     slack_trade_channel_ids: str | None = None
+    OPENAI_API_KEY: str | None = None
 
     postgres_user: str = "postgres"
     postgres_password: str = "postgres"
