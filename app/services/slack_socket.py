@@ -7,14 +7,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select
 
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
-from app.models.domain import Asset, Position
 from app.services.bot_service import get_bot_status, start_bot, stop_bot
 from app.services.brokers.factory import BrokerFactory
 from app.services.brokers.upbit import UpbitAPIError
+from app.services.portfolio.aggregator import PortfolioService
+from app.services.slack_blocks import build_portfolio_blocks
 
 logger = logging.getLogger(__name__)
 broker = BrokerFactory.get_broker("UPBIT")
@@ -291,37 +291,19 @@ class SlackSocketService:
         async with AsyncSessionLocal() as db:
             status = await get_bot_status(db)
         await self._post_message(channel, self._format_runtime_status(status))
-
     async def _send_balance(self, channel: str) -> None:
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(Position, Asset)
-                .join(Asset, Position.asset_id == Asset.id)
-                .order_by(Position.updated_at.desc())
+        try:
+            async with AsyncSessionLocal() as db:
+                portfolio_service = PortfolioService(db)
+                summary = await portfolio_service.get_aggregated_portfolio()
+            blocks = build_portfolio_blocks(summary)
+            await self._post_message(channel, "잔고 알림", blocks=blocks)
+        except Exception:
+            logger.exception("잔고 블록 메시지 생성 또는 전송 중 오류가 발생했습니다.")
+            await self._post_message(
+                channel,
+                self._err("잔고", "잔고 조회 중 오류가 발생했습니다."),
             )
-            rows = result.all()
-
-        if not rows:
-            await self._post_message(channel, "DB에 저장된 포지션이 없습니다.")
-            return
-
-        lines = ["[DB 포지션 잔고]"]
-        for position, asset in rows:
-            if position.quantity <= 0:
-                continue
-            base_currency = asset.base_currency or "KRW"
-            avg_entry = self._format_currency_amount(position.avg_entry_price, base_currency)
-            updated_at = position.updated_at.isoformat() if position.updated_at else "-"
-            lines.append(
-                f"{asset.symbol}: 수량 {self._fmt_amount(position.quantity)}"
-                f" | 평균진입가 {avg_entry} {base_currency}"
-                f" | 상태 {position.status}"
-                f" | 업데이트 {updated_at}"
-            )
-
-        if len(lines) == 1:
-            lines.append("DB에 저장된 포지션이 없습니다.")
-        await self._post_message(channel, "\n".join(lines))
 
     def _format_runtime_status(self, status: Any) -> str:
         heartbeat = status.last_heartbeat or "-"
@@ -1161,12 +1143,24 @@ class SlackSocketService:
             detail_lines.append("보유 코인이 없습니다.")
 
         return summary_lines + [""] + detail_lines
-
-    async def _post_message(self, channel: str, text: str) -> None:
+    async def _post_message(
+        self,
+        channel: str,
+        text: str,
+        blocks: list[dict] | None = None,
+    ) -> None:
         if not self._web_client:
             logger.warning("Slack web client not ready")
             return
-        await self._web_client.chat_postMessage(channel=channel, text=text)
+
+        payload: dict[str, Any] = {
+            "channel": channel,
+            "text": text,
+        }
+        if blocks is not None:
+            payload["blocks"] = blocks
+
+        await self._web_client.chat_postMessage(**payload)
 
     @staticmethod
     def _err(category: str, message: str) -> str:
