@@ -101,6 +101,13 @@ class SlackSocketService:
         )
 
         async def _process(client: Any, req: Any) -> None:
+            if req.type == "interactive":
+                await client.send_socket_mode_response(
+                    SocketModeResponse(envelope_id=req.envelope_id)
+                )
+                await self._handle_interactive(req.payload or {})
+                return
+
             if req.type in ("events_api", "slash_commands", "interactive"):
                 await client.send_socket_mode_response(
                     SocketModeResponse(envelope_id=req.envelope_id)
@@ -1425,6 +1432,10 @@ class SlackSocketService:
                 value,
             )
         )
+
+    async def _handle_interactive(self, payload: dict[str, Any]) -> None:
+        _ = payload
+        return
 
 
 slack_socket_service = SlackSocketService()
