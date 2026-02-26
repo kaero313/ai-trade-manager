@@ -1434,8 +1434,82 @@ class SlackSocketService:
         )
 
     async def _handle_interactive(self, payload: dict[str, Any]) -> None:
-        _ = payload
-        return
+        actions = payload.get("actions") or []
+        if not isinstance(actions, list):
+            logger.warning("Invalid interactive payload: actions is not a list")
+            return
+
+        channel_obj = payload.get("channel") or {}
+        container_obj = payload.get("container") or {}
+        channel = (
+            channel_obj.get("id")
+            or container_obj.get("channel_id")
+            or ""
+        )
+        if not channel:
+            logger.warning("Interactive payload missing channel id")
+            return
+
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            action_id = str(action.get("action_id") or "").strip()
+            if not action_id:
+                continue
+
+            if action_id == "emergency_stop":
+                try:
+                    async with AsyncSessionLocal() as db:
+                        await stop_bot(db)
+                    await self._post_message(channel, "비상 정지 명령 수신. 봇 정지 완료.")
+                except Exception:
+                    logger.exception("Emergency stop 처리 중 오류가 발생했습니다.")
+                continue
+
+            if action_id == "emergency_liquidate":
+                try:
+                    async with AsyncSessionLocal() as db:
+                        await stop_bot(db)
+                except Exception:
+                    logger.exception("Liquidate 처리 중 stop_bot 실행에 실패했습니다.")
+
+                try:
+                    accounts = await broker.get_accounts()
+                    for account in accounts:
+                        currency = str(account.get("currency") or "").upper()
+                        if not currency or currency == "KRW":
+                            continue
+
+                        balance = self._to_float(account.get("balance"))
+                        locked = self._to_float(account.get("locked"))
+                        available_qty = max(balance - locked, 0.0)
+                        if available_qty <= 0:
+                            continue
+
+                        market = f"KRW-{currency}"
+                        try:
+                            await broker.create_order(
+                                market=market,
+                                side="ask",
+                                ord_type="market",
+                                volume=self._fmt_number(available_qty),
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Liquidate 시장가 매도 실패: market=%s qty=%s",
+                                market,
+                                available_qty,
+                            )
+                except Exception:
+                    logger.exception("Liquidate 잔고 조회/매도 파이프라인 처리 중 오류가 발생했습니다.")
+
+                await self._post_message(
+                    channel,
+                    "🔥 전량 시장가 매도(Liquidate) 파이프라인 가동 및 봇 정지 완료.",
+                )
+                continue
+
+            logger.info("Unsupported interactive action_id: %s", action_id)
 
 
 slack_socket_service = SlackSocketService()
