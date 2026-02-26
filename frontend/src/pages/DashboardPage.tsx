@@ -42,8 +42,9 @@ function DashboardPage() {
         if (!isMounted) return
         setErrorMessage('대시보드 데이터를 불러오지 못했습니다.')
       } finally {
-        if (!isMounted) return
-        setIsLoading(false)
+        if (isMounted) {
+          setIsLoading(false)
+        }
       }
     }
 
