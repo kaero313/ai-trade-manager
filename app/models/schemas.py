@@ -23,12 +23,23 @@ class ScheduleParams(BaseModel):
     end_hour: int | None = None
 
 
+class GridParams(BaseModel):
+    target_coin: str = "BTC"
+    grid_upper_bound: float = 100000000.0
+    grid_lower_bound: float = 80000000.0
+    grid_order_krw: float = 10000.0
+    grid_sell_pct: float = 100.0
+    grid_cooldown_seconds: int = 60
+    trade_mode: str = "grid"
+
+
 class BotConfig(BaseModel):
     symbols: list[str] = Field(default_factory=lambda: ["KRW-BTC"])
     allocation_pct_per_symbol: list[float] = Field(default_factory=lambda: [1.0])
     strategy: StrategyParams = StrategyParams()
     risk: RiskParams = RiskParams()
     schedule: ScheduleParams = ScheduleParams()
+    grid: GridParams = Field(default_factory=GridParams)
 
 
 class BotStatus(BaseModel):
