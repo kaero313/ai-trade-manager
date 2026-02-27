@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 
 import ControlPanel from '../components/trading/ControlPanel'
 import GridConfigPanel from '../components/trading/GridConfigPanel'
+import RecentOrders from '../components/trading/RecentOrders'
 import { fetchConfig, getBotStatus, updateConfig } from '../services/botService'
 import type { BotConfig, BotStatus, GridParams } from '../services/botService'
-import { getPortfolioSummary } from '../services/portfolioService'
-import type { AssetItem, PortfolioSummary } from '../services/portfolioService'
+import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
+import type { AssetItem, OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
 
 function formatKrw(value: number): string {
   return `₩${new Intl.NumberFormat('ko-KR').format(Math.round(value))}`
@@ -25,10 +26,13 @@ function DashboardPage() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
   const [botConfig, setBotConfig] = useState<BotConfig | null>(null)
+  const [orders, setOrders] = useState<OrderHistoryItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isConfigLoading, setIsConfigLoading] = useState(true)
+  const [isOrdersLoading, setIsOrdersLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [configErrorMessage, setConfigErrorMessage] = useState<string | null>(null)
+  const [ordersErrorMessage, setOrdersErrorMessage] = useState<string | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -36,13 +40,16 @@ function DashboardPage() {
     const loadDashboard = async () => {
       setIsLoading(true)
       setIsConfigLoading(true)
+      setIsOrdersLoading(true)
       setErrorMessage(null)
       setConfigErrorMessage(null)
+      setOrdersErrorMessage(null)
 
-      const [portfolioResult, botStatusResult, configResult] = await Promise.allSettled([
+      const [portfolioResult, botStatusResult, configResult, ordersResult] = await Promise.allSettled([
         getPortfolioSummary(),
         getBotStatus(),
         fetchConfig(),
+        fetchOrders(),
       ])
 
       if (!isMounted) {
@@ -60,6 +67,9 @@ function DashboardPage() {
       if (configResult.status === 'fulfilled') {
         setBotConfig(configResult.value)
       }
+      if (ordersResult.status === 'fulfilled') {
+        setOrders(ordersResult.value)
+      }
 
       if (portfolioResult.status === 'rejected' || botStatusResult.status === 'rejected') {
         setErrorMessage('대시보드 데이터를 불러오지 못했습니다.')
@@ -68,9 +78,13 @@ function DashboardPage() {
       if (configResult.status === 'rejected') {
         setConfigErrorMessage('그리드 설정을 불러오지 못했습니다. 기본값으로 표시됩니다.')
       }
+      if (ordersResult.status === 'rejected') {
+        setOrdersErrorMessage('최근 체결 내역을 불러오지 못했습니다.')
+      }
 
       setIsLoading(false)
       setIsConfigLoading(false)
+      setIsOrdersLoading(false)
     }
 
     void loadDashboard()
@@ -197,6 +211,8 @@ function DashboardPage() {
             </table>
           </div>
         </section>
+
+        <RecentOrders orders={orders} isLoading={isOrdersLoading} errorMessage={ordersErrorMessage} />
       </div>
 
       <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
