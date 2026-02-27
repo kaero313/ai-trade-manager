@@ -32,7 +32,10 @@ class TradingEngine:
                         config_json = bot_config.config_json if bot_config else {}
                         if not isinstance(config_json, dict):
                             config_json = {}
-                        trade_mode = str(config_json.get("trade_mode", "grid"))
+                        grid_config = config_json.get("grid", {})
+                        if not isinstance(grid_config, dict):
+                            grid_config = {}
+                        trade_mode = str(grid_config.get("trade_mode", config_json.get("trade_mode", "grid")))
 
                         if not is_active:
                             logger.info("봇이 일시 정지 상태입니다.")
@@ -53,15 +56,13 @@ class TradingEngine:
 
     async def _check_and_execute_grid(self, db: AsyncSession, config: BotConfig) -> None:
         config_json = config.config_json if isinstance(config.config_json, dict) else {}
+        grid_config = config_json.get("grid", {})
+        if not isinstance(grid_config, dict):
+            grid_config = {}
 
-        target_coin = getattr(config, "target_coin", None) or config_json.get("target_coin")
-        upper_bound_raw = getattr(config, "grid_upper_bound", None)
-        lower_bound_raw = getattr(config, "grid_lower_bound", None)
-
-        if upper_bound_raw is None:
-            upper_bound_raw = config_json.get("grid_upper_bound")
-        if lower_bound_raw is None:
-            lower_bound_raw = config_json.get("grid_lower_bound")
+        target_coin = grid_config.get("target_coin", config_json.get("target_coin"))
+        upper_bound_raw = grid_config.get("grid_upper_bound", config_json.get("grid_upper_bound"))
+        lower_bound_raw = grid_config.get("grid_lower_bound", config_json.get("grid_lower_bound"))
 
         if not target_coin or upper_bound_raw is None or lower_bound_raw is None:
             logger.warning(
@@ -104,7 +105,9 @@ class TradingEngine:
             return
 
         now_utc = datetime.now(timezone.utc)
-        cooldown_until = self._parse_datetime(config_json.get("grid_cooldown_until"))
+        cooldown_until = self._parse_datetime(
+            grid_config.get("grid_cooldown_until", config_json.get("grid_cooldown_until"))
+        )
         if cooldown_until is not None and cooldown_until > now_utc:
             logger.info("그리드 주문 쿨타임 적용 중입니다. next_order_at=%s", cooldown_until.isoformat())
             return
@@ -119,7 +122,7 @@ class TradingEngine:
             return
 
         order_result: dict[str, Any]
-        order_krw = self._to_float(config_json.get("grid_order_krw", 10000))
+        order_krw = self._to_float(grid_config.get("grid_order_krw", config_json.get("grid_order_krw", 10000)))
         sell_volume = 0.0
 
         try:
@@ -142,7 +145,9 @@ class TradingEngine:
                     logger.warning("매도 가능한 잔고가 없습니다: coin=%s", str(target_coin).upper())
                     return
 
-                sell_pct_raw = self._to_float(config_json.get("grid_sell_pct", 1.0))
+                sell_pct_raw = self._to_float(
+                    grid_config.get("grid_sell_pct", config_json.get("grid_sell_pct", 1.0))
+                )
                 sell_ratio = sell_pct_raw / 100.0 if sell_pct_raw > 1 else sell_pct_raw
                 sell_ratio = min(max(sell_ratio, 0.0), 1.0)
                 if sell_ratio <= 0:
@@ -196,12 +201,21 @@ class TradingEngine:
             )
             db.add(history)
 
-            cooldown_seconds = int(self._to_float(config_json.get("grid_cooldown_seconds", 30)))
+            cooldown_seconds = int(
+                self._to_float(
+                    grid_config.get("grid_cooldown_seconds", config_json.get("grid_cooldown_seconds", 30))
+                )
+            )
             cooldown_seconds = max(cooldown_seconds, 1)
             next_cooldown = now_utc + timedelta(seconds=cooldown_seconds)
 
             updated_config = dict(config_json)
-            updated_config["grid_cooldown_until"] = next_cooldown.isoformat()
+            updated_grid = updated_config.get("grid", {})
+            if not isinstance(updated_grid, dict):
+                updated_grid = {}
+            updated_grid = dict(updated_grid)
+            updated_grid["grid_cooldown_until"] = next_cooldown.isoformat()
+            updated_config["grid"] = updated_grid
             config.config_json = updated_config
 
             await db.commit()
