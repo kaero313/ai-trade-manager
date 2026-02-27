@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import ControlPanel from '../components/trading/ControlPanel'
 import GridConfigPanel from '../components/trading/GridConfigPanel'
+import PortfolioChart from '../components/trading/PortfolioChart'
 import RecentOrders from '../components/trading/RecentOrders'
 import { fetchConfig, getBotStatus, updateConfig } from '../services/botService'
 import type { BotConfig, BotStatus, GridParams } from '../services/botService'
@@ -145,6 +146,8 @@ function DashboardPage() {
             </p>
           </article>
         </section>
+
+        <PortfolioChart items={assets} isLoading={isLoading} />
 
         <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
           <div className="flex items-center justify-between">
