@@ -1,6 +1,5 @@
 ﻿from fastapi import APIRouter
 
-from app.api.routes.bot import router as bot_router
 from app.api.routes.ai import router as ai_router
 from app.api.routes.config import router as config_router
 from app.api.routes.dashboard import router as dashboard_router
@@ -16,7 +15,6 @@ api_router.include_router(health_router)
 api_router.include_router(dashboard_router)
 api_router.include_router(status_router)
 api_router.include_router(config_router)
-api_router.include_router(bot_router)
 api_router.include_router(positions_router)
 api_router.include_router(orders_router)
 api_router.include_router(upbit_router)
