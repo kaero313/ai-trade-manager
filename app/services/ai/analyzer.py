@@ -1,7 +1,17 @@
+from app.services.ai.providers.base import BaseAIAnalyzer
+from app.services.ai.providers.gemini import GeminiAnalyzer
 from app.services.ai.providers.openai import OpenAIAnalyzer
 
-_analyzer = OpenAIAnalyzer()
 
+class AIAnalyzerFactory:
+    @staticmethod
+    def get_analyzer(provider: str) -> BaseAIAnalyzer:
+        normalized = (provider or "").strip().lower()
 
-async def generate_portfolio_report(portfolio_str: str) -> str:
-    return await _analyzer.generate_report(portfolio_str)
+        if normalized == "gemini":
+            return GeminiAnalyzer()
+
+        if normalized == "openai":
+            return OpenAIAnalyzer()
+
+        return OpenAIAnalyzer()
