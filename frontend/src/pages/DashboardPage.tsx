@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 
 import ControlPanel from '../components/trading/ControlPanel'
-import { getBotStatus } from '../services/botService'
-import type { BotStatus } from '../services/botService'
+import GridConfigPanel from '../components/trading/GridConfigPanel'
+import { fetchConfig, getBotStatus, updateConfig } from '../services/botService'
+import type { BotConfig, BotStatus, GridParams } from '../services/botService'
 import { getPortfolioSummary } from '../services/portfolioService'
 import type { AssetItem, PortfolioSummary } from '../services/portfolioService'
 
@@ -23,29 +24,53 @@ function formatPercent(value: number): string {
 function DashboardPage() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
+  const [botConfig, setBotConfig] = useState<BotConfig | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isConfigLoading, setIsConfigLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [configErrorMessage, setConfigErrorMessage] = useState<string | null>(null)
 
   useEffect(() => {
     let isMounted = true
 
     const loadDashboard = async () => {
       setIsLoading(true)
+      setIsConfigLoading(true)
       setErrorMessage(null)
+      setConfigErrorMessage(null)
 
-      try {
-        const [portfolioData, botStatusData] = await Promise.all([getPortfolioSummary(), getBotStatus()])
-        if (!isMounted) return
-        setPortfolio(portfolioData)
-        setBotStatus(botStatusData)
-      } catch {
-        if (!isMounted) return
-        setErrorMessage('대시보드 데이터를 불러오지 못했습니다.')
-      } finally {
-        if (isMounted) {
-          setIsLoading(false)
-        }
+      const [portfolioResult, botStatusResult, configResult] = await Promise.allSettled([
+        getPortfolioSummary(),
+        getBotStatus(),
+        fetchConfig(),
+      ])
+
+      if (!isMounted) {
+        return
       }
+
+      if (portfolioResult.status === 'fulfilled') {
+        setPortfolio(portfolioResult.value)
+      }
+
+      if (botStatusResult.status === 'fulfilled') {
+        setBotStatus(botStatusResult.value)
+      }
+
+      if (configResult.status === 'fulfilled') {
+        setBotConfig(configResult.value)
+      }
+
+      if (portfolioResult.status === 'rejected' || botStatusResult.status === 'rejected') {
+        setErrorMessage('대시보드 데이터를 불러오지 못했습니다.')
+      }
+
+      if (configResult.status === 'rejected') {
+        setConfigErrorMessage('그리드 설정을 불러오지 못했습니다. 기본값으로 표시됩니다.')
+      }
+
+      setIsLoading(false)
+      setIsConfigLoading(false)
     }
 
     void loadDashboard()
@@ -67,6 +92,19 @@ function DashboardPage() {
 
   const handleStatusChange = (nextStatus: BotStatus) => {
     setBotStatus(nextStatus)
+  }
+
+  const handleSaveGrid = async (grid: GridParams) => {
+    const nextPayload: BotConfig = {
+      ...(botConfig ?? {}),
+      grid: {
+        ...grid,
+        trade_mode: 'grid',
+      },
+    }
+    const savedConfig = await updateConfig(nextPayload)
+    setBotConfig(savedConfig)
+    setConfigErrorMessage(null)
   }
 
   return (
@@ -161,8 +199,14 @@ function DashboardPage() {
         </section>
       </div>
 
-      <div className="xl:sticky xl:top-24 xl:self-start">
+      <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
         <ControlPanel isRunning={isRunning} onStatusChange={handleStatusChange} />
+        <GridConfigPanel
+          config={botConfig}
+          isLoading={isConfigLoading}
+          loadError={configErrorMessage}
+          onSave={handleSaveGrid}
+        />
       </div>
     </div>
   )
