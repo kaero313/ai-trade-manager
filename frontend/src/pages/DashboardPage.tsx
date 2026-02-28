@@ -37,8 +37,10 @@ function DashboardPage() {
 
   useEffect(() => {
     let isMounted = true
+    let isPolling = false
+    let pollingIntervalId: number | undefined
 
-    const loadDashboard = async () => {
+    const loadDashboardInitial = async () => {
       setIsLoading(true)
       setIsConfigLoading(true)
       setIsOrdersLoading(true)
@@ -88,10 +90,63 @@ function DashboardPage() {
       setIsOrdersLoading(false)
     }
 
-    void loadDashboard()
+    const refreshDashboardSilent = async () => {
+      if (isPolling) {
+        return
+      }
+
+      isPolling = true
+      try {
+        const [portfolioResult, botStatusResult, ordersResult] = await Promise.allSettled([
+          getPortfolioSummary(),
+          getBotStatus(),
+          fetchOrders(),
+        ])
+
+        if (!isMounted) {
+          return
+        }
+
+        if (portfolioResult.status === 'fulfilled') {
+          setPortfolio(portfolioResult.value)
+        } else {
+          console.warn('[Dashboard polling] portfolio refresh failed', portfolioResult.reason)
+        }
+
+        if (botStatusResult.status === 'fulfilled') {
+          setBotStatus(botStatusResult.value)
+        } else {
+          console.warn('[Dashboard polling] bot status refresh failed', botStatusResult.reason)
+        }
+
+        if (ordersResult.status === 'fulfilled') {
+          setOrders(ordersResult.value)
+        } else {
+          console.warn('[Dashboard polling] orders refresh failed', ordersResult.reason)
+        }
+      } finally {
+        isPolling = false
+      }
+    }
+
+    const bootstrap = async () => {
+      await loadDashboardInitial()
+      if (!isMounted) {
+        return
+      }
+
+      pollingIntervalId = window.setInterval(() => {
+        void refreshDashboardSilent()
+      }, 10000)
+    }
+
+    void bootstrap()
 
     return () => {
       isMounted = false
+      if (pollingIntervalId !== undefined) {
+        window.clearInterval(pollingIntervalId)
+      }
     }
   }, [])
 
