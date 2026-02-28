@@ -10,6 +10,9 @@ from app.services.brokers.upbit import UpbitAPIError
 
 logger = logging.getLogger(__name__)
 
+BUY_FEE_MULTIPLIER = 1.0005
+SELL_FEE_MULTIPLIER = 0.9995
+
 
 def _to_float(value: Any) -> float:
     try:
@@ -67,24 +70,24 @@ class PortfolioService:
 
                 if currency == "KRW":
                     current_price = 1.0
-                    avg_buy_price = raw_avg_buy_price if raw_avg_buy_price > 0 else 1.0
+                    avg_buy_price = 1.0
+                    invested = qty
+                    total_value = qty
+                    pnl_amount = 0.0
+                    pnl_percentage = 0.0
                 else:
                     market = f"KRW-{currency}"
                     current_price = ticker_map.get(market, 0.0)
                     avg_buy_price = raw_avg_buy_price
 
-                invested = qty * avg_buy_price
-                total_value = qty * current_price
-                pnl_amount = total_value - invested
+                    invested = qty * avg_buy_price * BUY_FEE_MULTIPLIER
+                    total_value = qty * current_price * SELL_FEE_MULTIPLIER
+                    pnl_amount = total_value - invested
 
-                try:
-                    pnl_percentage = (
-                        ((current_price - avg_buy_price) / avg_buy_price) * 100.0
-                        if avg_buy_price > 0
-                        else 0.0
-                    )
-                except ZeroDivisionError:
-                    pnl_percentage = 0.0
+                    try:
+                        pnl_percentage = (pnl_amount / invested) * 100.0 if invested > 0 else 0.0
+                    except ZeroDivisionError:
+                        pnl_percentage = 0.0
 
                 items.append(
                     AssetItem(
