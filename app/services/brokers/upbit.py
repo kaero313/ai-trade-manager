@@ -1,4 +1,4 @@
-﻿import hashlib
+import hashlib
 import logging
 import uuid
 from typing import Any
@@ -6,6 +6,7 @@ from urllib.parse import unquote, urlencode
 
 import httpx
 import jwt
+from tenacity import RetryCallState, retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from app.core.config import settings
 from app.services.brokers.base import BaseBrokerClient
@@ -35,6 +36,45 @@ class UpbitAPIError(Exception):
             payload["message"] = self.message
         payload["detail"] = self.detail
         return payload
+
+
+def _is_retryable_api_exception(exc: BaseException) -> bool:
+    if isinstance(exc, httpx.RequestError):
+        return True
+
+    if isinstance(exc, UpbitAPIError):
+        return exc.status_code == 429 or 500 <= exc.status_code < 600
+
+    return False
+
+
+def _is_retryable_order_exception(exc: BaseException) -> bool:
+    return isinstance(exc, httpx.TimeoutException)
+
+
+def _log_retry_warning(retry_state: RetryCallState) -> None:
+    exception = retry_state.outcome.exception() if retry_state.outcome else None
+    if exception is None:
+        return
+
+    function_name = retry_state.fn.__name__ if retry_state.fn else "unknown"
+    next_sleep = retry_state.next_action.sleep if retry_state.next_action else None
+    if next_sleep is None:
+        logger.warning(
+            "Upbit API 재시도 예정: fn=%s attempt=%s error=%s",
+            function_name,
+            retry_state.attempt_number,
+            exception,
+        )
+        return
+
+    logger.warning(
+        "Upbit API 재시도 예정: fn=%s attempt=%s error=%s next_wait=%.1fs",
+        function_name,
+        retry_state.attempt_number,
+        exception,
+        next_sleep,
+    )
 
 
 def _normalize_params(params: dict[str, Any] | list[tuple[str, Any]] | None) -> list[tuple[str, Any]]:
@@ -195,6 +235,13 @@ class UpbitBroker(BaseBrokerClient):
             auth=False,
         )
 
+    @retry(
+        retry=retry_if_exception(_is_retryable_api_exception),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        stop=stop_after_attempt(5),
+        before_sleep=_log_retry_warning,
+        reraise=True,
+    )
     async def get_ticker(self, markets: list[str]) -> list[dict[str, Any]]:
         joined = ",".join(markets)
         return await self._request(
@@ -204,6 +251,13 @@ class UpbitBroker(BaseBrokerClient):
             auth=False,
         )
 
+    @retry(
+        retry=retry_if_exception(_is_retryable_api_exception),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        stop=stop_after_attempt(5),
+        before_sleep=_log_retry_warning,
+        reraise=True,
+    )
     async def get_accounts(self) -> list[dict[str, Any]]:
         return await self._request("GET", "/v1/accounts", auth=True)
 
@@ -260,6 +314,13 @@ class UpbitBroker(BaseBrokerClient):
         }
         return await self._request("GET", "/v1/orders/uuids", params=params, auth=True)
 
+    @retry(
+        retry=retry_if_exception(_is_retryable_order_exception),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        stop=stop_after_attempt(5),
+        before_sleep=_log_retry_warning,
+        reraise=True,
+    )
     async def create_order(
         self,
         market: str,
@@ -279,6 +340,13 @@ class UpbitBroker(BaseBrokerClient):
         }
         return await self._request("POST", "/v1/orders", json=payload, auth=True)
 
+    @retry(
+        retry=retry_if_exception(_is_retryable_api_exception),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        stop=stop_after_attempt(5),
+        before_sleep=_log_retry_warning,
+        reraise=True,
+    )
     async def cancel_order(self, uuid_: str | None = None, identifier: str | None = None) -> Any:
         if not uuid_ and not identifier:
             raise ValueError("uuid_ or identifier is required")
