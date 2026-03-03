@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,10 +8,11 @@ from app.api.router import api_router
 from app.core.logging import configure_logging
 from app.db.repository import get_or_create_bot_config
 from app.db.session import AsyncSessionLocal
-from app.services.slack_socket import slack_socket_service
+from app.services.slack_bot import slack_bot
 from app.services.telegram_bot import telegram_bot
 from app.services.trading.engine import TradingEngine
 
+logger = logging.getLogger(__name__)
 trading_engine = TradingEngine(AsyncSessionLocal)
 
 
@@ -32,14 +34,16 @@ def create_app() -> FastAPI:
         async with AsyncSessionLocal() as db:
             await get_or_create_bot_config(db)
         await telegram_bot.start()
-        await slack_socket_service.start()
+        slack_bot.start()
+        if not slack_bot.enabled:
+            logger.info("SlackBot 패스: SLACK_BOT_TOKEN/SLACK_APP_TOKEN/SLACK_ALLOWED_USER_ID 미설정")
         asyncio.create_task(trading_engine.run_loop())
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:
         trading_engine._is_running = False
         await telegram_bot.stop()
-        await slack_socket_service.stop()
+        slack_bot.stop()
 
     return app
 

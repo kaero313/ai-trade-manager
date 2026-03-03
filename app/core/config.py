@@ -15,6 +15,9 @@ class Settings(BaseSettings):
 
     slack_webhook_url: str | None = None
     slack_timeout: float = 10.0
+    SLACK_BOT_TOKEN: str = ""
+    SLACK_APP_TOKEN: str = ""
+    SLACK_ALLOWED_USER_ID: str = ""
     slack_bot_token: str | None = None
     slack_app_token: str | None = None
     slack_signing_secret: str | None = None
@@ -38,7 +41,7 @@ class Settings(BaseSettings):
         )
 
     model_config = SettingsConfigDict(
-        env_file=(".env.prod", ".env.local"),
+        env_file=(".env", ".env.prod", ".env.local"),
         env_file_encoding="utf-8",
     )
 
