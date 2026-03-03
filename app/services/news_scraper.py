@@ -88,10 +88,10 @@ def _cache_is_valid(snapshot: dict[str, Any], now_utc: datetime) -> bool:
     return now_utc - fetched_at < timedelta(seconds=CACHE_TTL_SECONDS)
 
 
-def fetch_crypto_news() -> dict[str, Any]:
+def fetch_crypto_news(force_refresh: bool = False) -> dict[str, Any]:
     now_utc = datetime.now(timezone.utc)
     snapshot = _snapshot_cache()
-    if _cache_is_valid(snapshot, now_utc):
+    if not force_refresh and _cache_is_valid(snapshot, now_utc):
         return {
             "items": snapshot["items"],
             "analysis_completed_at": snapshot.get("analysis_completed_at") or now_utc.isoformat(),
