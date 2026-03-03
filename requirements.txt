@@ -1,2 +1,3 @@
 -e .
 slack-bolt>=1.20.0
+apscheduler>=3.10.4
