@@ -9,15 +9,22 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models.domain import Asset, BotConfig, OrderHistory, Position
 from app.models.schemas import BotConfig as BotConfigSchema
 from app.services.brokers.factory import BrokerFactory
-from app.services.brokers.upbit import UpbitAPIError
+from app.services.brokers.upbit import (
+    UpbitAPIError,
+    format_upbit_critical_message,
+    is_critical_upbit_error,
+)
+from app.services.slack_bot import slack_bot
 
 logger = logging.getLogger(__name__)
+CRITICAL_ALERT_COOLDOWN_SECONDS = 60
 
 
 class TradingEngine:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self.session_factory = session_factory
         self._is_running = True
+        self._critical_alerts: dict[str, datetime] = {}
 
     async def run_loop(self) -> None:
         logger.info("TradingEngine run_loop 시작")
@@ -137,9 +144,20 @@ class TradingEngine:
                 logger.info("매도 조건 달성 로그: market=%s current_price=%s", market, current_price)
         except UpbitAPIError as exc:
             logger.exception("주문 실행 실패(UpbitAPIError): market=%s side=%s error=%s", market, signal_side, exc)
+            if is_critical_upbit_error(exc):
+                await self._notify_critical_error(
+                    key=f"upbit:{exc.status_code}:{exc.error_name}:{exc.message}",
+                    message=format_upbit_critical_message(exc),
+                )
             return
-        except Exception:
+        except Exception as exc:
             logger.exception("주문 실행 중 예외가 발생했습니다: market=%s side=%s", market, signal_side)
+            generic_critical_message = self._resolve_generic_critical_message(exc)
+            if generic_critical_message:
+                await self._notify_critical_error(
+                    key=f"generic:{generic_critical_message}",
+                    message=generic_critical_message,
+                )
             return
 
         if not isinstance(order_result, dict):
@@ -181,6 +199,12 @@ class TradingEngine:
             config.config_json = updated_config
 
             await db.commit()
+            await self._notify_order_filled(
+                market=market,
+                side=signal_side,
+                qty=executed_qty,
+                price=executed_price,
+            )
         except Exception:
             await db.rollback()
             logger.exception("주문 성공 후 DB 기록 중 예외가 발생했습니다: market=%s side=%s", market, signal_side)
@@ -346,6 +370,11 @@ class TradingEngine:
             tickers = await broker.get_ticker([market])
         except UpbitAPIError as exc:
             logger.exception("현재가 조회 실패(UpbitAPIError): market=%s error=%s", market, exc)
+            if is_critical_upbit_error(exc):
+                await self._notify_critical_error(
+                    key=f"ticker:{exc.status_code}:{exc.error_name}:{exc.message}",
+                    message=format_upbit_critical_message(exc),
+                )
             return None
         except Exception:
             logger.exception("현재가 조회 중 예외가 발생했습니다: market=%s", market)
@@ -387,3 +416,78 @@ class TradingEngine:
 
     def _fmt_number(self, value: float) -> str:
         return f"{value:.8f}".rstrip("0").rstrip(".") or "0"
+
+    async def _notify_order_filled(
+        self,
+        market: str,
+        side: str,
+        qty: float,
+        price: float,
+    ) -> None:
+        side_label = "매수 완료" if side == "buy" else "매도 완료"
+        coin = market.split("-", 1)[1] if "-" in market else market
+        qty_text = self._fmt_number(qty)
+        price_text = self._fmt_krw(price)
+        text = f"✅ [{side_label}] {coin} {qty_text} (가격: {price_text})"
+        blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*{side_label}*\n- 마켓: `{market}`\n- 수량: `{qty_text}`\n- 가격: `{price_text}`",
+                },
+            }
+        ]
+        await self._send_slack_message(text=text, blocks=blocks)
+
+    async def _notify_critical_error(self, key: str, message: str) -> None:
+        if not self._should_send_critical_alert(key):
+            return
+        text = f"🚨 [에러 발생] {message}"
+        blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"🚨 *치명적 에러 발생*\n{message}",
+                },
+            }
+        ]
+        await self._send_slack_message(text=text, blocks=blocks)
+
+    async def _send_slack_message(self, text: str, blocks: list[dict[str, Any]] | None = None) -> None:
+        try:
+            await asyncio.to_thread(slack_bot.send_message, text, blocks)
+        except Exception:
+            logger.exception("Slack 알림 전송 중 예외가 발생했습니다.")
+
+    def _should_send_critical_alert(self, key: str) -> bool:
+        now_utc = datetime.now(timezone.utc)
+        last_sent = self._critical_alerts.get(key)
+        if last_sent is not None:
+            elapsed = (now_utc - last_sent).total_seconds()
+            if elapsed < CRITICAL_ALERT_COOLDOWN_SECONDS:
+                return False
+
+        self._critical_alerts[key] = now_utc
+
+        stale_threshold = now_utc - timedelta(seconds=CRITICAL_ALERT_COOLDOWN_SECONDS * 5)
+        stale_keys = [item_key for item_key, sent_at in self._critical_alerts.items() if sent_at < stale_threshold]
+        for stale_key in stale_keys:
+            self._critical_alerts.pop(stale_key, None)
+        return True
+
+    def _resolve_generic_critical_message(self, error: Exception) -> str | None:
+        text = str(error).lower()
+        auth_keywords = ("access/secret key not configured", "api key", "access key", "secret key")
+        balance_keywords = ("insufficient", "insufficient_funds", "잔고", "부족")
+
+        if any(keyword in text for keyword in auth_keywords):
+            return "업비트 API 키 또는 권한 설정이 올바르지 않습니다."
+        if any(keyword in text for keyword in balance_keywords):
+            return "업비트 잔고가 부족합니다."
+        return None
+
+    @staticmethod
+    def _fmt_krw(value: float) -> str:
+        return f"{value:,.0f}원"

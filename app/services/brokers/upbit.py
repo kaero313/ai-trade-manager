@@ -38,6 +38,67 @@ class UpbitAPIError(Exception):
         return payload
 
 
+def _error_text(exc: UpbitAPIError) -> str:
+    parts = [
+        str(exc.error_name or ""),
+        str(exc.message or ""),
+        str(exc.detail or ""),
+    ]
+    return " ".join(parts).lower()
+
+
+def is_critical_upbit_error(exc: UpbitAPIError) -> bool:
+    if exc.status_code in {401, 403}:
+        return True
+
+    text = _error_text(exc)
+    auth_keywords = (
+        "invalid_access_key",
+        "expired_access_key",
+        "jwt",
+        "signature",
+        "api key",
+        "access key",
+        "인증",
+        "권한",
+    )
+    balance_keywords = (
+        "insufficient",
+        "insufficient_funds",
+        "under_min_total",
+        "잔고",
+        "부족",
+    )
+
+    return any(keyword in text for keyword in (*auth_keywords, *balance_keywords))
+
+
+def format_upbit_critical_message(exc: UpbitAPIError) -> str:
+    text = _error_text(exc)
+
+    auth_keywords = (
+        "invalid_access_key",
+        "expired_access_key",
+        "jwt",
+        "signature",
+        "api key",
+        "access key",
+        "인증",
+        "권한",
+    )
+    if exc.status_code in {401, 403} or any(keyword in text for keyword in auth_keywords):
+        return "업비트 API 키 또는 권한 설정이 올바르지 않습니다."
+
+    balance_keywords = ("insufficient", "insufficient_funds", "잔고", "부족", "under_min_total")
+    if any(keyword in text for keyword in balance_keywords):
+        return "업비트 잔고가 부족합니다."
+
+    detail_message = exc.message or str(exc.detail or "")
+    if detail_message:
+        return f"업비트 치명적 오류: {detail_message}"
+    return f"업비트 치명적 오류가 발생했습니다. (status={exc.status_code})"
+
+
 def _is_retryable_api_exception(exc: BaseException) -> bool:
     if isinstance(exc, httpx.RequestError):
         return True
