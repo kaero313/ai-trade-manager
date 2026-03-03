@@ -4,6 +4,7 @@ import ControlPanel from '../components/trading/ControlPanel'
 import GridConfigPanel from '../components/trading/GridConfigPanel'
 import PortfolioChart from '../components/trading/PortfolioChart'
 import RecentOrders from '../components/trading/RecentOrders'
+import SentimentWidget from '../components/trading/SentimentWidget'
 import { fetchConfig, getBotStatus, updateConfig } from '../services/botService'
 import type { BotConfig, BotStatus, GridParams } from '../services/botService'
 import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
@@ -275,6 +276,7 @@ function DashboardPage() {
 
       <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
         <ControlPanel isRunning={isRunning} onStatusChange={handleStatusChange} />
+        <SentimentWidget />
         <GridConfigPanel
           config={botConfig}
           isLoading={isConfigLoading}
