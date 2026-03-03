@@ -286,6 +286,21 @@ class SlackBot:
                 logger.exception("Slack /start 처리 중 오류가 발생했습니다.")
                 respond("봇 시작 처리 중 오류가 발생했습니다.")
 
+        @app.command("/briefing")
+        @self.require_auth
+        def _on_briefing(
+            respond: Callable[..., Any],
+            **_: Any,
+        ) -> None:
+            try:
+                from app.core.scheduler import trigger_daily_ai_briefing_now
+
+                trigger_daily_ai_briefing_now()
+                respond("모닝 브리핑 생성을 시작했습니다. 잠시만 기다려 주세요.")
+            except Exception:
+                logger.exception("Slack /briefing 처리 중 오류가 발생했습니다.")
+                respond("브리핑 생성 요청 처리 중 오류가 발생했습니다.")
+
     async def _load_status_snapshot(self) -> tuple[float, bool]:
         async with AsyncSessionLocal() as db:
             summary = await PortfolioService(db).get_aggregated_portfolio()

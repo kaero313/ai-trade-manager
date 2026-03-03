@@ -1,11 +1,13 @@
 import asyncio
 import logging
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.logging import configure_logging
+from app.core.scheduler import start_scheduler, stop_scheduler
 from app.db.repository import get_or_create_bot_config
 from app.db.session import AsyncSessionLocal
 from app.services.slack_bot import slack_bot
@@ -16,9 +18,38 @@ logger = logging.getLogger(__name__)
 trading_engine = TradingEngine(AsyncSessionLocal)
 
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    async with AsyncSessionLocal() as db:
+        await get_or_create_bot_config(db)
+
+    await telegram_bot.start()
+    slack_bot.start()
+    if not slack_bot.enabled:
+        logger.info("SlackBot 패스: SLACK_BOT_TOKEN/SLACK_APP_TOKEN/SLACK_ALLOWED_USER_ID 미설정")
+
+    start_scheduler()
+    trading_task = asyncio.create_task(trading_engine.run_loop(), name="trading-engine-loop")
+
+    try:
+        yield
+    finally:
+        trading_engine._is_running = False
+        stop_scheduler()
+        await telegram_bot.stop()
+        slack_bot.stop()
+
+        try:
+            await asyncio.wait_for(trading_task, timeout=15)
+        except asyncio.TimeoutError:
+            trading_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await trading_task
+
+
 def create_app() -> FastAPI:
     configure_logging()
-    app = FastAPI(title="Trading Bot")
+    app = FastAPI(title="Trading Bot", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -28,23 +59,6 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(api_router, prefix="/api")
-
-    @app.on_event("startup")
-    async def _startup() -> None:
-        async with AsyncSessionLocal() as db:
-            await get_or_create_bot_config(db)
-        await telegram_bot.start()
-        slack_bot.start()
-        if not slack_bot.enabled:
-            logger.info("SlackBot 패스: SLACK_BOT_TOKEN/SLACK_APP_TOKEN/SLACK_ALLOWED_USER_ID 미설정")
-        asyncio.create_task(trading_engine.run_loop())
-
-    @app.on_event("shutdown")
-    async def _shutdown() -> None:
-        trading_engine._is_running = False
-        await telegram_bot.stop()
-        slack_bot.stop()
-
     return app
 
 
