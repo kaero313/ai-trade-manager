@@ -18,6 +18,7 @@ class SlackBot:
         self._handler: Any | None = None
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        self._fallback_client: Any | None = None
 
     @property
     def _bot_token(self) -> str:
@@ -83,6 +84,35 @@ class SlackBot:
         with self._lock:
             self._handler = None
             self._app = None
+            self._fallback_client = None
+
+    def send_message(
+        self,
+        text: str,
+        blocks: list[dict[str, Any]] | None = None,
+    ) -> None:
+        if not text and not blocks:
+            return
+        if not self._bot_token:
+            logger.debug("SlackBot send_message 패스: bot token이 비어 있습니다.")
+            return
+
+        try:
+            client = self._get_web_client()
+            channel = self._resolve_notification_channel(client)
+            if not channel:
+                logger.warning("SlackBot send_message 실패: 대상 채널/유저를 찾지 못했습니다.")
+                return
+
+            payload: dict[str, Any] = {
+                "channel": channel,
+                "text": text or "알림",
+            }
+            if blocks is not None:
+                payload["blocks"] = blocks
+            client.chat_postMessage(**payload)
+        except Exception:
+            logger.exception("SlackBot 즉시 알림 발송 중 오류가 발생했습니다.")
 
     def _run(self) -> None:
         handler = self._handler
@@ -113,6 +143,56 @@ class SlackBot:
         self._app = app
         self._handler = SocketModeHandler(app, self._app_token)
         return True
+
+    def _get_web_client(self) -> Any:
+        if self._app is not None and getattr(self._app, "client", None) is not None:
+            return self._app.client
+
+        if self._fallback_client is None:
+            from slack_sdk import WebClient
+
+            self._fallback_client = WebClient(token=self._bot_token)
+        return self._fallback_client
+
+    def _resolve_notification_channel(self, client: Any) -> str | None:
+        preferred = self._first_csv(settings.slack_trade_channel_ids)
+        if preferred:
+            return self._normalize_destination(client, preferred)
+
+        allowed_user = self._allowed_user_id
+        if allowed_user:
+            return self._normalize_destination(client, allowed_user)
+        return None
+
+    def _normalize_destination(self, client: Any, destination: str) -> str | None:
+        target = destination.strip().upper()
+        if not target:
+            return None
+
+        if target.startswith(("C", "G", "D")):
+            return target
+
+        if target.startswith("U"):
+            try:
+                opened = client.conversations_open(users=target)
+                channel = ((opened or {}).get("channel") or {}).get("id")
+                if isinstance(channel, str) and channel.strip():
+                    return channel.strip()
+            except Exception:
+                logger.exception("Slack DM 채널 열기 실패: user=%s", target)
+                return None
+
+        return target
+
+    @staticmethod
+    def _first_csv(value: str | None) -> str | None:
+        if not value:
+            return None
+        for item in value.split(","):
+            stripped = item.strip()
+            if stripped:
+                return stripped
+        return None
 
     def require_auth(self, handler: Callable[..., Any]) -> Callable[..., Any]:
         @wraps(handler)
