@@ -15,6 +15,7 @@ from app.services.brokers.upbit import (
     is_critical_upbit_error,
 )
 from app.services.slack_bot import slack_bot
+from app.services.trading.strategies.grid_strategy import GridStrategy
 
 logger = logging.getLogger(__name__)
 CRITICAL_ALERT_COOLDOWN_SECONDS = 60
@@ -66,6 +67,11 @@ class TradingEngine:
         target_coin = str(grid_config.get("target_coin") or "").upper()
         grid_upper_bound = self._to_float(grid_config.get("grid_upper_bound"))
         grid_lower_bound = self._to_float(grid_config.get("grid_lower_bound"))
+        order_krw = self._to_float(grid_config.get("grid_order_krw"))
+        grid_sell_pct = self._to_float(grid_config.get("grid_sell_pct"))
+        grid_cooldown_seconds = int(self._to_float(grid_config.get("grid_cooldown_seconds")))
+        grid_cooldown_seconds = max(grid_cooldown_seconds, 1)
+
         if not target_coin:
             logger.warning("그리드 target_coin 파싱에 실패하여 이번 tick을 건너뜁니다.")
             return
@@ -86,64 +92,25 @@ class TradingEngine:
 
         now_utc = datetime.now(timezone.utc)
         cooldown_until = self._parse_datetime(grid_config.get("grid_cooldown_until"))
-        if cooldown_until is not None and cooldown_until > now_utc:
-            logger.info("그리드 주문 쿨타임 적용 중입니다. next_order_at=%s", cooldown_until.isoformat())
-            return
-
-        signal_side: str | None = None
-        if current_price > grid_upper_bound:
-            signal_side = "sell"
-        elif current_price < grid_lower_bound:
-            signal_side = "buy"
-
-        if signal_side is None:
-            return
-
-        order_result: dict[str, Any]
-        order_krw = self._to_float(grid_config.get("grid_order_krw"))
-        sell_volume = 0.0
+        strategy = GridStrategy(
+            market=market,
+            target_coin=target_coin,
+            grid_upper_bound=grid_upper_bound,
+            grid_lower_bound=grid_lower_bound,
+            grid_order_krw=order_krw,
+            grid_sell_pct=grid_sell_pct,
+            grid_cooldown_seconds=grid_cooldown_seconds,
+            cooldown_until=cooldown_until,
+        )
 
         try:
-            if signal_side == "buy":
-                if order_krw <= 0:
-                    logger.warning("매수 주문 금액이 유효하지 않습니다: grid_order_krw=%s", order_krw)
-                    return
-
-                order_result = await broker.create_order(
-                    market=market,
-                    side="bid",
-                    ord_type="price",
-                    price=self._fmt_number(order_krw),
-                )
-                logger.info("매수 조건 달성 로그: market=%s current_price=%s", market, current_price)
-            else:
-                accounts = await broker.get_accounts()
-                available_qty = self._get_available_coin(accounts, str(target_coin).upper())
-                if available_qty <= 0:
-                    logger.warning("매도 가능한 잔고가 없습니다: coin=%s", str(target_coin).upper())
-                    return
-
-                sell_pct_raw = self._to_float(grid_config.get("grid_sell_pct"))
-                sell_ratio = sell_pct_raw / 100.0 if sell_pct_raw > 1 else sell_pct_raw
-                sell_ratio = min(max(sell_ratio, 0.0), 1.0)
-                if sell_ratio <= 0:
-                    logger.warning("매도 비율이 유효하지 않습니다: grid_sell_pct=%s", sell_pct_raw)
-                    return
-
-                sell_volume = available_qty * sell_ratio
-                if sell_volume <= 0:
-                    logger.warning("계산된 매도 수량이 0 이하입니다: sell_volume=%s", sell_volume)
-                    return
-
-                order_result = await broker.create_order(
-                    market=market,
-                    side="ask",
-                    ord_type="market",
-                    volume=self._fmt_number(sell_volume),
-                )
-                logger.info("매도 조건 달성 로그: market=%s current_price=%s", market, current_price)
+            strategy_result = await strategy.execute(
+                current_price=current_price,
+                broker=broker,
+                current_time=now_utc,
+            )
         except UpbitAPIError as exc:
-            logger.exception("주문 실행 실패(UpbitAPIError): market=%s side=%s error=%s", market, signal_side, exc)
+            logger.exception("그리드 전략 실행 실패(UpbitAPIError): market=%s error=%s", market, exc)
             if is_critical_upbit_error(exc):
                 await self._notify_critical_error(
                     key=f"upbit:{exc.status_code}:{exc.error_name}:{exc.message}",
@@ -151,7 +118,7 @@ class TradingEngine:
                 )
             return
         except Exception as exc:
-            logger.exception("주문 실행 중 예외가 발생했습니다: market=%s side=%s", market, signal_side)
+            logger.exception("그리드 전략 실행 중 예외가 발생했습니다: market=%s", market)
             generic_critical_message = self._resolve_generic_critical_message(exc)
             if generic_critical_message:
                 await self._notify_critical_error(
@@ -160,22 +127,56 @@ class TradingEngine:
                 )
             return
 
-        if not isinstance(order_result, dict):
+        if not strategy_result.executed:
+            reason = str(strategy_result.reason or "no_signal")
+            if reason == "cooldown":
+                next_order_at = (
+                    strategy_result.cooldown_until.isoformat()
+                    if strategy_result.cooldown_until is not None
+                    else "unknown"
+                )
+                logger.info("그리드 주문 쿨타임 적용 중입니다. next_order_at=%s", next_order_at)
+            elif reason != "no_signal":
+                logger.info("그리드 전략 미체결: market=%s reason=%s", market, reason)
+            return
+
+        signal_side = str(strategy_result.side or "").lower().strip()
+        if signal_side not in {"buy", "sell"}:
+            logger.warning("그리드 전략 반환 side 값이 유효하지 않습니다: side=%s market=%s", signal_side, market)
+            return
+
+        order_result = strategy_result.order_result if isinstance(strategy_result.order_result, dict) else {}
+        if not order_result:
             logger.warning("주문 응답 형식이 dict가 아닙니다: market=%s side=%s", market, signal_side)
             return
 
-        try:
-            asset = await self._get_or_create_asset(db, market)
-            position = await self._get_or_create_position(db, asset.id, current_price)
-
-            executed_price = self._resolve_order_price(order_result, current_price)
-            executed_qty = self._resolve_order_qty(
+        executed_price = (
+            strategy_result.executed_price
+            if strategy_result.executed_price > 0
+            else self._resolve_order_price(order_result, current_price)
+        )
+        executed_qty = (
+            strategy_result.executed_qty
+            if strategy_result.executed_qty > 0
+            else self._resolve_order_qty(
                 order_result=order_result,
                 side=signal_side,
                 current_price=current_price,
                 order_krw=order_krw,
-                sell_volume=sell_volume,
+                sell_volume=0.0,
             )
+        )
+        if executed_qty <= 0:
+            logger.warning("주문 체결 수량 계산에 실패했습니다: market=%s side=%s", market, signal_side)
+            return
+
+        next_cooldown = strategy_result.cooldown_until or (
+            now_utc + timedelta(seconds=grid_cooldown_seconds)
+        )
+
+        try:
+            asset = await self._get_or_create_asset(db, market)
+            position = await self._get_or_create_position(db, asset.id, current_price)
             executed_at = self._resolve_executed_at(order_result)
 
             history = OrderHistory(
@@ -187,10 +188,6 @@ class TradingEngine:
                 executed_at=executed_at,
             )
             db.add(history)
-
-            cooldown_seconds = int(self._to_float(grid_config.get("grid_cooldown_seconds")))
-            cooldown_seconds = max(cooldown_seconds, 1)
-            next_cooldown = now_utc + timedelta(seconds=cooldown_seconds)
 
             updated_config = self._normalize_config_json(config_json)
             updated_grid = self._extract_grid_config(updated_config)
