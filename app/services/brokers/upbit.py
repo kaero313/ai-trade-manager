@@ -1,6 +1,8 @@
 import hashlib
 import logging
+import re
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import unquote, urlencode
 
@@ -12,6 +14,7 @@ from app.core.config import settings
 from app.services.brokers.base import BaseBrokerClient
 
 logger = logging.getLogger(__name__)
+UPBIT_MINUTE_CANDLE_UNITS = {1, 3, 5, 10, 15, 30, 60, 240}
 
 
 class UpbitAPIError(Exception):
@@ -220,6 +223,28 @@ class UpbitBroker(BaseBrokerClient):
         if remaining:
             self.last_remaining = remaining
 
+    @staticmethod
+    def _resolve_candle_path(timeframe: str) -> str:
+        normalized = str(timeframe or "").strip().lower()
+        if normalized in {"day", "days"}:
+            return "/v1/candles/days"
+        if normalized in {"week", "weeks"}:
+            return "/v1/candles/weeks"
+        if normalized in {"month", "months"}:
+            return "/v1/candles/months"
+
+        minute_match = re.fullmatch(r"(\d+)m", normalized)
+        if minute_match:
+            unit = int(minute_match.group(1))
+            if unit not in UPBIT_MINUTE_CANDLE_UNITS:
+                raise ValueError(
+                    f"Unsupported minute timeframe: {timeframe}. "
+                    f"Supported units: {sorted(UPBIT_MINUTE_CANDLE_UNITS)}"
+                )
+            return f"/v1/candles/minutes/{unit}"
+
+        raise ValueError(f"Unsupported timeframe: {timeframe}")
+
     async def _request(
         self,
         method: str,
@@ -280,7 +305,14 @@ class UpbitBroker(BaseBrokerClient):
                 ) from exc
             return resp.json()
 
-    async def get_markets(self) -> list[dict[str, Any]]:
+    @retry(
+        retry=retry_if_exception(_is_retryable_api_exception),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        stop=stop_after_attempt(5),
+        before_sleep=_log_retry_warning,
+        reraise=True,
+    )
+    async def get_all_markets(self) -> list[dict[str, Any]]:
         return await self._request(
             "GET",
             "/v1/market/all",
@@ -288,13 +320,38 @@ class UpbitBroker(BaseBrokerClient):
             auth=False,
         )
 
-    async def get_candles_1h(self, market: str, count: int = 200) -> list[dict[str, Any]]:
+    @retry(
+        retry=retry_if_exception(_is_retryable_api_exception),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        stop=stop_after_attempt(5),
+        before_sleep=_log_retry_warning,
+        reraise=True,
+    )
+    async def get_candles(
+        self,
+        market: str,
+        timeframe: str,
+        count: int,
+    ) -> list[dict[str, Any]]:
+        market_symbol = str(market or "").strip().upper()
+        if not market_symbol:
+            raise ValueError("market is required")
+        if count < 1 or count > 200:
+            raise ValueError("count must be between 1 and 200")
+
+        candle_path = self._resolve_candle_path(timeframe)
         return await self._request(
             "GET",
-            "/v1/candles/minutes/60",
-            params={"market": market, "count": count},
+            candle_path,
+            params={"market": market_symbol, "count": count},
             auth=False,
         )
+
+    async def get_markets(self) -> list[dict[str, Any]]:
+        return await self.get_all_markets()
+
+    async def get_candles_1h(self, market: str, count: int = 200) -> list[dict[str, Any]]:
+        return await self.get_candles(market=market, timeframe="60m", count=count)
 
     @retry(
         retry=retry_if_exception(_is_retryable_api_exception),
