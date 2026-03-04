@@ -12,6 +12,19 @@ class BaseBrokerClient(ABC):
         pass
 
     @abstractmethod
+    async def get_all_markets(self) -> list[dict[str, Any]]:
+        pass
+
+    @abstractmethod
+    async def get_candles(
+        self,
+        market: str,
+        timeframe: str,
+        count: int,
+    ) -> list[dict[str, Any]]:
+        pass
+
+    @abstractmethod
     async def get_orders_open(
         self,
         market: str | None = None,
