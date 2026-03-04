@@ -5,6 +5,11 @@ import { useMemo, useState } from 'react'
 
 import { fetchFavorites, fetchTickers, removeFavorite, type TickerItem } from '../../api/markets'
 
+interface WatchlistProps {
+  selectedSymbol?: string | null
+  onSelectSymbol?: (symbol: string) => void
+}
+
 function resolveErrorMessage(error: unknown, fallback: string): string {
   if (isAxiosError(error)) {
     const detail = error.response?.data?.detail
@@ -33,10 +38,10 @@ function formatSignedPercent(rate: number): string {
 function formatTradeAmount(value: number): string {
   return `${new Intl.NumberFormat('ko-KR', {
     maximumFractionDigits: 0,
-  }).format(value)}`
+  }).format(value)}원`
 }
 
-function Watchlist() {
+function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
   const queryClient = useQueryClient()
   const [actionError, setActionError] = useState<string | null>(null)
   const [pendingSymbol, setPendingSymbol] = useState<string | null>(null)
@@ -76,6 +81,8 @@ function Watchlist() {
     }
     return map
   }, [tickersQuery.data])
+
+  const selected = selectedSymbol?.toUpperCase() ?? null
 
   const handleRemove = async (symbol: string) => {
     setActionError(null)
@@ -134,11 +141,17 @@ function Watchlist() {
                   ? 'text-blue-600'
                   : 'text-slate-600'
             const isPending = pendingSymbol === symbol
+            const isSelected = selected === symbol
 
             return (
               <article
                 key={favorite.id}
-                className="rounded-xl border border-slate-200 bg-slate-50/60 px-3 py-2.5"
+                onClick={() => onSelectSymbol?.(symbol)}
+                className={`cursor-pointer rounded-xl border px-3 py-2.5 transition ${
+                  isSelected
+                    ? 'border-emerald-300 bg-emerald-50/60 ring-1 ring-emerald-200'
+                    : 'border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-slate-100/70'
+                }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -146,9 +159,7 @@ function Watchlist() {
                     {ticker ? (
                       <>
                         <p className="mt-0.5 text-sm text-slate-700">{formatPrice(ticker.current_price)}</p>
-                        <p className={`text-xs font-semibold ${changeClass}`}>
-                          {formatSignedPercent(changeRate)}
-                        </p>
+                        <p className={`text-xs font-semibold ${changeClass}`}>{formatSignedPercent(changeRate)}</p>
                       </>
                     ) : (
                       <p className="mt-1 text-xs text-slate-500">
@@ -160,7 +171,9 @@ function Watchlist() {
                   <button
                     type="button"
                     aria-label="관심 종목 삭제"
-                    onClick={() => {
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
                       void handleRemove(symbol)
                     }}
                     disabled={removeMutation.isPending && !isPending}
@@ -175,9 +188,7 @@ function Watchlist() {
                 </div>
 
                 {ticker && (
-                  <p className="mt-2 text-[11px] text-slate-500">
-                    24h 거래대금: {formatTradeAmount(ticker.acc_trade_price_24h)}
-                  </p>
+                  <p className="mt-2 text-[11px] text-slate-500">24h 거래대금: {formatTradeAmount(ticker.acc_trade_price_24h)}</p>
                 )}
               </article>
             )

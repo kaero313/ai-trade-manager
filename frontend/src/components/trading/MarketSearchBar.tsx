@@ -6,6 +6,10 @@ import { useMemo, useState } from 'react'
 
 import { addFavorite, fetchFavorites, fetchMarkets, removeFavorite, type MarketItem } from '../../api/markets'
 
+interface MarketSearchBarProps {
+  onSelectSymbol?: (symbol: string) => void
+}
+
 function resolveErrorMessage(error: unknown, fallback: string): string {
   if (isAxiosError(error)) {
     const detail = error.response?.data?.detail
@@ -19,7 +23,7 @@ function resolveErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-function MarketSearchBar() {
+function MarketSearchBar({ onSelectSymbol }: MarketSearchBarProps) {
   const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
   const [selectedMarket, setSelectedMarket] = useState<MarketItem | null>(null)
@@ -113,6 +117,7 @@ function MarketSearchBar() {
           setSelectedMarket(market)
           if (market) {
             setQuery(market.market)
+            onSelectSymbol?.(market.market)
           }
         }}
       >
@@ -146,11 +151,7 @@ function MarketSearchBar() {
                   <ComboboxOption
                     key={item.market}
                     value={item}
-                    className={({ focus }) =>
-                      `rounded-lg px-3 py-2 ${
-                        focus ? 'bg-slate-100' : ''
-                      }`
-                    }
+                    className={({ focus }) => `rounded-lg px-3 py-2 ${focus ? 'bg-slate-100' : ''}`}
                   >
                     {({ selected }) => (
                       <div className="flex items-center justify-between gap-3">
