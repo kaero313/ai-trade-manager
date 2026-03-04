@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import ControlPanel from '../components/trading/ControlPanel'
 import GridConfigPanel from '../components/trading/GridConfigPanel'
+import MarketChart from '../components/trading/MarketChart'
 import MarketSearchBar from '../components/trading/MarketSearchBar'
 import PortfolioChart from '../components/trading/PortfolioChart'
 import RecentOrders from '../components/trading/RecentOrders'
@@ -31,6 +32,7 @@ function DashboardPage() {
   const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
   const [botConfig, setBotConfig] = useState<BotConfig | null>(null)
   const [orders, setOrders] = useState<OrderHistoryItem[]>([])
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isConfigLoading, setIsConfigLoading] = useState(true)
   const [isOrdersLoading, setIsOrdersLoading] = useState(true)
@@ -183,7 +185,9 @@ function DashboardPage() {
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-6">
-        <MarketSearchBar />
+        <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
+
+        <MarketChart symbol={selectedSymbol} />
 
         {errorMessage && (
           <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -279,7 +283,7 @@ function DashboardPage() {
       </div>
 
       <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
-        <Watchlist />
+        <Watchlist selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
         <ControlPanel isRunning={isRunning} onStatusChange={handleStatusChange} />
         <SentimentWidget />
         <GridConfigPanel

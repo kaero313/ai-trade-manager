@@ -20,6 +20,17 @@ export interface TickerItem {
   acc_trade_price_24h: number
 }
 
+export type MarketTimeframe = '60m' | '240m' | 'days'
+
+export interface CandleItem {
+  time: string | number
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
 export async function fetchMarkets(): Promise<MarketItem[]> {
   const { data } = await apiClient.get<MarketItem[]>('/markets/')
   return data
@@ -52,5 +63,22 @@ export async function fetchTickers(symbols: string[]): Promise<TickerItem[]> {
 
   const params = new URLSearchParams({ symbols: normalized.join(',') })
   const { data } = await apiClient.get<TickerItem[]>(`/markets/tickers?${params.toString()}`)
+  return data
+}
+
+export async function fetchCandles(
+  symbol: string,
+  timeframe: MarketTimeframe,
+  count = 200,
+): Promise<CandleItem[]> {
+  const normalized = String(symbol).trim().toUpperCase()
+  const safeCount = Math.max(1, Math.min(200, Math.trunc(count)))
+  const params = new URLSearchParams({
+    timeframe,
+    count: String(safeCount),
+  })
+  const { data } = await apiClient.get<CandleItem[]>(
+    `/markets/${encodeURIComponent(normalized)}/candles?${params.toString()}`,
+  )
   return data
 }
