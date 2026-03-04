@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 
 import ControlPanel from '../components/trading/ControlPanel'
 import GridConfigPanel from '../components/trading/GridConfigPanel'
+import MarketSearchBar from '../components/trading/MarketSearchBar'
 import PortfolioChart from '../components/trading/PortfolioChart'
 import RecentOrders from '../components/trading/RecentOrders'
 import SentimentWidget from '../components/trading/SentimentWidget'
+import Watchlist from '../components/trading/Watchlist'
 import { fetchConfig, getBotStatus, updateConfig } from '../services/botService'
 import type { BotConfig, BotStatus, GridParams } from '../services/botService'
 import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
@@ -181,6 +183,8 @@ function DashboardPage() {
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div className="space-y-6">
+        <MarketSearchBar />
+
         {errorMessage && (
           <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {errorMessage}
@@ -275,6 +279,7 @@ function DashboardPage() {
       </div>
 
       <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
+        <Watchlist />
         <ControlPanel isRunning={isRunning} onStatusChange={handleStatusChange} />
         <SentimentWidget />
         <GridConfigPanel
