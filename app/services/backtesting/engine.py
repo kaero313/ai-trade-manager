@@ -151,6 +151,7 @@ class BacktestEngine:
             "initial_balance": initial_balance_value,
             "final_balance": final_balance,
             "position_qty": position_qty,
+            "candles": candles,
             "trades": trades,
         }
 

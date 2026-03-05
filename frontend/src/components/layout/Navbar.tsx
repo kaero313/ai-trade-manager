@@ -18,6 +18,12 @@ function Navbar() {
             Dashboard
           </Link>
           <Link
+            to="/laboratory"
+            className="rounded-md px-3 py-2 text-slate-200 transition-colors hover:bg-slate-800 hover:text-white"
+          >
+            진단/백테스트(🧪)
+          </Link>
+          <Link
             to="/settings"
             className="rounded-md px-3 py-2 text-slate-200 transition-colors hover:bg-slate-800 hover:text-white"
           >
