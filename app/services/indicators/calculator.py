@@ -6,6 +6,8 @@ import pandas_ta_classic as ta
 
 class IndicatorCalculator:
     REQUIRED_COLUMNS = ("open", "high", "low", "close", "volume")
+    SMA_PERIODS = (5, 20, 60)
+    EMA_PERIODS = (50, 200)
 
     def __init__(self) -> None:
         self._ta = ta
@@ -19,14 +21,63 @@ class IndicatorCalculator:
             if column not in df.columns:
                 df[column] = pd.NA
 
+        for column in self.REQUIRED_COLUMNS:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
+
         ordered_columns = [col for col in ["timestamp", *self.REQUIRED_COLUMNS] if col in df.columns]
         return df[ordered_columns]
 
     def calculate(self, df: pd.DataFrame) -> pd.DataFrame:
-        # TODO: 실제 보조지표 공식(EMA/RSI/MACD 등)은 후속 단계에서 추가
-        _ = self._ta
-        return df.copy()
+        calculated = df.copy()
+        if calculated.empty:
+            for period in self.SMA_PERIODS:
+                calculated[f"sma_{period}"] = pd.Series(dtype="float64")
+            for period in self.EMA_PERIODS:
+                calculated[f"ema_{period}"] = pd.Series(dtype="float64")
+            return calculated
 
-    def calculate_from_candles(self, candles: list[dict[str, Any]]) -> pd.DataFrame:
+        close_series = pd.to_numeric(calculated["close"], errors="coerce")
+
+        for period in self.SMA_PERIODS:
+            calculated[f"sma_{period}"] = self._ta.sma(close=close_series, length=period)
+        for period in self.EMA_PERIODS:
+            calculated[f"ema_{period}"] = self._ta.ema(close=close_series, length=period)
+
+        return calculated
+
+    def calculate_from_candles(self, candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not candles:
+            return []
+
         base_df = self.to_dataframe(candles)
-        return self.calculate(base_df)
+        calculated_df = self.calculate(base_df)
+        return self._merge_with_original_candles(candles, calculated_df)
+
+    def _merge_with_original_candles(
+        self,
+        candles: list[dict[str, Any]],
+        calculated_df: pd.DataFrame,
+    ) -> list[dict[str, Any]]:
+        merged_rows: list[dict[str, Any]] = []
+        indicator_columns = [
+            *[f"sma_{period}" for period in self.SMA_PERIODS],
+            *[f"ema_{period}" for period in self.EMA_PERIODS],
+        ]
+
+        for index, candle in enumerate(candles):
+            row = dict(candle)
+            for column in indicator_columns:
+                value = calculated_df.at[index, column] if column in calculated_df.columns else None
+                row[column] = self._normalize_value(value)
+            merged_rows.append(row)
+
+        return merged_rows
+
+    @staticmethod
+    def _normalize_value(value: Any) -> float | None:
+        if pd.isna(value):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
