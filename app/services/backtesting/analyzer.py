@@ -2,11 +2,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-BUY_COLOR = "#22c55e"
-SELL_COLOR = "#ef4444"
+BUY_COLOR = "#ef4444"
+SELL_COLOR = "#3b82f6"
 
 
 def analyze_backtest_result(backtest_result: dict[str, Any]) -> dict[str, Any]:
+    candles = _normalize_candles(backtest_result.get("candles"))
     trades = _normalize_trades(backtest_result.get("trades"))
     initial_balance = _to_float(backtest_result.get("initial_balance"))
     final_balance = _to_float(backtest_result.get("final_balance"))
@@ -40,10 +41,38 @@ def analyze_backtest_result(backtest_result: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "summary": summary,
+        "candles": candles,
         "markers": markers,
         "trades": trades,
         "meta": meta,
     }
+
+
+def _normalize_candles(raw_candles: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_candles, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for row in raw_candles:
+        if not isinstance(row, dict):
+            continue
+        parsed_time = _parse_datetime(str(row.get("timestamp") or "").strip())
+        if parsed_time is None:
+            continue
+
+        normalized.append(
+            {
+                "time": int(parsed_time.timestamp()),
+                "open": _to_float(row.get("open")),
+                "high": _to_float(row.get("high")),
+                "low": _to_float(row.get("low")),
+                "close": _to_float(row.get("close")),
+                "volume": _to_float(row.get("volume")),
+            }
+        )
+
+    normalized.sort(key=lambda item: int(item["time"]))
+    return normalized
 
 
 def _normalize_trades(raw_trades: Any) -> list[dict[str, Any]]:

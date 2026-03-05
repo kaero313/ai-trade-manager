@@ -49,6 +49,15 @@ class BacktestSummaryResponse(BaseModel):
     number_of_trades: int
 
 
+class BacktestCandleResponse(BaseModel):
+    time: int
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
 class BacktestMarkerResponse(BaseModel):
     time: int
     position: str
@@ -85,6 +94,7 @@ class BacktestMetaResponse(BaseModel):
 
 class BacktestRunResponse(BaseModel):
     summary: BacktestSummaryResponse
+    candles: list[BacktestCandleResponse]
     markers: list[BacktestMarkerResponse]
     trades: list[BacktestTradeResponse]
     meta: BacktestMetaResponse
@@ -117,6 +127,7 @@ async def run_backtest(payload: BacktestRunRequest) -> BacktestRunResponse:
 
     return BacktestRunResponse(
         summary=BacktestSummaryResponse(**_as_dict(analyzed.get("summary"))),
+        candles=[BacktestCandleResponse(**item) for item in _as_list(analyzed.get("candles"))],
         markers=[BacktestMarkerResponse(**item) for item in _as_list(analyzed.get("markers"))],
         trades=[BacktestTradeResponse(**item) for item in _as_list(analyzed.get("trades"))],
         meta=BacktestMetaResponse(**_as_dict(analyzed.get("meta"))),
