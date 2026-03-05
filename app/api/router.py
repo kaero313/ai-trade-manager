@@ -1,6 +1,7 @@
 ﻿from fastapi import APIRouter
 
 from app.api.routes.ai import router as ai_router
+from app.api.routes.backtest import router as backtest_router
 from app.api.routes.config import router as config_router
 from app.api.routes.dashboard import router as dashboard_router
 from app.api.routes.favorites import router as favorites_router
@@ -26,3 +27,4 @@ api_router.include_router(news_router, prefix="/news", tags=["news"])
 api_router.include_router(upbit_router)
 api_router.include_router(slack_router)
 api_router.include_router(ai_router, prefix="/ai", tags=["ai"])
+api_router.include_router(backtest_router, prefix="/backtest", tags=["backtest"])
