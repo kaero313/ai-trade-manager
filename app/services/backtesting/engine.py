@@ -30,6 +30,11 @@ class BacktestEngine:
         end_date: datetime,
         initial_balance: float,
         timeframe: str = "60m",
+        grid_upper_bound: float = 100_000_000.0,
+        grid_lower_bound: float = 80_000_000.0,
+        grid_order_krw: float = 10_000.0,
+        grid_sell_pct: float = 100.0,
+        grid_cooldown_seconds: int = 60,
     ) -> dict[str, Any]:
         market_symbol = str(market or "").strip().upper()
         if not market_symbol:
@@ -39,13 +44,33 @@ class BacktestEngine:
         if start_utc > end_utc:
             raise ValueError("start_date must be earlier than or equal to end_date")
 
+        initial_balance_value = float(initial_balance)
+        grid_upper_bound_value = float(grid_upper_bound)
+        grid_lower_bound_value = float(grid_lower_bound)
+        grid_order_krw_value = float(grid_order_krw)
+        grid_sell_pct_value = float(grid_sell_pct)
+        grid_cooldown_seconds_value = int(grid_cooldown_seconds)
+
+        if initial_balance_value <= 0:
+            raise ValueError("initial_balance must be greater than zero")
+        if grid_lower_bound_value <= 0 or grid_upper_bound_value <= 0:
+            raise ValueError("grid bounds must be greater than zero")
+        if grid_upper_bound_value <= grid_lower_bound_value:
+            raise ValueError("grid_upper_bound must be greater than grid_lower_bound")
+        if grid_order_krw_value <= 0:
+            raise ValueError("grid_order_krw must be greater than zero")
+        if grid_sell_pct_value <= 0 or grid_sell_pct_value > 100:
+            raise ValueError("grid_sell_pct must be in (0, 100]")
+        if grid_cooldown_seconds_value < 1:
+            raise ValueError("grid_cooldown_seconds must be at least 1")
+
         logger.info(
             "Backtest run started: market=%s timeframe=%s start=%s end=%s initial_balance=%s",
             market_symbol,
             timeframe,
             start_utc.isoformat(),
             end_utc.isoformat(),
-            initial_balance,
+            initial_balance_value,
         )
 
         candles = await fetch_historical_data(
@@ -55,16 +80,16 @@ class BacktestEngine:
             end_date=end_utc,
         )
 
-        broker = SimulatedBroker(initial_krw_balance=float(initial_balance), fee_rate=self._fee_rate)
+        broker = SimulatedBroker(initial_krw_balance=initial_balance_value, fee_rate=self._fee_rate)
         target_coin = market_symbol.split("-", 1)[1] if "-" in market_symbol else market_symbol
         strategy = GridStrategy(
             market=market_symbol,
             target_coin=target_coin,
-            grid_upper_bound=100_000_000.0,
-            grid_lower_bound=80_000_000.0,
-            grid_order_krw=10_000.0,
-            grid_sell_pct=100.0,
-            grid_cooldown_seconds=60,
+            grid_upper_bound=grid_upper_bound_value,
+            grid_lower_bound=grid_lower_bound_value,
+            grid_order_krw=grid_order_krw_value,
+            grid_sell_pct=grid_sell_pct_value,
+            grid_cooldown_seconds=grid_cooldown_seconds_value,
         )
 
         trades: list[dict[str, Any]] = []
@@ -123,7 +148,7 @@ class BacktestEngine:
             "end_date": end_utc.isoformat(),
             "bars_processed": processed_bars,
             "last_timestamp": last_timestamp,
-            "initial_balance": float(initial_balance),
+            "initial_balance": initial_balance_value,
             "final_balance": final_balance,
             "position_qty": position_qty,
             "trades": trades,
