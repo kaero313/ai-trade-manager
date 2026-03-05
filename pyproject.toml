@@ -22,7 +22,9 @@ dependencies = [
   "google-genai>=0.12.0",
   "tenacity>=8.2.0",
   "feedparser>=6.0.11",
-  "apscheduler>=3.10.4"
+  "apscheduler>=3.10.4",
+  "pandas>=2.2.0",
+  "pandas-ta-classic>=0.3.78"
 ]
 
 [project.optional-dependencies]
