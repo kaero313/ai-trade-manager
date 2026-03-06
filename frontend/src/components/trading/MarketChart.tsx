@@ -6,10 +6,12 @@ import {
   ColorType,
   createChart,
   HistogramSeries,
+  LineSeries,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
   type ISeriesApi,
+  type LineData,
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts'
@@ -54,6 +56,8 @@ function MarketChart({ symbol }: MarketChartProps) {
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick', Time> | null>(null)
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram', Time> | null>(null)
+  const sma20SeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
+  const sma60SeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
 
   const candlesQuery = useQuery({
     queryKey: ['market-candles', normalizedSymbol, timeframe],
@@ -112,9 +116,25 @@ function MarketChart({ symbol }: MarketChartProps) {
       },
     })
 
+    const sma20Series = chart.addSeries(LineSeries, {
+      color: '#f59e0b',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+
+    const sma60Series = chart.addSeries(LineSeries, {
+      color: '#38bdf8',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+
     chartRef.current = chart
     candleSeriesRef.current = candleSeries
     volumeSeriesRef.current = volumeSeries
+    sma20SeriesRef.current = sma20Series
+    sma60SeriesRef.current = sma60Series
 
     const resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0]
@@ -133,21 +153,27 @@ function MarketChart({ symbol }: MarketChartProps) {
       chartRef.current = null
       candleSeriesRef.current = null
       volumeSeriesRef.current = null
+      sma20SeriesRef.current = null
+      sma60SeriesRef.current = null
     }
   }, [])
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current
     const volumeSeries = volumeSeriesRef.current
+    const sma20Series = sma20SeriesRef.current
+    const sma60Series = sma60SeriesRef.current
     const chart = chartRef.current
 
-    if (!candleSeries || !volumeSeries || !chart) {
+    if (!candleSeries || !volumeSeries || !sma20Series || !sma60Series || !chart) {
       return
     }
 
     if (!normalizedSymbol) {
       candleSeries.setData([])
       volumeSeries.setData([])
+      sma20Series.setData([])
+      sma60Series.setData([])
       return
     }
 
@@ -169,8 +195,31 @@ function MarketChart({ symbol }: MarketChartProps) {
       color: item.close >= item.open ? 'rgba(34, 197, 94, 0.45)' : 'rgba(239, 68, 68, 0.45)',
     }))
 
+    const sma20Data: LineData<Time>[] = []
+    const sma60Data: LineData<Time>[] = []
+
+    for (const item of candlesQuery.data) {
+      const time = toChartTime(item.time)
+
+      if (typeof item.sma_20 === 'number' && Number.isFinite(item.sma_20)) {
+        sma20Data.push({
+          time,
+          value: item.sma_20,
+        })
+      }
+
+      if (typeof item.sma_60 === 'number' && Number.isFinite(item.sma_60)) {
+        sma60Data.push({
+          time,
+          value: item.sma_60,
+        })
+      }
+    }
+
     candleSeries.setData(candleData)
     volumeSeries.setData(volumeData)
+    sma20Series.setData(sma20Data)
+    sma60Series.setData(sma60Data)
     chart.timeScale().fitContent()
   }, [normalizedSymbol, candlesQuery.data])
 

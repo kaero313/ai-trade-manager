@@ -6,6 +6,7 @@ import {
   CandlestickSeries,
   ColorType,
   HistogramSeries,
+  LineSeries,
   createChart,
   createSeriesMarkers,
   type CandlestickData,
@@ -13,6 +14,7 @@ import {
   type IChartApi,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
+  type LineData,
   type SeriesMarker,
   type Time,
   type UTCTimestamp,
@@ -126,6 +128,8 @@ function LaboratoryPage() {
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick', Time> | null>(null)
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram', Time> | null>(null)
+  const sma20SeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
+  const sma60SeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
   const markerPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
 
   useEffect(() => {
@@ -212,11 +216,27 @@ function LaboratoryPage() {
       scaleMargins: { top: 0.82, bottom: 0 },
     })
 
+    const sma20Series = chart.addSeries(LineSeries, {
+      color: '#f59e0b',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+
+    const sma60Series = chart.addSeries(LineSeries, {
+      color: '#38bdf8',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+
     const markerPlugin = createSeriesMarkers(candleSeries, [])
 
     chartRef.current = chart
     candleSeriesRef.current = candleSeries
     volumeSeriesRef.current = volumeSeries
+    sma20SeriesRef.current = sma20Series
+    sma60SeriesRef.current = sma60Series
     markerPluginRef.current = markerPlugin
 
     const resizeObserver = new ResizeObserver((entries) => {
@@ -236,6 +256,8 @@ function LaboratoryPage() {
       chartRef.current = null
       candleSeriesRef.current = null
       volumeSeriesRef.current = null
+      sma20SeriesRef.current = null
+      sma60SeriesRef.current = null
       markerPluginRef.current = null
     }
   }, [])
@@ -243,15 +265,19 @@ function LaboratoryPage() {
   useEffect(() => {
     const candleSeries = candleSeriesRef.current
     const volumeSeries = volumeSeriesRef.current
+    const sma20Series = sma20SeriesRef.current
+    const sma60Series = sma60SeriesRef.current
     const markerPlugin = markerPluginRef.current
     const chart = chartRef.current
-    if (!candleSeries || !volumeSeries || !markerPlugin || !chart) {
+    if (!candleSeries || !volumeSeries || !sma20Series || !sma60Series || !markerPlugin || !chart) {
       return
     }
 
     if (!result || result.candles.length === 0) {
       candleSeries.setData([])
       volumeSeries.setData([])
+      sma20Series.setData([])
+      sma60Series.setData([])
       markerPlugin.setMarkers([])
       return
     }
@@ -270,6 +296,27 @@ function LaboratoryPage() {
       color: item.close >= item.open ? 'rgba(34, 197, 94, 0.35)' : 'rgba(239, 68, 68, 0.35)',
     }))
 
+    const sma20Data: LineData<Time>[] = []
+    const sma60Data: LineData<Time>[] = []
+
+    for (const item of result.candles) {
+      const time = item.time as UTCTimestamp
+
+      if (typeof item.sma_20 === 'number' && Number.isFinite(item.sma_20)) {
+        sma20Data.push({
+          time,
+          value: item.sma_20,
+        })
+      }
+
+      if (typeof item.sma_60 === 'number' && Number.isFinite(item.sma_60)) {
+        sma60Data.push({
+          time,
+          value: item.sma_60,
+        })
+      }
+    }
+
     const markerData: SeriesMarker<Time>[] = result.markers.map((item) => ({
       time: item.time as UTCTimestamp,
       position: item.position,
@@ -280,6 +327,8 @@ function LaboratoryPage() {
 
     candleSeries.setData(candleData)
     volumeSeries.setData(volumeData)
+    sma20Series.setData(sma20Data)
+    sma60Series.setData(sma60Data)
     markerPlugin.setMarkers(markerData)
     chart.timeScale().fitContent()
   }, [result])
