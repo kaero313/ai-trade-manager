@@ -130,6 +130,8 @@ function LaboratoryPage() {
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram', Time> | null>(null)
   const sma20SeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
   const sma60SeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
+  const bbUpperSeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
+  const bbLowerSeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
   const markerPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
 
   useEffect(() => {
@@ -230,6 +232,20 @@ function LaboratoryPage() {
       lastValueVisible: false,
     })
 
+    const bbUpperSeries = chart.addSeries(LineSeries, {
+      color: 'rgba(244, 114, 182, 0.9)',
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+
+    const bbLowerSeries = chart.addSeries(LineSeries, {
+      color: 'rgba(45, 212, 191, 0.9)',
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+
     const markerPlugin = createSeriesMarkers(candleSeries, [])
 
     chartRef.current = chart
@@ -237,6 +253,8 @@ function LaboratoryPage() {
     volumeSeriesRef.current = volumeSeries
     sma20SeriesRef.current = sma20Series
     sma60SeriesRef.current = sma60Series
+    bbUpperSeriesRef.current = bbUpperSeries
+    bbLowerSeriesRef.current = bbLowerSeries
     markerPluginRef.current = markerPlugin
 
     const resizeObserver = new ResizeObserver((entries) => {
@@ -258,6 +276,8 @@ function LaboratoryPage() {
       volumeSeriesRef.current = null
       sma20SeriesRef.current = null
       sma60SeriesRef.current = null
+      bbUpperSeriesRef.current = null
+      bbLowerSeriesRef.current = null
       markerPluginRef.current = null
     }
   }, [])
@@ -267,9 +287,20 @@ function LaboratoryPage() {
     const volumeSeries = volumeSeriesRef.current
     const sma20Series = sma20SeriesRef.current
     const sma60Series = sma60SeriesRef.current
+    const bbUpperSeries = bbUpperSeriesRef.current
+    const bbLowerSeries = bbLowerSeriesRef.current
     const markerPlugin = markerPluginRef.current
     const chart = chartRef.current
-    if (!candleSeries || !volumeSeries || !sma20Series || !sma60Series || !markerPlugin || !chart) {
+    if (
+      !candleSeries ||
+      !volumeSeries ||
+      !sma20Series ||
+      !sma60Series ||
+      !bbUpperSeries ||
+      !bbLowerSeries ||
+      !markerPlugin ||
+      !chart
+    ) {
       return
     }
 
@@ -278,6 +309,8 @@ function LaboratoryPage() {
       volumeSeries.setData([])
       sma20Series.setData([])
       sma60Series.setData([])
+      bbUpperSeries.setData([])
+      bbLowerSeries.setData([])
       markerPlugin.setMarkers([])
       return
     }
@@ -298,6 +331,8 @@ function LaboratoryPage() {
 
     const sma20Data: LineData<Time>[] = []
     const sma60Data: LineData<Time>[] = []
+    const bbUpperData: LineData<Time>[] = []
+    const bbLowerData: LineData<Time>[] = []
 
     for (const item of result.candles) {
       const time = item.time as UTCTimestamp
@@ -315,6 +350,20 @@ function LaboratoryPage() {
           value: item.sma_60,
         })
       }
+
+      if (typeof item.bb_upper_20_2 === 'number' && Number.isFinite(item.bb_upper_20_2)) {
+        bbUpperData.push({
+          time,
+          value: item.bb_upper_20_2,
+        })
+      }
+
+      if (typeof item.bb_lower_20_2 === 'number' && Number.isFinite(item.bb_lower_20_2)) {
+        bbLowerData.push({
+          time,
+          value: item.bb_lower_20_2,
+        })
+      }
     }
 
     const markerData: SeriesMarker<Time>[] = result.markers.map((item) => ({
@@ -329,6 +378,8 @@ function LaboratoryPage() {
     volumeSeries.setData(volumeData)
     sma20Series.setData(sma20Data)
     sma60Series.setData(sma60Data)
+    bbUpperSeries.setData(bbUpperData)
+    bbLowerSeries.setData(bbLowerData)
     markerPlugin.setMarkers(markerData)
     chart.timeScale().fitContent()
   }, [result])
