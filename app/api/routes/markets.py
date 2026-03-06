@@ -7,10 +7,12 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.services.brokers.factory import BrokerFactory
+from app.services.indicators import IndicatorCalculator
 from app.services.brokers.upbit import UpbitAPIError
 
 router = APIRouter()
 broker = BrokerFactory.get_broker("UPBIT")
+indicator_calculator = IndicatorCalculator()
 
 MARKETS_CACHE_TTL_SECONDS = 300
 MAX_TICKER_SYMBOLS = 100
@@ -42,6 +44,15 @@ class CandleItem(BaseModel):
     low: float = Field(...)
     close: float = Field(...)
     volume: float = Field(...)
+    sma_5: float | None = Field(default=None)
+    sma_20: float | None = Field(default=None)
+    sma_60: float | None = Field(default=None)
+    ema_50: float | None = Field(default=None)
+    ema_200: float | None = Field(default=None)
+    bb_upper_20_2: float | None = Field(default=None)
+    bb_middle_20_2: float | None = Field(default=None)
+    bb_lower_20_2: float | None = Field(default=None)
+    rsi_14: float | None = Field(default=None)
 
 
 def _snapshot_markets_cache() -> dict[str, Any]:
@@ -189,7 +200,7 @@ async def get_candles(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     is_minute = _is_minute_timeframe(timeframe)
-    items: list[CandleItem] = []
+    normalized_candles: list[dict[str, Any]] = []
     for row in reversed(raw_candles):
         if not isinstance(row, dict):
             continue
@@ -203,15 +214,16 @@ async def get_candles(
         else:
             time_value = candle_time.date().isoformat()
 
-        items.append(
-            CandleItem(
-                time=time_value,
-                open=_to_float(row.get("opening_price")),
-                high=_to_float(row.get("high_price")),
-                low=_to_float(row.get("low_price")),
-                close=_to_float(row.get("trade_price")),
-                volume=_to_float(row.get("candle_acc_trade_volume")),
-            )
+        normalized_candles.append(
+            {
+                "time": time_value,
+                "open": _to_float(row.get("opening_price")),
+                "high": _to_float(row.get("high_price")),
+                "low": _to_float(row.get("low_price")),
+                "close": _to_float(row.get("trade_price")),
+                "volume": _to_float(row.get("candle_acc_trade_volume")),
+            }
         )
 
-    return items
+    enriched_candles = indicator_calculator.calculate_from_candles(normalized_candles)
+    return [CandleItem(**item) for item in enriched_candles if isinstance(item, dict)]

@@ -60,16 +60,21 @@ def _normalize_candles(raw_candles: Any) -> list[dict[str, Any]]:
         if parsed_time is None:
             continue
 
-        normalized.append(
-            {
-                "time": int(parsed_time.timestamp()),
-                "open": _to_float(row.get("open")),
-                "high": _to_float(row.get("high")),
-                "low": _to_float(row.get("low")),
-                "close": _to_float(row.get("close")),
-                "volume": _to_float(row.get("volume")),
-            }
-        )
+        normalized_row: dict[str, Any] = {
+            "time": int(parsed_time.timestamp()),
+            "open": _to_float(row.get("open")),
+            "high": _to_float(row.get("high")),
+            "low": _to_float(row.get("low")),
+            "close": _to_float(row.get("close")),
+            "volume": _to_float(row.get("volume")),
+        }
+        for key, value in row.items():
+            if key in {"timestamp", "open", "high", "low", "close", "volume"}:
+                continue
+            if key.startswith(("sma_", "ema_", "bb_", "rsi_")):
+                normalized_row[key] = _to_optional_float(value)
+
+        normalized.append(normalized_row)
 
     normalized.sort(key=lambda item: int(item["time"]))
     return normalized
@@ -237,3 +242,12 @@ def _to_float(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _to_optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

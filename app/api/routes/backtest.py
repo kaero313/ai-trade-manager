@@ -8,9 +8,11 @@ from pydantic import BaseModel, Field
 
 from app.services.backtesting.analyzer import analyze_backtest_result
 from app.services.backtesting.engine import BacktestEngine
+from app.services.indicators import IndicatorCalculator
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+indicator_calculator = IndicatorCalculator()
 
 
 class BacktestRunRequest(BaseModel):
@@ -56,6 +58,15 @@ class BacktestCandleResponse(BaseModel):
     low: float
     close: float
     volume: float
+    sma_5: float | None = None
+    sma_20: float | None = None
+    sma_60: float | None = None
+    ema_50: float | None = None
+    ema_200: float | None = None
+    bb_upper_20_2: float | None = None
+    bb_middle_20_2: float | None = None
+    bb_lower_20_2: float | None = None
+    rsi_14: float | None = None
 
 
 class BacktestMarkerResponse(BaseModel):
@@ -115,6 +126,9 @@ async def run_backtest(payload: BacktestRunRequest) -> BacktestRunResponse:
             grid_order_krw=payload.grid_order_krw,
             grid_sell_pct=payload.grid_sell_pct,
             grid_cooldown_seconds=payload.grid_cooldown_seconds,
+        )
+        result["candles"] = indicator_calculator.calculate_from_candles(
+            result.get("candles") if isinstance(result, dict) else []
         )
         analyzed = analyze_backtest_result(result)
     except ValueError as exc:

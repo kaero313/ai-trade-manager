@@ -29,6 +29,15 @@ export interface BacktestCandle {
   low: number
   close: number
   volume: number
+  sma_5?: number | null
+  sma_20?: number | null
+  sma_60?: number | null
+  ema_50?: number | null
+  ema_200?: number | null
+  bb_upper_20_2?: number | null
+  bb_middle_20_2?: number | null
+  bb_lower_20_2?: number | null
+  rsi_14?: number | null
 }
 
 export interface BacktestMarker {
