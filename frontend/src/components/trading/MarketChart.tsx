@@ -58,6 +58,8 @@ function MarketChart({ symbol }: MarketChartProps) {
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram', Time> | null>(null)
   const sma20SeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
   const sma60SeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
+  const bbUpperSeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
+  const bbLowerSeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
 
   const candlesQuery = useQuery({
     queryKey: ['market-candles', normalizedSymbol, timeframe],
@@ -130,11 +132,27 @@ function MarketChart({ symbol }: MarketChartProps) {
       lastValueVisible: false,
     })
 
+    const bbUpperSeries = chart.addSeries(LineSeries, {
+      color: 'rgba(244, 114, 182, 0.9)',
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+
+    const bbLowerSeries = chart.addSeries(LineSeries, {
+      color: 'rgba(45, 212, 191, 0.9)',
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+
     chartRef.current = chart
     candleSeriesRef.current = candleSeries
     volumeSeriesRef.current = volumeSeries
     sma20SeriesRef.current = sma20Series
     sma60SeriesRef.current = sma60Series
+    bbUpperSeriesRef.current = bbUpperSeries
+    bbLowerSeriesRef.current = bbLowerSeries
 
     const resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0]
@@ -155,6 +173,8 @@ function MarketChart({ symbol }: MarketChartProps) {
       volumeSeriesRef.current = null
       sma20SeriesRef.current = null
       sma60SeriesRef.current = null
+      bbUpperSeriesRef.current = null
+      bbLowerSeriesRef.current = null
     }
   }, [])
 
@@ -163,9 +183,19 @@ function MarketChart({ symbol }: MarketChartProps) {
     const volumeSeries = volumeSeriesRef.current
     const sma20Series = sma20SeriesRef.current
     const sma60Series = sma60SeriesRef.current
+    const bbUpperSeries = bbUpperSeriesRef.current
+    const bbLowerSeries = bbLowerSeriesRef.current
     const chart = chartRef.current
 
-    if (!candleSeries || !volumeSeries || !sma20Series || !sma60Series || !chart) {
+    if (
+      !candleSeries ||
+      !volumeSeries ||
+      !sma20Series ||
+      !sma60Series ||
+      !bbUpperSeries ||
+      !bbLowerSeries ||
+      !chart
+    ) {
       return
     }
 
@@ -174,6 +204,8 @@ function MarketChart({ symbol }: MarketChartProps) {
       volumeSeries.setData([])
       sma20Series.setData([])
       sma60Series.setData([])
+      bbUpperSeries.setData([])
+      bbLowerSeries.setData([])
       return
     }
 
@@ -197,6 +229,8 @@ function MarketChart({ symbol }: MarketChartProps) {
 
     const sma20Data: LineData<Time>[] = []
     const sma60Data: LineData<Time>[] = []
+    const bbUpperData: LineData<Time>[] = []
+    const bbLowerData: LineData<Time>[] = []
 
     for (const item of candlesQuery.data) {
       const time = toChartTime(item.time)
@@ -214,12 +248,28 @@ function MarketChart({ symbol }: MarketChartProps) {
           value: item.sma_60,
         })
       }
+
+      if (typeof item.bb_upper_20_2 === 'number' && Number.isFinite(item.bb_upper_20_2)) {
+        bbUpperData.push({
+          time,
+          value: item.bb_upper_20_2,
+        })
+      }
+
+      if (typeof item.bb_lower_20_2 === 'number' && Number.isFinite(item.bb_lower_20_2)) {
+        bbLowerData.push({
+          time,
+          value: item.bb_lower_20_2,
+        })
+      }
     }
 
     candleSeries.setData(candleData)
     volumeSeries.setData(volumeData)
     sma20Series.setData(sma20Data)
     sma60Series.setData(sma60Data)
+    bbUpperSeries.setData(bbUpperData)
+    bbLowerSeries.setData(bbLowerData)
     chart.timeScale().fitContent()
   }, [normalizedSymbol, candlesQuery.data])
 
