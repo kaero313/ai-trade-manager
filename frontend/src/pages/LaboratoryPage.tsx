@@ -7,6 +7,7 @@ import {
   ColorType,
   HistogramSeries,
   LineSeries,
+  LineStyle,
   createChart,
   createSeriesMarkers,
   type CandlestickData,
@@ -124,15 +125,20 @@ function LaboratoryPage() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [result, setResult] = useState<BacktestRunResponse | null>(null)
 
-  const chartContainerRef = useRef<HTMLDivElement | null>(null)
+  const chartsWrapperRef = useRef<HTMLDivElement | null>(null)
+  const mainChartContainerRef = useRef<HTMLDivElement | null>(null)
+  const rsiChartContainerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
+  const rsiChartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick', Time> | null>(null)
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram', Time> | null>(null)
   const sma20SeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
   const sma60SeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
   const bbUpperSeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
   const bbLowerSeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
+  const rsiSeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
   const markerPluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
+  const isSyncingRangeRef = useRef(false)
 
   useEffect(() => {
     let isMounted = true
@@ -172,13 +178,18 @@ function LaboratoryPage() {
   }, [])
 
   useEffect(() => {
-    const container = chartContainerRef.current
-    if (!container || chartRef.current) {
+    const wrapper = chartsWrapperRef.current
+    const mainContainer = mainChartContainerRef.current
+    const rsiContainer = rsiChartContainerRef.current
+    if (!wrapper || !mainContainer || !rsiContainer || chartRef.current || rsiChartRef.current) {
       return
     }
 
-    const chart = createChart(container, {
-      width: container.clientWidth || 900,
+    const width = wrapper.clientWidth || mainContainer.clientWidth || 900
+    const priceScaleWidth = 72
+
+    const chart = createChart(mainContainer, {
+      width,
       height: 500,
       layout: {
         background: { type: ColorType.Solid, color: '#020617' },
@@ -190,10 +201,12 @@ function LaboratoryPage() {
       },
       rightPriceScale: {
         borderColor: 'rgba(148, 163, 184, 0.25)',
+        minimumWidth: priceScaleWidth,
       },
       timeScale: {
         borderColor: 'rgba(148, 163, 184, 0.25)',
         timeVisible: true,
+        visible: false,
       },
       crosshair: {
         vertLine: { color: 'rgba(59, 130, 246, 0.35)' },
@@ -246,39 +259,130 @@ function LaboratoryPage() {
       lastValueVisible: false,
     })
 
+    const rsiChart = createChart(rsiContainer, {
+      width,
+      height: 150,
+      layout: {
+        background: { type: ColorType.Solid, color: '#020617' },
+        textColor: '#94a3b8',
+      },
+      grid: {
+        vertLines: { color: 'rgba(148, 163, 184, 0.08)' },
+        horzLines: { color: 'rgba(148, 163, 184, 0.12)' },
+      },
+      rightPriceScale: {
+        borderColor: 'rgba(148, 163, 184, 0.25)',
+        minimumWidth: priceScaleWidth,
+      },
+      timeScale: {
+        borderColor: 'rgba(148, 163, 184, 0.25)',
+        timeVisible: true,
+        visible: true,
+      },
+      crosshair: {
+        vertLine: { color: 'rgba(148, 163, 184, 0.25)' },
+        horzLine: { color: 'rgba(148, 163, 184, 0.25)' },
+      },
+    })
+
+    const rsiSeries = rsiChart.addSeries(LineSeries, {
+      color: '#a78bfa',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      autoscaleInfoProvider: () => ({
+        priceRange: {
+          minValue: 0,
+          maxValue: 100,
+        },
+      }),
+    })
+
+    rsiSeries.createPriceLine({
+      price: 70,
+      color: 'rgba(248, 113, 113, 0.75)',
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: false,
+      title: '70',
+    })
+    rsiSeries.createPriceLine({
+      price: 30,
+      color: 'rgba(45, 212, 191, 0.75)',
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: false,
+      title: '30',
+    })
+
     const markerPlugin = createSeriesMarkers(candleSeries, [])
 
     chartRef.current = chart
+    rsiChartRef.current = rsiChart
     candleSeriesRef.current = candleSeries
     volumeSeriesRef.current = volumeSeries
     sma20SeriesRef.current = sma20Series
     sma60SeriesRef.current = sma60Series
     bbUpperSeriesRef.current = bbUpperSeries
     bbLowerSeriesRef.current = bbLowerSeries
+    rsiSeriesRef.current = rsiSeries
     markerPluginRef.current = markerPlugin
+
+    const syncMainToRsi = (range: { from: number; to: number } | null) => {
+      if (!range || !rsiChartRef.current || isSyncingRangeRef.current) {
+        return
+      }
+      isSyncingRangeRef.current = true
+      try {
+        rsiChartRef.current.timeScale().setVisibleLogicalRange(range)
+      } finally {
+        isSyncingRangeRef.current = false
+      }
+    }
+
+    const syncRsiToMain = (range: { from: number; to: number } | null) => {
+      if (!range || !chartRef.current || isSyncingRangeRef.current) {
+        return
+      }
+      isSyncingRangeRef.current = true
+      try {
+        chartRef.current.timeScale().setVisibleLogicalRange(range)
+      } finally {
+        isSyncingRangeRef.current = false
+      }
+    }
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(syncMainToRsi)
+    rsiChart.timeScale().subscribeVisibleLogicalRangeChange(syncRsiToMain)
 
     const resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0]
-      if (!entry || !chartRef.current) {
+      if (!entry || !chartRef.current || !rsiChartRef.current) {
         return
       }
-      chartRef.current.applyOptions({
-        width: Math.max(320, Math.floor(entry.contentRect.width)),
-      })
+      const nextWidth = Math.max(320, Math.floor(entry.contentRect.width))
+      chartRef.current.applyOptions({ width: nextWidth })
+      rsiChartRef.current.applyOptions({ width: nextWidth })
     })
-    resizeObserver.observe(container)
+    resizeObserver.observe(wrapper)
 
     return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(syncMainToRsi)
+      rsiChart.timeScale().unsubscribeVisibleLogicalRangeChange(syncRsiToMain)
       resizeObserver.disconnect()
       chartRef.current?.remove()
+      rsiChartRef.current?.remove()
       chartRef.current = null
+      rsiChartRef.current = null
       candleSeriesRef.current = null
       volumeSeriesRef.current = null
       sma20SeriesRef.current = null
       sma60SeriesRef.current = null
       bbUpperSeriesRef.current = null
       bbLowerSeriesRef.current = null
+      rsiSeriesRef.current = null
       markerPluginRef.current = null
+      isSyncingRangeRef.current = false
     }
   }, [])
 
@@ -289,8 +393,10 @@ function LaboratoryPage() {
     const sma60Series = sma60SeriesRef.current
     const bbUpperSeries = bbUpperSeriesRef.current
     const bbLowerSeries = bbLowerSeriesRef.current
+    const rsiSeries = rsiSeriesRef.current
     const markerPlugin = markerPluginRef.current
     const chart = chartRef.current
+    const rsiChart = rsiChartRef.current
     if (
       !candleSeries ||
       !volumeSeries ||
@@ -298,8 +404,10 @@ function LaboratoryPage() {
       !sma60Series ||
       !bbUpperSeries ||
       !bbLowerSeries ||
+      !rsiSeries ||
       !markerPlugin ||
-      !chart
+      !chart ||
+      !rsiChart
     ) {
       return
     }
@@ -311,6 +419,7 @@ function LaboratoryPage() {
       sma60Series.setData([])
       bbUpperSeries.setData([])
       bbLowerSeries.setData([])
+      rsiSeries.setData([])
       markerPlugin.setMarkers([])
       return
     }
@@ -333,6 +442,7 @@ function LaboratoryPage() {
     const sma60Data: LineData<Time>[] = []
     const bbUpperData: LineData<Time>[] = []
     const bbLowerData: LineData<Time>[] = []
+    const rsiData: LineData<Time>[] = []
 
     for (const item of result.candles) {
       const time = item.time as UTCTimestamp
@@ -364,6 +474,13 @@ function LaboratoryPage() {
           value: item.bb_lower_20_2,
         })
       }
+
+      if (typeof item.rsi_14 === 'number' && Number.isFinite(item.rsi_14)) {
+        rsiData.push({
+          time,
+          value: item.rsi_14,
+        })
+      }
     }
 
     const markerData: SeriesMarker<Time>[] = result.markers.map((item) => ({
@@ -380,6 +497,7 @@ function LaboratoryPage() {
     sma60Series.setData(sma60Data)
     bbUpperSeries.setData(bbUpperData)
     bbLowerSeries.setData(bbLowerData)
+    rsiSeries.setData(rsiData)
     markerPlugin.setMarkers(markerData)
     chart.timeScale().fitContent()
   }, [result])
@@ -666,7 +784,10 @@ function LaboratoryPage() {
         </header>
 
         <div className="relative">
-          <div ref={chartContainerRef} className="h-[500px] w-full overflow-hidden rounded-xl" />
+          <div ref={chartsWrapperRef} className="flex flex-col gap-3">
+            <div ref={mainChartContainerRef} className="h-[500px] w-full overflow-hidden rounded-xl" />
+            <div ref={rsiChartContainerRef} className="h-[150px] w-full overflow-hidden rounded-xl" />
+          </div>
 
           {!result && !isSubmitting && (
             <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-slate-950/75 text-sm text-slate-400">
