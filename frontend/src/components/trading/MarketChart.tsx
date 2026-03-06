@@ -7,6 +7,7 @@ import {
   createChart,
   HistogramSeries,
   LineSeries,
+  LineStyle,
   type CandlestickData,
   type HistogramData,
   type IChartApi,
@@ -52,14 +53,19 @@ function MarketChart({ symbol }: MarketChartProps) {
   const normalizedSymbol = useMemo(() => (symbol ? symbol.trim().toUpperCase() : ''), [symbol])
   const [timeframe, setTimeframe] = useState<MarketTimeframe>('60m')
 
-  const chartContainerRef = useRef<HTMLDivElement | null>(null)
+  const chartsWrapperRef = useRef<HTMLDivElement | null>(null)
+  const mainChartContainerRef = useRef<HTMLDivElement | null>(null)
+  const rsiChartContainerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
+  const rsiChartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick', Time> | null>(null)
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram', Time> | null>(null)
   const sma20SeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
   const sma60SeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
   const bbUpperSeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
   const bbLowerSeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
+  const rsiSeriesRef = useRef<ISeriesApi<'Line', Time> | null>(null)
+  const isSyncingRangeRef = useRef(false)
 
   const candlesQuery = useQuery({
     queryKey: ['market-candles', normalizedSymbol, timeframe],
@@ -68,13 +74,18 @@ function MarketChart({ symbol }: MarketChartProps) {
   })
 
   useEffect(() => {
-    const container = chartContainerRef.current
-    if (!container || chartRef.current) {
+    const wrapper = chartsWrapperRef.current
+    const mainContainer = mainChartContainerRef.current
+    const rsiContainer = rsiChartContainerRef.current
+    if (!wrapper || !mainContainer || !rsiContainer || chartRef.current || rsiChartRef.current) {
       return
     }
 
-    const chart = createChart(container, {
-      width: container.clientWidth || 800,
+    const width = wrapper.clientWidth || mainContainer.clientWidth || 800
+    const priceScaleWidth = 72
+
+    const chart = createChart(mainContainer, {
+      width,
       height: 420,
       layout: {
         background: { type: ColorType.Solid, color: '#0f172a' },
@@ -86,10 +97,12 @@ function MarketChart({ symbol }: MarketChartProps) {
       },
       rightPriceScale: {
         borderColor: 'rgba(148, 163, 184, 0.35)',
+        minimumWidth: priceScaleWidth,
       },
       timeScale: {
         borderColor: 'rgba(148, 163, 184, 0.35)',
         timeVisible: true,
+        visible: false,
       },
       crosshair: {
         vertLine: { color: 'rgba(34, 197, 94, 0.35)' },
@@ -146,35 +159,126 @@ function MarketChart({ symbol }: MarketChartProps) {
       lastValueVisible: false,
     })
 
+    const rsiChart = createChart(rsiContainer, {
+      width,
+      height: 150,
+      layout: {
+        background: { type: ColorType.Solid, color: '#0f172a' },
+        textColor: '#94a3b8',
+      },
+      grid: {
+        vertLines: { color: 'rgba(148, 163, 184, 0.08)' },
+        horzLines: { color: 'rgba(148, 163, 184, 0.12)' },
+      },
+      rightPriceScale: {
+        borderColor: 'rgba(148, 163, 184, 0.35)',
+        minimumWidth: priceScaleWidth,
+      },
+      timeScale: {
+        borderColor: 'rgba(148, 163, 184, 0.35)',
+        timeVisible: true,
+        visible: true,
+      },
+      crosshair: {
+        vertLine: { color: 'rgba(148, 163, 184, 0.25)' },
+        horzLine: { color: 'rgba(148, 163, 184, 0.25)' },
+      },
+    })
+
+    const rsiSeries = rsiChart.addSeries(LineSeries, {
+      color: '#a78bfa',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      autoscaleInfoProvider: () => ({
+        priceRange: {
+          minValue: 0,
+          maxValue: 100,
+        },
+      }),
+    })
+
+    rsiSeries.createPriceLine({
+      price: 70,
+      color: 'rgba(248, 113, 113, 0.75)',
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: false,
+      title: '70',
+    })
+    rsiSeries.createPriceLine({
+      price: 30,
+      color: 'rgba(45, 212, 191, 0.75)',
+      lineWidth: 1,
+      lineStyle: LineStyle.Dashed,
+      axisLabelVisible: false,
+      title: '30',
+    })
+
     chartRef.current = chart
+    rsiChartRef.current = rsiChart
     candleSeriesRef.current = candleSeries
     volumeSeriesRef.current = volumeSeries
     sma20SeriesRef.current = sma20Series
     sma60SeriesRef.current = sma60Series
     bbUpperSeriesRef.current = bbUpperSeries
     bbLowerSeriesRef.current = bbLowerSeries
+    rsiSeriesRef.current = rsiSeries
+
+    const syncMainToRsi = (range: { from: number; to: number } | null) => {
+      if (!range || !rsiChartRef.current || isSyncingRangeRef.current) {
+        return
+      }
+      isSyncingRangeRef.current = true
+      try {
+        rsiChartRef.current.timeScale().setVisibleLogicalRange(range)
+      } finally {
+        isSyncingRangeRef.current = false
+      }
+    }
+
+    const syncRsiToMain = (range: { from: number; to: number } | null) => {
+      if (!range || !chartRef.current || isSyncingRangeRef.current) {
+        return
+      }
+      isSyncingRangeRef.current = true
+      try {
+        chartRef.current.timeScale().setVisibleLogicalRange(range)
+      } finally {
+        isSyncingRangeRef.current = false
+      }
+    }
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(syncMainToRsi)
+    rsiChart.timeScale().subscribeVisibleLogicalRangeChange(syncRsiToMain)
 
     const resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0]
-      if (!entry || !chartRef.current) {
+      if (!entry || !chartRef.current || !rsiChartRef.current) {
         return
       }
-      chartRef.current.applyOptions({
-        width: Math.max(320, Math.floor(entry.contentRect.width)),
-      })
+      const nextWidth = Math.max(320, Math.floor(entry.contentRect.width))
+      chartRef.current.applyOptions({ width: nextWidth })
+      rsiChartRef.current.applyOptions({ width: nextWidth })
     })
-    resizeObserver.observe(container)
+    resizeObserver.observe(wrapper)
 
     return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(syncMainToRsi)
+      rsiChart.timeScale().unsubscribeVisibleLogicalRangeChange(syncRsiToMain)
       resizeObserver.disconnect()
       chartRef.current?.remove()
+      rsiChartRef.current?.remove()
       chartRef.current = null
+      rsiChartRef.current = null
       candleSeriesRef.current = null
       volumeSeriesRef.current = null
       sma20SeriesRef.current = null
       sma60SeriesRef.current = null
       bbUpperSeriesRef.current = null
       bbLowerSeriesRef.current = null
+      rsiSeriesRef.current = null
+      isSyncingRangeRef.current = false
     }
   }, [])
 
@@ -185,7 +289,9 @@ function MarketChart({ symbol }: MarketChartProps) {
     const sma60Series = sma60SeriesRef.current
     const bbUpperSeries = bbUpperSeriesRef.current
     const bbLowerSeries = bbLowerSeriesRef.current
+    const rsiSeries = rsiSeriesRef.current
     const chart = chartRef.current
+    const rsiChart = rsiChartRef.current
 
     if (
       !candleSeries ||
@@ -194,7 +300,9 @@ function MarketChart({ symbol }: MarketChartProps) {
       !sma60Series ||
       !bbUpperSeries ||
       !bbLowerSeries ||
-      !chart
+      !rsiSeries ||
+      !chart ||
+      !rsiChart
     ) {
       return
     }
@@ -206,6 +314,7 @@ function MarketChart({ symbol }: MarketChartProps) {
       sma60Series.setData([])
       bbUpperSeries.setData([])
       bbLowerSeries.setData([])
+      rsiSeries.setData([])
       return
     }
 
@@ -231,6 +340,7 @@ function MarketChart({ symbol }: MarketChartProps) {
     const sma60Data: LineData<Time>[] = []
     const bbUpperData: LineData<Time>[] = []
     const bbLowerData: LineData<Time>[] = []
+    const rsiData: LineData<Time>[] = []
 
     for (const item of candlesQuery.data) {
       const time = toChartTime(item.time)
@@ -262,6 +372,13 @@ function MarketChart({ symbol }: MarketChartProps) {
           value: item.bb_lower_20_2,
         })
       }
+
+      if (typeof item.rsi_14 === 'number' && Number.isFinite(item.rsi_14)) {
+        rsiData.push({
+          time,
+          value: item.rsi_14,
+        })
+      }
     }
 
     candleSeries.setData(candleData)
@@ -270,6 +387,7 @@ function MarketChart({ symbol }: MarketChartProps) {
     sma60Series.setData(sma60Data)
     bbUpperSeries.setData(bbUpperData)
     bbLowerSeries.setData(bbLowerData)
+    rsiSeries.setData(rsiData)
     chart.timeScale().fitContent()
   }, [normalizedSymbol, candlesQuery.data])
 
@@ -308,7 +426,10 @@ function MarketChart({ symbol }: MarketChartProps) {
       </header>
 
       <div className="relative">
-        <div ref={chartContainerRef} className="h-[420px] w-full overflow-hidden rounded-xl" />
+        <div ref={chartsWrapperRef} className="flex flex-col gap-3">
+          <div ref={mainChartContainerRef} className="h-[420px] w-full overflow-hidden rounded-xl" />
+          <div ref={rsiChartContainerRef} className="h-[150px] w-full overflow-hidden rounded-xl" />
+        </div>
 
         {!normalizedSymbol && (
           <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-slate-950/80 text-sm text-slate-400">
