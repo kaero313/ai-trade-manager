@@ -1,5 +1,7 @@
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 
+import BotControlPanel from '../components/trading/BotControlPanel'
 import ControlPanel from '../components/trading/ControlPanel'
 import GridConfigPanel from '../components/trading/GridConfigPanel'
 import MarketChart from '../components/trading/MarketChart'
@@ -9,7 +11,7 @@ import RecentOrders from '../components/trading/RecentOrders'
 import SentimentWidget from '../components/trading/SentimentWidget'
 import Watchlist from '../components/trading/Watchlist'
 import { getBotConfig, getBotStatus, updateBotConfig } from '../services/api'
-import type { BotConfig, BotStatus, GridParams } from '../services/api'
+import type { BotConfig, GridParams } from '../services/api'
 import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
 import type { AssetItem, OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
 
@@ -29,7 +31,6 @@ function formatPercent(value: number): string {
 
 function DashboardPage() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
-  const [botStatus, setBotStatus] = useState<BotStatus | null>(null)
   const [botConfig, setBotConfig] = useState<BotConfig | null>(null)
   const [orders, setOrders] = useState<OrderHistoryItem[]>([])
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
@@ -39,6 +40,14 @@ function DashboardPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [configErrorMessage, setConfigErrorMessage] = useState<string | null>(null)
   const [ordersErrorMessage, setOrdersErrorMessage] = useState<string | null>(null)
+
+  const botStatusQuery = useQuery({
+    queryKey: ['bot-status'],
+    queryFn: getBotStatus,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+    placeholderData: (previousData) => previousData,
+  })
 
   useEffect(() => {
     let isMounted = true
@@ -53,9 +62,8 @@ function DashboardPage() {
       setConfigErrorMessage(null)
       setOrdersErrorMessage(null)
 
-      const [portfolioResult, botStatusResult, configResult, ordersResult] = await Promise.allSettled([
+      const [portfolioResult, configResult, ordersResult] = await Promise.allSettled([
         getPortfolioSummary(),
-        getBotStatus(),
         getBotConfig(),
         fetchOrders(),
       ])
@@ -68,10 +76,6 @@ function DashboardPage() {
         setPortfolio(portfolioResult.value)
       }
 
-      if (botStatusResult.status === 'fulfilled') {
-        setBotStatus(botStatusResult.value)
-      }
-
       if (configResult.status === 'fulfilled') {
         setBotConfig(configResult.value)
       }
@@ -79,7 +83,7 @@ function DashboardPage() {
         setOrders(ordersResult.value)
       }
 
-      if (portfolioResult.status === 'rejected' || botStatusResult.status === 'rejected') {
+      if (portfolioResult.status === 'rejected') {
         setErrorMessage('대시보드 데이터를 불러오지 못했습니다.')
       }
 
@@ -102,9 +106,8 @@ function DashboardPage() {
 
       isPolling = true
       try {
-        const [portfolioResult, botStatusResult, ordersResult] = await Promise.allSettled([
+        const [portfolioResult, ordersResult] = await Promise.allSettled([
           getPortfolioSummary(),
-          getBotStatus(),
           fetchOrders(),
         ])
 
@@ -116,12 +119,6 @@ function DashboardPage() {
           setPortfolio(portfolioResult.value)
         } else {
           console.warn('[Dashboard polling] portfolio refresh failed', portfolioResult.reason)
-        }
-
-        if (botStatusResult.status === 'fulfilled') {
-          setBotStatus(botStatusResult.value)
-        } else {
-          console.warn('[Dashboard polling] bot status refresh failed', botStatusResult.reason)
         }
 
         if (ordersResult.status === 'fulfilled') {
@@ -159,15 +156,7 @@ function DashboardPage() {
   const totalPnl = portfolio?.total_pnl ?? 0
   const assets: AssetItem[] = portfolio?.items ?? []
   const pnlTextColor = totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'
-  const isRunning = botStatus?.running ?? false
-  const statusLabel = isRunning ? 'Running' : 'Paused'
-  const statusClass = isRunning
-    ? 'border border-emerald-200 bg-emerald-100 text-emerald-700'
-    : 'border border-slate-300 bg-slate-200 text-slate-700'
-
-  const handleStatusChange = (nextStatus: BotStatus) => {
-    setBotStatus(nextStatus)
-  }
+  const isRunning = botStatusQuery.data?.running ?? false
 
   const handleSaveGrid = async (grid: GridParams) => {
     const nextPayload: BotConfig = {
@@ -212,15 +201,6 @@ function DashboardPage() {
         </section>
 
         <PortfolioChart items={assets} isLoading={isLoading} />
-
-        <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">Bot Status</h2>
-            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>
-              {isLoading ? '확인 중...' : statusLabel}
-            </span>
-          </div>
-        </section>
 
         <section className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
           <header className="border-b border-slate-200 px-5 py-4">
@@ -283,8 +263,13 @@ function DashboardPage() {
       </div>
 
       <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
+        <BotControlPanel
+          botStatus={botStatusQuery.data}
+          isLoading={botStatusQuery.isLoading}
+          isError={botStatusQuery.isError}
+        />
         <Watchlist selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
-        <ControlPanel isRunning={isRunning} onStatusChange={handleStatusChange} />
+        <ControlPanel isRunning={isRunning} />
         <SentimentWidget />
         <GridConfigPanel
           config={botConfig}
