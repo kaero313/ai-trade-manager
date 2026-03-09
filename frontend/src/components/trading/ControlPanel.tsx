@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import { useState } from 'react'
 
@@ -6,7 +7,6 @@ import type { BotStatus } from '../../services/api'
 
 interface ControlPanelProps {
   isRunning: boolean
-  onStatusChange: (nextStatus: BotStatus) => void
 }
 
 type ActionType = 'start' | 'stop' | 'liquidate' | null
@@ -24,7 +24,8 @@ function resolveErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-function ControlPanel({ isRunning, onStatusChange }: ControlPanelProps) {
+function ControlPanel({ isRunning }: ControlPanelProps) {
+  const queryClient = useQueryClient()
   const [activeAction, setActiveAction] = useState<ActionType>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -38,7 +39,8 @@ function ControlPanel({ isRunning, onStatusChange }: ControlPanelProps) {
 
     try {
       const nextStatus = await startBot()
-      onStatusChange(nextStatus)
+      queryClient.setQueryData(['bot-status'], nextStatus)
+      void queryClient.invalidateQueries({ queryKey: ['bot-status'] })
       setSuccessMessage('봇 가동 명령을 전송했습니다.')
     } catch (error) {
       setErrorMessage(resolveErrorMessage(error, '봇 가동 요청에 실패했습니다.'))
@@ -54,7 +56,8 @@ function ControlPanel({ isRunning, onStatusChange }: ControlPanelProps) {
 
     try {
       const nextStatus = await stopBot()
-      onStatusChange(nextStatus)
+      queryClient.setQueryData(['bot-status'], nextStatus)
+      void queryClient.invalidateQueries({ queryKey: ['bot-status'] })
       setSuccessMessage('봇 정지 명령을 전송했습니다.')
     } catch (error) {
       setErrorMessage(resolveErrorMessage(error, '봇 정지 요청에 실패했습니다.'))
@@ -75,6 +78,12 @@ function ControlPanel({ isRunning, onStatusChange }: ControlPanelProps) {
 
     try {
       await liquidateAll()
+      queryClient.setQueryData<BotStatus>(['bot-status'], (previous) => ({
+        running: false,
+        last_heartbeat: previous?.last_heartbeat ?? null,
+        last_error: previous?.last_error ?? null,
+      }))
+      void queryClient.invalidateQueries({ queryKey: ['bot-status'] })
       setSuccessMessage('전량 롤백 요청을 전송했습니다.')
     } catch (error) {
       setErrorMessage(resolveErrorMessage(error, '전량 롤백 요청에 실패했습니다.'))
