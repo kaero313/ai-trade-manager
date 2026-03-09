@@ -1,8 +1,8 @@
 import { isAxiosError } from 'axios'
 import { useState } from 'react'
 
-import { liquidateAll, startBot, stopBot } from '../../services/botService'
-import type { BotStatus } from '../../services/botService'
+import { liquidateAll, startBot, stopBot } from '../../services/api'
+import type { BotStatus } from '../../services/api'
 
 interface ControlPanelProps {
   isRunning: boolean

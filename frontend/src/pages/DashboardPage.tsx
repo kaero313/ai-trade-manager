@@ -8,8 +8,8 @@ import PortfolioChart from '../components/trading/PortfolioChart'
 import RecentOrders from '../components/trading/RecentOrders'
 import SentimentWidget from '../components/trading/SentimentWidget'
 import Watchlist from '../components/trading/Watchlist'
-import { fetchConfig, getBotStatus, updateConfig } from '../services/botService'
-import type { BotConfig, BotStatus, GridParams } from '../services/botService'
+import { getBotConfig, getBotStatus, updateBotConfig } from '../services/api'
+import type { BotConfig, BotStatus, GridParams } from '../services/api'
 import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
 import type { AssetItem, OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
 
@@ -56,7 +56,7 @@ function DashboardPage() {
       const [portfolioResult, botStatusResult, configResult, ordersResult] = await Promise.allSettled([
         getPortfolioSummary(),
         getBotStatus(),
-        fetchConfig(),
+        getBotConfig(),
         fetchOrders(),
       ])
 
@@ -177,7 +177,7 @@ function DashboardPage() {
         trade_mode: 'grid',
       },
     }
-    const savedConfig = await updateConfig(nextPayload)
+    const savedConfig = await updateBotConfig(nextPayload)
     setBotConfig(savedConfig)
     setConfigErrorMessage(null)
   }

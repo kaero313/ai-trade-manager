@@ -181,13 +181,12 @@ function SentimentWidget() {
       setErrorMessage(resolveErrorMessage(error))
     } finally {
       inFlightRef.current = false
-      if (!mountedRef.current) {
-        return
+      if (mountedRef.current) {
+        if (source === 'initial') {
+          setIsInitialLoading(false)
+        }
+        setIsRefreshing(false)
       }
-      if (source === 'initial') {
-        setIsInitialLoading(false)
-      }
-      setIsRefreshing(false)
     }
   }, [])
 

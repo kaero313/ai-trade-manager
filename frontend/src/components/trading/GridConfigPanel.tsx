@@ -1,7 +1,7 @@
 import { isAxiosError } from 'axios'
 import { useEffect, useState } from 'react'
 
-import type { BotConfig, GridParams } from '../../services/botService'
+import type { BotConfig, GridParams } from '../../services/api'
 
 interface GridConfigPanelProps {
   config: BotConfig | null
