@@ -105,6 +105,11 @@ function BotControlPanel() {
     }
   }
 
+  const handleConfigSaveSuccess = (message: string) => {
+    setNotice({ message, type: 'success' })
+    setIsConfigModalOpen(false)
+  }
+
   return (
     <aside className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
       <header className="flex items-start justify-between gap-3">
@@ -173,7 +178,13 @@ function BotControlPanel() {
         </p>
       )}
 
-      {isConfigModalOpen && <BotConfigForm isOpen={isConfigModalOpen} onClose={() => setIsConfigModalOpen(false)} />}
+      {isConfigModalOpen && (
+        <BotConfigForm
+          isOpen={isConfigModalOpen}
+          onClose={() => setIsConfigModalOpen(false)}
+          onSaveSuccess={handleConfigSaveSuccess}
+        />
+      )}
     </aside>
   )
 }
