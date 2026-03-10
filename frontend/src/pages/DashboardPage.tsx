@@ -2,15 +2,12 @@ import { useEffect, useState } from 'react'
 
 import BotControlPanel from '../components/trading/BotControlPanel'
 import ControlPanel from '../components/trading/ControlPanel'
-import GridConfigPanel from '../components/trading/GridConfigPanel'
 import MarketChart from '../components/trading/MarketChart'
 import MarketSearchBar from '../components/trading/MarketSearchBar'
 import PortfolioChart from '../components/trading/PortfolioChart'
 import RecentOrders from '../components/trading/RecentOrders'
 import SentimentWidget from '../components/trading/SentimentWidget'
 import Watchlist from '../components/trading/Watchlist'
-import { getBotConfig, updateBotConfig } from '../services/api'
-import type { BotConfig, GridParams } from '../services/api'
 import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
 import type { AssetItem, OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
 
@@ -30,14 +27,11 @@ function formatPercent(value: number): string {
 
 function DashboardPage() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
-  const [botConfig, setBotConfig] = useState<BotConfig | null>(null)
   const [orders, setOrders] = useState<OrderHistoryItem[]>([])
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [isConfigLoading, setIsConfigLoading] = useState(true)
   const [isOrdersLoading, setIsOrdersLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [configErrorMessage, setConfigErrorMessage] = useState<string | null>(null)
   const [ordersErrorMessage, setOrdersErrorMessage] = useState<string | null>(null)
 
   useEffect(() => {
@@ -47,15 +41,12 @@ function DashboardPage() {
 
     const loadDashboardInitial = async () => {
       setIsLoading(true)
-      setIsConfigLoading(true)
       setIsOrdersLoading(true)
       setErrorMessage(null)
-      setConfigErrorMessage(null)
       setOrdersErrorMessage(null)
 
-      const [portfolioResult, configResult, ordersResult] = await Promise.allSettled([
+      const [portfolioResult, ordersResult] = await Promise.allSettled([
         getPortfolioSummary(),
-        getBotConfig(),
         fetchOrders(),
       ])
 
@@ -66,10 +57,6 @@ function DashboardPage() {
       if (portfolioResult.status === 'fulfilled') {
         setPortfolio(portfolioResult.value)
       }
-
-      if (configResult.status === 'fulfilled') {
-        setBotConfig(configResult.value)
-      }
       if (ordersResult.status === 'fulfilled') {
         setOrders(ordersResult.value)
       }
@@ -78,15 +65,11 @@ function DashboardPage() {
         setErrorMessage('대시보드 데이터를 불러오지 못했습니다.')
       }
 
-      if (configResult.status === 'rejected') {
-        setConfigErrorMessage('그리드 설정을 불러오지 못했습니다. 기본값으로 표시됩니다.')
-      }
       if (ordersResult.status === 'rejected') {
         setOrdersErrorMessage('최근 체결 내역을 불러오지 못했습니다.')
       }
 
       setIsLoading(false)
-      setIsConfigLoading(false)
       setIsOrdersLoading(false)
     }
 
@@ -147,19 +130,6 @@ function DashboardPage() {
   const totalPnl = portfolio?.total_pnl ?? 0
   const assets: AssetItem[] = portfolio?.items ?? []
   const pnlTextColor = totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'
-
-  const handleSaveGrid = async (grid: GridParams) => {
-    const nextPayload: BotConfig = {
-      ...(botConfig ?? {}),
-      grid: {
-        ...grid,
-        trade_mode: 'grid',
-      },
-    }
-    const savedConfig = await updateBotConfig(nextPayload)
-    setBotConfig(savedConfig)
-    setConfigErrorMessage(null)
-  }
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -257,12 +227,6 @@ function DashboardPage() {
         <Watchlist selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
         <ControlPanel />
         <SentimentWidget />
-        <GridConfigPanel
-          config={botConfig}
-          isLoading={isConfigLoading}
-          loadError={configErrorMessage}
-          onSave={handleSaveGrid}
-        />
       </div>
     </div>
   )

@@ -3,6 +3,7 @@ import { isAxiosError } from 'axios'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import BotConfigForm from './BotConfigForm'
 import { getBotStatus, startBot, stopBot } from '../../services/api'
 
 type ActionType = 'start' | 'stop' | null
@@ -29,6 +30,7 @@ function resolveErrorMessage(error: unknown, fallback: string): string {
 function BotControlPanel() {
   const queryClient = useQueryClient()
   const [activeAction, setActiveAction] = useState<ActionType>(null)
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false)
   const [notice, setNotice] = useState<NoticeState | null>(null)
 
   const botStatusQuery = useQuery({
@@ -150,6 +152,13 @@ function BotControlPanel() {
             <span>{activeAction === 'stop' ? '정지 중...' : '봇 정지(Stop)'}</span>
           </button>
         </div>
+        <button
+          type="button"
+          onClick={() => setIsConfigModalOpen(true)}
+          className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+        >
+          설정()
+        </button>
       </section>
 
       {notice && (
@@ -163,6 +172,8 @@ function BotControlPanel() {
           {notice.message}
         </p>
       )}
+
+      {isConfigModalOpen && <BotConfigForm isOpen={isConfigModalOpen} onClose={() => setIsConfigModalOpen(false)} />}
     </aside>
   )
 }
