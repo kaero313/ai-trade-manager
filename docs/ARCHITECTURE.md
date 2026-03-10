@@ -70,6 +70,7 @@ ai-trade-manager/
 ## 4. 프론트엔드 (Frontend) 구성
 **React 18 + Vite** 기반으로 개발되었으며, `lightweight-charts`를 사용해 트레이딩뷰 수준의 강력한 차트를 구현했습니다.
 * **대시보드 (Dashboard):** 실시간 시장 가격, 내 포지션, 체결 내역, 기술적 지표 오버레이(MA, BB, RSI) 제공.
+* **동적 제어 패널 (Config Panel):** 봇 가동/정지, 종목 배분 비율, 리스크, 그리드 파라미터 등을 웹 UI 모달에서 수정하면 실시간으로 Backend DB에 반영되어 봇 동작에 즉각 적용됩니다. (Phase 17)
 * **연구소 (Laboratory):** 백테스트 엔진과 연동하여 전략 파라미터를 시뮬레이션하고, 차트 상에 타점(Buy/Sell Marker)을 시각화.
 
 ## 5. 거래소 추상화 (Broker Abstraction) 전략
