@@ -1,6 +1,6 @@
 # AI-Trade-Manager 데이터베이스 명세서 (Database Schema Specification)
 
-본 문서는 **Phase 1~16**까지 발전해온 핵심 도메인 모델의 설계 의도와 데이터베이스 운용 수칙을 기재합니다.
+본 문서는 **Phase 1~17**까지 발전해온 핵심 도메인 모델의 설계 의도와 데이터베이스 운용 수칙을 기재합니다.
 우리는 In-memory 구조에서 벗어나 **PostgreSQL + 비동기 SQLAlchemy 2.0** 스택으로 완벽히 이전 및 확장하였습니다.
 
 ---
@@ -47,7 +47,7 @@
 *   `executed_at`: (DateTime, AutoNow) 거래소가 체결을 이행해준 시간.
 
 ### 3.4. `bot_configs` (알고리즘 및 AI 위험 설정)
-사용자가 앱이나 슬랙에서 조정하는 매매 알고리즘의 변수값들 모음집.
+사용자가 앱이나 슬랙에서 조정하는 매매 알고리즘의 변수값들 모음집. **프론트엔드 UI 모달을 통해 실시간으로(Phase 17) 업데이트**되며 Worker 로직에 즉각 반영됩니다.
 *   `id`: (PK) 고유 번호
 *   `config_json`: (JSON) 동적 설정들을 품는 통. 그리드 매매 기준 간격, 일일 최대 손실액, AI 에이전트의 성향(Aggressive/Conservative 등) 삽입.
 *   `is_active`: (Boolean) 이 설정 프로필이 현재 작동 중인지 여부.
