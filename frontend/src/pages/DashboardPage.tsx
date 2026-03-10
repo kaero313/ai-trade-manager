@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 
 import BotControlPanel from '../components/trading/BotControlPanel'
@@ -10,7 +9,7 @@ import PortfolioChart from '../components/trading/PortfolioChart'
 import RecentOrders from '../components/trading/RecentOrders'
 import SentimentWidget from '../components/trading/SentimentWidget'
 import Watchlist from '../components/trading/Watchlist'
-import { getBotConfig, getBotStatus, updateBotConfig } from '../services/api'
+import { getBotConfig, updateBotConfig } from '../services/api'
 import type { BotConfig, GridParams } from '../services/api'
 import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
 import type { AssetItem, OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
@@ -40,14 +39,6 @@ function DashboardPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [configErrorMessage, setConfigErrorMessage] = useState<string | null>(null)
   const [ordersErrorMessage, setOrdersErrorMessage] = useState<string | null>(null)
-
-  const botStatusQuery = useQuery({
-    queryKey: ['bot-status'],
-    queryFn: getBotStatus,
-    refetchInterval: 5000,
-    refetchIntervalInBackground: true,
-    placeholderData: (previousData) => previousData,
-  })
 
   useEffect(() => {
     let isMounted = true
@@ -156,7 +147,6 @@ function DashboardPage() {
   const totalPnl = portfolio?.total_pnl ?? 0
   const assets: AssetItem[] = portfolio?.items ?? []
   const pnlTextColor = totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'
-  const isRunning = botStatusQuery.data?.running ?? false
 
   const handleSaveGrid = async (grid: GridParams) => {
     const nextPayload: BotConfig = {
@@ -263,13 +253,9 @@ function DashboardPage() {
       </div>
 
       <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
-        <BotControlPanel
-          botStatus={botStatusQuery.data}
-          isLoading={botStatusQuery.isLoading}
-          isError={botStatusQuery.isError}
-        />
+        <BotControlPanel />
         <Watchlist selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
-        <ControlPanel isRunning={isRunning} />
+        <ControlPanel />
         <SentimentWidget />
         <GridConfigPanel
           config={botConfig}
