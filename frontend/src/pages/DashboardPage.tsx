@@ -145,15 +145,15 @@ function DashboardPage() {
         )}
 
         <section className="grid gap-4 md:grid-cols-2">
-          <article className="rounded-2xl bg-slate-900 p-6 text-slate-100 shadow-lg">
-            <p className="text-sm font-medium text-slate-300">총 자산</p>
+          <article className="rounded-2xl bg-white p-6 text-gray-900 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:ring-gray-700">
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-300">총 자산</p>
             <p className="mt-2 text-3xl font-bold sm:text-4xl">
               {isLoading ? '불러오는 중...' : formatKrw(totalNetWorth)}
             </p>
           </article>
 
-          <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
-            <p className="text-sm font-medium text-slate-500">총 손익</p>
+          <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-300">총 손익</p>
             <p className={`mt-2 text-3xl font-bold sm:text-4xl ${pnlTextColor}`}>
               {isLoading ? '불러오는 중...' : formatSignedKrw(totalPnl)}
             </p>
@@ -162,14 +162,14 @@ function DashboardPage() {
 
         <PortfolioChart items={assets} isLoading={isLoading} />
 
-        <section className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-          <header className="border-b border-slate-200 px-5 py-4">
-            <h2 className="text-lg font-semibold text-slate-900">Assets</h2>
+        <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+          <header className="border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Assets</h2>
           </header>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-100 text-left text-slate-600">
+            <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
+              <thead className="bg-gray-100 text-left text-gray-600 dark:bg-gray-700 dark:text-gray-300">
                 <tr>
                   <th className="px-5 py-3 font-semibold">종목명</th>
                   <th className="px-5 py-3 font-semibold">현재가</th>
@@ -178,10 +178,10 @@ function DashboardPage() {
                   <th className="px-5 py-3 font-semibold">추정금액</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
+              <tbody className="divide-y divide-gray-100 bg-white dark:divide-gray-700 dark:bg-gray-800">
                 {isLoading && (
                   <tr>
-                    <td colSpan={5} className="px-5 py-8 text-center text-slate-500">
+                    <td colSpan={5} className="px-5 py-8 text-center text-gray-500 dark:text-gray-300">
                       자산 데이터를 불러오는 중입니다.
                     </td>
                   </tr>
@@ -189,7 +189,7 @@ function DashboardPage() {
 
                 {!isLoading && assets.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-5 py-8 text-center text-slate-500">
+                    <td colSpan={5} className="px-5 py-8 text-center text-gray-500 dark:text-gray-300">
                       보유 중인 자산이 없습니다.
                     </td>
                   </tr>
@@ -200,17 +200,17 @@ function DashboardPage() {
                     const assetPnlClass = item.pnl_percentage >= 0 ? 'text-emerald-600' : 'text-rose-600'
 
                     return (
-                      <tr key={`${item.broker}-${item.currency}`} className="text-slate-700">
-                        <td className="px-5 py-3 font-medium text-slate-900">
+                      <tr key={`${item.broker}-${item.currency}`} className="text-gray-700 dark:text-gray-200">
+                        <td className="px-5 py-3 font-medium text-gray-900 dark:text-gray-100">
                           {item.currency}
-                          <p className="mt-0.5 text-xs text-slate-500">{item.broker}</p>
+                          <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-300">{item.broker}</p>
                         </td>
                         <td className="px-5 py-3">{formatKrw(item.current_price)}</td>
                         <td className="px-5 py-3">{formatKrw(item.avg_buy_price)}</td>
                         <td className={`px-5 py-3 font-semibold ${assetPnlClass}`}>
                           {formatPercent(item.pnl_percentage)}
                         </td>
-                        <td className="px-5 py-3 font-semibold text-slate-900">{formatKrw(item.total_value)}</td>
+                        <td className="px-5 py-3 font-semibold text-gray-900 dark:text-gray-100">{formatKrw(item.total_value)}</td>
                       </tr>
                     )
                   })}

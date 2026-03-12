@@ -48,16 +48,16 @@ function resolveSideStyle(side: string): { label: string; className: string } {
   }
   return {
     label: side.toUpperCase(),
-    className: 'bg-slate-100 text-slate-700',
+    className: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
   }
 }
 
 function RecentOrders({ orders, isLoading, errorMessage }: RecentOrdersProps) {
   return (
-    <section className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-      <header className="border-b border-slate-200 px-5 py-4">
-        <h2 className="text-lg font-semibold text-slate-900">Recent Orders</h2>
-        <p className="mt-1 text-sm text-slate-500">최근 체결된 매매 내역입니다.</p>
+    <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+      <header className="border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Orders</h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">최근 체결된 매매 내역입니다.</p>
       </header>
 
       {errorMessage && (
@@ -67,8 +67,8 @@ function RecentOrders({ orders, isLoading, errorMessage }: RecentOrdersProps) {
       )}
 
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
-          <thead className="bg-slate-100 text-left text-slate-600">
+        <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
+          <thead className="bg-gray-100 text-left text-gray-600 dark:bg-gray-700 dark:text-gray-300">
             <tr>
               <th className="px-5 py-3 font-semibold">체결 시간</th>
               <th className="px-5 py-3 font-semibold">종목</th>
@@ -78,10 +78,10 @@ function RecentOrders({ orders, isLoading, errorMessage }: RecentOrdersProps) {
               <th className="px-5 py-3 font-semibold">브로커</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100 bg-white">
+          <tbody className="divide-y divide-gray-100 bg-white dark:divide-gray-700 dark:bg-gray-800">
             {isLoading && (
               <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-slate-500">
+                <td colSpan={6} className="px-5 py-8 text-center text-gray-500 dark:text-gray-300">
                   최근 체결 내역을 불러오는 중입니다.
                 </td>
               </tr>
@@ -89,7 +89,7 @@ function RecentOrders({ orders, isLoading, errorMessage }: RecentOrdersProps) {
 
             {!isLoading && orders.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-slate-500">
+                <td colSpan={6} className="px-5 py-8 text-center text-gray-500 dark:text-gray-300">
                   체결 내역이 없습니다.
                 </td>
               </tr>
@@ -99,9 +99,9 @@ function RecentOrders({ orders, isLoading, errorMessage }: RecentOrdersProps) {
               orders.map((order) => {
                 const sideStyle = resolveSideStyle(order.side)
                 return (
-                  <tr key={order.id} className="text-slate-700">
+                  <tr key={order.id} className="text-gray-700 dark:text-gray-200">
                     <td className="px-5 py-3">{formatExecutedAt(order.executed_at)}</td>
-                    <td className="px-5 py-3 font-medium text-slate-900">{order.symbol}</td>
+                    <td className="px-5 py-3 font-medium text-gray-900 dark:text-gray-100">{order.symbol}</td>
                     <td className="px-5 py-3">
                       <span
                         className={`inline-flex min-w-14 items-center justify-center rounded-full px-2.5 py-1 text-xs font-semibold ${sideStyle.className}`}
@@ -109,7 +109,7 @@ function RecentOrders({ orders, isLoading, errorMessage }: RecentOrdersProps) {
                         {sideStyle.label}
                       </span>
                     </td>
-                    <td className="px-5 py-3 font-semibold text-slate-900">{formatKrw(order.price)}</td>
+                    <td className="px-5 py-3 font-semibold text-gray-900 dark:text-gray-100">{formatKrw(order.price)}</td>
                     <td className="px-5 py-3">{formatQty(order.qty)}</td>
                     <td className="px-5 py-3">{order.broker}</td>
                   </tr>

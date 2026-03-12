@@ -76,10 +76,10 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
 
   const item = payload[0].payload
   return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-md">
-      <p className="text-sm font-semibold text-slate-900">{item.name}</p>
-      <p className="mt-1 text-xs text-slate-600">평가금액: {formatKrw(item.value)}</p>
-      <p className="text-xs text-slate-600">비중: {item.percent.toFixed(1)}%</p>
+    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-md dark:border-gray-700 dark:bg-gray-800">
+      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{item.name}</p>
+      <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">평가금액: {formatKrw(item.value)}</p>
+      <p className="text-xs text-gray-600 dark:text-gray-300">비중: {item.percent.toFixed(1)}%</p>
     </div>
   )
 }
@@ -89,20 +89,20 @@ function PortfolioChart({ items, isLoading }: PortfolioChartProps) {
   const hasData = chartData.length > 0
 
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="mb-4">
-        <h2 className="text-lg font-semibold text-slate-900">Portfolio Allocation</h2>
-        <p className="mt-1 text-sm text-slate-500">보유 자산 평가금액 비중</p>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Portfolio Allocation</h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">보유 자산 평가금액 비중</p>
       </header>
 
       {isLoading && (
-        <div className="flex h-72 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-500">
+        <div className="flex h-72 items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-300">
           자산 비중 차트를 불러오는 중입니다.
         </div>
       )}
 
       {!isLoading && !hasData && (
-        <div className="flex h-72 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-500">
+        <div className="flex h-72 items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-300">
           비중 데이터를 표시할 수 없습니다.
         </div>
       )}

@@ -89,7 +89,7 @@ function resolveSentimentLevel(score: number): SentimentLevel {
   if (score >= 45) {
     return {
       label: '중립',
-      badgeClassName: 'bg-slate-100 text-slate-700',
+      badgeClassName: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
       description: '방향성이 약합니다. 진입/청산 기준을 유지하세요.',
     }
   }
@@ -225,43 +225,43 @@ function SentimentWidget() {
   const level = useMemo(() => resolveSentimentLevel(score), [score])
 
   return (
-    <aside className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <aside className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="mb-4">
-        <h2 className="text-lg font-semibold text-slate-900">AI 시장 심리 지수</h2>
-        <p className="mt-1 text-sm text-slate-500">탐욕/공포 분위기와 핵심 뉴스 요약</p>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI 시장 심리 지수</h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">탐욕/공포 분위기와 핵심 뉴스 요약</p>
       </header>
 
       {isInitialLoading && !data ? (
         <div className="space-y-3">
-          <div className="h-4 w-2/3 animate-pulse rounded bg-slate-200" />
-          <div className="h-3 w-full animate-pulse rounded bg-slate-200" />
-          <div className="h-3 w-5/6 animate-pulse rounded bg-slate-200" />
-          <div className="h-3 w-4/6 animate-pulse rounded bg-slate-200" />
+          <div className="h-4 w-2/3 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+          <div className="h-3 w-full animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+          <div className="h-3 w-5/6 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+          <div className="h-3 w-4/6 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
         </div>
       ) : (
         <div className="space-y-4">
           <div>
             <div className="mb-2 flex items-end justify-between">
-              <p className="text-3xl font-bold text-slate-900">{score}</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-gray-100">{score}</p>
               <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${level.badgeClassName}`}>
                 {level.label}
               </span>
             </div>
-            <div className="h-3 w-full overflow-hidden rounded-full bg-slate-200">
+            <div className="h-3 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-blue-500 via-violet-500 via-orange-400 to-rose-500 transition-all duration-500"
                 style={{ width: `${score}%` }}
               />
             </div>
-            <p className="mt-2 text-xs text-slate-600">{level.description}</p>
+            <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">{level.description}</p>
           </div>
 
-          <div className="rounded-xl bg-slate-50 p-3">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">요약 3줄</h3>
-            <ul className="space-y-1.5 text-sm text-slate-700">
+          <div className="rounded-xl bg-gray-50 p-3 dark:bg-gray-700/40">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">요약 3줄</h3>
+            <ul className="space-y-1.5 text-sm text-gray-700 dark:text-gray-200">
               {summaryLines.map((line, index) => (
                 <li key={`${line}-${index}`} className="flex gap-2">
-                  <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-700">
+                  <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-300">
                     {index + 1}
                   </span>
                   <span>{line}</span>
@@ -270,16 +270,16 @@ function SentimentWidget() {
             </ul>
           </div>
 
-          <div className="space-y-2 text-xs text-slate-500">
+          <div className="space-y-2 text-xs text-gray-500 dark:text-gray-300">
             <p>기준 기사: {newsCount}건</p>
             <p>업데이트: {updatedAtText}</p>
           </div>
         </div>
       )}
 
-      <div className="mt-5 border-t border-slate-200 pt-4">
+      <div className="mt-5 border-t border-gray-200 pt-4 dark:border-gray-700">
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-sm font-medium text-slate-700">자동 갱신</span>
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-200">자동 갱신</span>
           <label className="relative inline-flex cursor-pointer items-center">
             <input
               type="checkbox"
@@ -293,7 +293,7 @@ function SentimentWidget() {
         </div>
 
         <div className="mb-3">
-          <label htmlFor="refresh-interval" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">
+          <label htmlFor="refresh-interval" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
             갱신 주기
           </label>
           <select
