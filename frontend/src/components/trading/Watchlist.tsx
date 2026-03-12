@@ -97,9 +97,9 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
   }
 
   return (
-    <aside className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <aside className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="mb-4 flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-slate-900">Watchlist</h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Watchlist</h2>
         <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -110,7 +110,7 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
       </header>
 
       {favoritesQuery.isLoading && (
-        <div className="flex items-center gap-2 text-sm text-slate-500">
+        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-300">
           <Loader2 className="h-4 w-4 animate-spin" />
           관심 종목을 불러오는 중입니다.
         </div>
@@ -123,7 +123,7 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
       )}
 
       {!favoritesQuery.isLoading && !favoritesQuery.isError && symbols.length === 0 && (
-        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500">
+        <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-300">
           아직 등록된 관심 종목이 없습니다. 검색창에서 별표를 눌러 추가해 주세요.
         </p>
       )}
@@ -139,7 +139,7 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
                 ? 'text-rose-600'
                 : changeRate < 0
                   ? 'text-blue-600'
-                  : 'text-slate-600'
+                  : 'text-gray-600 dark:text-gray-300'
             const isPending = pendingSymbol === symbol
             const isSelected = selected === symbol
 
@@ -150,19 +150,19 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
                 className={`cursor-pointer rounded-xl border px-3 py-2.5 transition ${
                   isSelected
                     ? 'border-emerald-300 bg-emerald-50/60 ring-1 ring-emerald-200'
-                    : 'border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-slate-100/70'
+                    : 'border-gray-200 bg-gray-50/60 hover:border-gray-300 hover:bg-gray-100/70 dark:border-gray-700 dark:bg-gray-700/40 dark:hover:border-gray-600 dark:hover:bg-gray-700/70'
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900">{symbol}</p>
+                    <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{symbol}</p>
                     {ticker ? (
                       <>
-                        <p className="mt-0.5 text-sm text-slate-700">{formatPrice(ticker.current_price)}</p>
+                        <p className="mt-0.5 text-sm text-gray-700 dark:text-gray-200">{formatPrice(ticker.current_price)}</p>
                         <p className={`text-xs font-semibold ${changeClass}`}>{formatSignedPercent(changeRate)}</p>
                       </>
                     ) : (
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-300">
                         {tickersQuery.isLoading ? '시세 로딩 중...' : '시세를 아직 가져오지 못했습니다.'}
                       </p>
                     )}
@@ -180,7 +180,7 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
                     className="rounded-md p-1 text-amber-500 transition hover:bg-amber-50 hover:text-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-slate-500" />
+                      <Loader2 className="h-4 w-4 animate-spin text-gray-500 dark:text-gray-300" />
                     ) : (
                       <Star className="h-4 w-4 fill-amber-400 text-amber-500" />
                     )}
@@ -188,7 +188,7 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
                 </div>
 
                 {ticker && (
-                  <p className="mt-2 text-[11px] text-slate-500">24h 거래대금: {formatTradeAmount(ticker.acc_trade_price_24h)}</p>
+                  <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-300">24h 거래대금: {formatTradeAmount(ticker.acc_trade_price_24h)}</p>
                 )}
               </article>
             )

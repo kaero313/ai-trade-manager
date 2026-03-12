@@ -64,7 +64,7 @@ function BotControlPanel() {
     ? 'border border-rose-200 bg-rose-100 text-rose-700'
     : isActive
       ? 'border border-emerald-200 bg-emerald-100 text-emerald-700'
-      : 'border border-slate-300 bg-slate-200 text-slate-700'
+      : 'border border-gray-300 bg-gray-200 text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300'
   const description = isError
     ? '봇 상태를 확인하지 못했습니다.'
     : isLoading
@@ -111,24 +111,24 @@ function BotControlPanel() {
   }
 
   return (
-    <aside className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+    <aside className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-900">Bot Status</h2>
-          <p className="mt-1 text-sm text-slate-500">5초 주기로 실시간 상태를 자동 갱신합니다.</p>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Bot Status</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">5초 주기로 실시간 상태를 자동 갱신합니다.</p>
         </div>
         <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${badgeClassName}`}>
           {badgeLabel}
         </span>
       </header>
 
-      <div className="mt-4 flex items-center gap-2 text-sm text-slate-600">
-        <span className={`h-2.5 w-2.5 rounded-full ${isError ? 'bg-rose-500' : isActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+      <div className="mt-4 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+        <span className={`h-2.5 w-2.5 rounded-full ${isError ? 'bg-rose-500' : isActive ? 'bg-emerald-500' : 'bg-gray-400 dark:bg-gray-500'}`} />
         <p>{description}</p>
       </div>
 
-      <section className="mt-5 border-t border-slate-200 pt-5">
-        <p className="mb-2 text-sm font-medium text-slate-700">봇 원격 제어</p>
+      <section className="mt-5 border-t border-gray-200 pt-5 dark:border-gray-700">
+        <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">봇 원격 제어</p>
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -149,7 +149,7 @@ function BotControlPanel() {
             disabled={isSubmitting || isLoading || !isActive}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
               !isActive
-                ? 'cursor-not-allowed bg-slate-200 text-slate-700'
+                ? 'cursor-not-allowed bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
                 : 'bg-slate-900 text-white hover:bg-slate-700'
             } disabled:opacity-70`}
           >
@@ -160,7 +160,7 @@ function BotControlPanel() {
         <button
           type="button"
           onClick={() => setIsConfigModalOpen(true)}
-          className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+          className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
         >
           설정()
         </button>
