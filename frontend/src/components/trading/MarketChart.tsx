@@ -18,6 +18,7 @@ import {
 } from 'lightweight-charts'
 
 import { fetchCandles, type CandleItem, type MarketTimeframe } from '../../api/markets'
+import { useTheme } from '../../contexts/useTheme'
 
 interface MarketChartProps {
   symbol: string | null
@@ -50,6 +51,8 @@ function toChartTime(raw: CandleItem['time']): Time {
 }
 
 function MarketChart({ symbol }: MarketChartProps) {
+  const { theme } = useTheme()
+  const isDarkMode = theme === 'dark'
   const normalizedSymbol = useMemo(() => (symbol ? symbol.trim().toUpperCase() : ''), [symbol])
   const [timeframe, setTimeframe] = useState<MarketTimeframe>('60m')
 
@@ -84,29 +87,35 @@ function MarketChart({ symbol }: MarketChartProps) {
     const width = wrapper.clientWidth || mainContainer.clientWidth || 800
     const priceScaleWidth = 72
 
+    const chartBgColor = isDarkMode ? '#1f2937' : '#ffffff'
+    const chartTextColor = isDarkMode ? '#9ca3af' : '#4b5563'
+    const gridColor = isDarkMode ? 'rgba(75, 85, 99, 0.2)' : 'rgba(229, 231, 235, 0.6)'
+    const crosshairColor = isDarkMode ? 'rgba(59, 130, 246, 0.35)' : 'rgba(59, 130, 246, 0.4)'
+    const borderColor = isDarkMode ? 'rgba(75, 85, 99, 0.4)' : 'rgba(229, 231, 235, 1)'
+
     const chart = createChart(mainContainer, {
       width,
       height: 420,
       layout: {
-        background: { type: ColorType.Solid, color: '#0f172a' },
-        textColor: '#cbd5e1',
+        background: { type: ColorType.Solid, color: chartBgColor },
+        textColor: chartTextColor,
       },
       grid: {
-        vertLines: { color: 'rgba(148, 163, 184, 0.10)' },
-        horzLines: { color: 'rgba(148, 163, 184, 0.10)' },
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
       },
       rightPriceScale: {
-        borderColor: 'rgba(148, 163, 184, 0.35)',
+        borderColor: borderColor,
         minimumWidth: priceScaleWidth,
       },
       timeScale: {
-        borderColor: 'rgba(148, 163, 184, 0.35)',
+        borderColor: borderColor,
         timeVisible: true,
         visible: false,
       },
       crosshair: {
-        vertLine: { color: 'rgba(34, 197, 94, 0.35)' },
-        horzLine: { color: 'rgba(34, 197, 94, 0.35)' },
+        vertLine: { color: crosshairColor },
+        horzLine: { color: crosshairColor },
       },
     })
 
@@ -163,25 +172,25 @@ function MarketChart({ symbol }: MarketChartProps) {
       width,
       height: 150,
       layout: {
-        background: { type: ColorType.Solid, color: '#0f172a' },
-        textColor: '#94a3b8',
+        background: { type: ColorType.Solid, color: chartBgColor },
+        textColor: chartTextColor,
       },
       grid: {
-        vertLines: { color: 'rgba(148, 163, 184, 0.08)' },
-        horzLines: { color: 'rgba(148, 163, 184, 0.12)' },
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
       },
       rightPriceScale: {
-        borderColor: 'rgba(148, 163, 184, 0.35)',
+        borderColor: borderColor,
         minimumWidth: priceScaleWidth,
       },
       timeScale: {
-        borderColor: 'rgba(148, 163, 184, 0.35)',
+        borderColor: borderColor,
         timeVisible: true,
         visible: true,
       },
       crosshair: {
-        vertLine: { color: 'rgba(148, 163, 184, 0.25)' },
-        horzLine: { color: 'rgba(148, 163, 184, 0.25)' },
+        vertLine: { color: crosshairColor },
+        horzLine: { color: crosshairColor },
       },
     })
 
@@ -280,7 +289,7 @@ function MarketChart({ symbol }: MarketChartProps) {
       rsiSeriesRef.current = null
       isSyncingRangeRef.current = false
     }
-  }, [])
+  }, [isDarkMode])
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current
@@ -394,16 +403,16 @@ function MarketChart({ symbol }: MarketChartProps) {
   const isEmpty = !candlesQuery.isLoading && !candlesQuery.isError && (candlesQuery.data?.length ?? 0) === 0
 
   return (
-    <section className="rounded-2xl bg-slate-950 p-4 shadow-lg ring-1 ring-slate-800">
+    <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-100">Trading Chart</h2>
-          <p className="mt-1 text-xs text-slate-400">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Trading Chart</h2>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {normalizedSymbol ? normalizedSymbol : '종목을 선택하면 차트가 표시됩니다.'}
           </p>
         </div>
 
-        <div className="inline-flex rounded-lg bg-slate-900 p-1 ring-1 ring-slate-700">
+        <div className="inline-flex rounded-lg bg-gray-100 p-1 ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
           {TIMEFRAME_OPTIONS.map((option) => {
             const active = option.value === timeframe
             return (
@@ -414,8 +423,8 @@ function MarketChart({ symbol }: MarketChartProps) {
                 disabled={!normalizedSymbol}
                 className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
                   active
-                    ? 'bg-emerald-500 text-white'
-                    : 'text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40'
+                    ? 'bg-blue-500 text-white shadow-sm dark:bg-blue-600'
+                    : 'text-gray-500 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800'
                 }`}
               >
                 {option.label}
@@ -432,22 +441,22 @@ function MarketChart({ symbol }: MarketChartProps) {
         </div>
 
         {!normalizedSymbol && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-slate-950/80 text-sm text-slate-400">
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-white/80 text-sm text-gray-500 backdrop-blur-sm dark:bg-gray-900/80 dark:text-gray-400">
             검색창 또는 Watchlist에서 종목을 선택해 주세요.
           </div>
         )}
         {normalizedSymbol && candlesQuery.isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-slate-950/70 text-sm text-slate-300">
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-white/70 text-sm text-gray-900 backdrop-blur-sm dark:bg-gray-900/70 dark:text-gray-100">
             캔들 데이터를 불러오는 중입니다...
           </div>
         )}
         {normalizedSymbol && candlesQuery.isError && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-slate-950/70 px-4 text-center text-sm text-rose-300">
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-white/70 px-4 text-center text-sm text-rose-600 backdrop-blur-sm dark:bg-gray-900/70 dark:text-rose-400">
             {resolveErrorMessage(candlesQuery.error, '캔들 데이터를 불러오지 못했습니다.')}
           </div>
         )}
         {normalizedSymbol && isEmpty && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-slate-950/70 text-sm text-slate-400">
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-white/70 text-sm text-gray-500 backdrop-blur-sm dark:bg-gray-900/70 dark:text-gray-400">
             표시할 캔들 데이터가 없습니다.
           </div>
         )}

@@ -28,6 +28,7 @@ import {
   type BacktestRunResponse,
   type BacktestTimeframe,
 } from '../services/backtestService'
+import { useTheme } from '../contexts/useTheme'
 
 const TIMEFRAME_OPTIONS: Array<{ label: string; value: BacktestTimeframe }> = [
   { label: '1시간봉', value: '60m' },
@@ -96,6 +97,9 @@ function parseErrorMessage(error: unknown, fallback: string): string {
 }
 
 function LaboratoryPage() {
+  const { theme } = useTheme()
+  const isDarkMode = theme === 'dark'
+
   const now = useMemo(() => new Date(), [])
   const oneYearAgo = useMemo(() => {
     const value = new Date(now)
@@ -188,29 +192,35 @@ function LaboratoryPage() {
     const width = wrapper.clientWidth || mainContainer.clientWidth || 900
     const priceScaleWidth = 72
 
+    const chartBgColor = isDarkMode ? '#1f2937' : '#ffffff'
+    const chartTextColor = isDarkMode ? '#9ca3af' : '#4b5563'
+    const gridColor = isDarkMode ? 'rgba(75, 85, 99, 0.2)' : 'rgba(229, 231, 235, 0.6)'
+    const crosshairColor = isDarkMode ? 'rgba(59, 130, 246, 0.35)' : 'rgba(59, 130, 246, 0.4)'
+    const borderColor = isDarkMode ? 'rgba(75, 85, 99, 0.4)' : 'rgba(229, 231, 235, 1)'
+
     const chart = createChart(mainContainer, {
       width,
       height: 500,
       layout: {
-        background: { type: ColorType.Solid, color: '#020617' },
-        textColor: '#cbd5e1',
+        background: { type: ColorType.Solid, color: chartBgColor },
+        textColor: chartTextColor,
       },
       grid: {
-        vertLines: { color: 'rgba(148, 163, 184, 0.10)' },
-        horzLines: { color: 'rgba(148, 163, 184, 0.10)' },
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
       },
       rightPriceScale: {
-        borderColor: 'rgba(148, 163, 184, 0.25)',
+        borderColor: borderColor,
         minimumWidth: priceScaleWidth,
       },
       timeScale: {
-        borderColor: 'rgba(148, 163, 184, 0.25)',
+        borderColor: borderColor,
         timeVisible: true,
         visible: false,
       },
       crosshair: {
-        vertLine: { color: 'rgba(59, 130, 246, 0.35)' },
-        horzLine: { color: 'rgba(59, 130, 246, 0.35)' },
+        vertLine: { color: crosshairColor },
+        horzLine: { color: crosshairColor },
       },
     })
 
@@ -263,25 +273,25 @@ function LaboratoryPage() {
       width,
       height: 150,
       layout: {
-        background: { type: ColorType.Solid, color: '#020617' },
-        textColor: '#94a3b8',
+        background: { type: ColorType.Solid, color: chartBgColor },
+        textColor: chartTextColor,
       },
       grid: {
-        vertLines: { color: 'rgba(148, 163, 184, 0.08)' },
-        horzLines: { color: 'rgba(148, 163, 184, 0.12)' },
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
       },
       rightPriceScale: {
-        borderColor: 'rgba(148, 163, 184, 0.25)',
+        borderColor: borderColor,
         minimumWidth: priceScaleWidth,
       },
       timeScale: {
-        borderColor: 'rgba(148, 163, 184, 0.25)',
+        borderColor: borderColor,
         timeVisible: true,
         visible: true,
       },
       crosshair: {
-        vertLine: { color: 'rgba(148, 163, 184, 0.25)' },
-        horzLine: { color: 'rgba(148, 163, 184, 0.25)' },
+        vertLine: { color: crosshairColor },
+        horzLine: { color: crosshairColor },
       },
     })
 
@@ -384,7 +394,7 @@ function LaboratoryPage() {
       markerPluginRef.current = null
       isSyncingRangeRef.current = false
     }
-  }, [])
+  }, [isDarkMode])
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current
@@ -581,23 +591,23 @@ function LaboratoryPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl bg-gradient-to-r from-slate-950 via-slate-900 to-slate-800 p-6 text-slate-100 shadow-lg ring-1 ring-slate-800">
+      <section className="rounded-2xl bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-800 p-6 text-white shadow-lg ring-1 ring-blue-500 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 dark:ring-slate-700">
         <h1 className="text-2xl font-bold tracking-tight">전략 연구소 (Laboratory)</h1>
-        <p className="mt-2 text-sm text-slate-300">
+        <p className="mt-2 text-sm text-blue-100 dark:text-slate-400">
           그리드 전략 파라미터를 조정하고, 백테스트 성과와 타점을 시각적으로 검증하세요.
         </p>
       </section>
 
-      <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <h2 className="text-lg font-semibold text-slate-900">시뮬레이션 파라미터</h2>
+      <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">시뮬레이션 파라미터</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
             종목
             <select
               value={form.market}
               disabled={isMarketsLoading}
               onChange={(event) => setForm((prev) => ({ ...prev, market: event.target.value }))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:bg-slate-100"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 disabled:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400/20 dark:disabled:bg-gray-800"
             >
               <option value="">종목 선택</option>
               {markets.map((item) => (
@@ -608,34 +618,34 @@ function LaboratoryPage() {
             </select>
           </label>
 
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
             시작일
             <input
               type="date"
               value={form.startDate}
               onChange={(event) => setForm((prev) => ({ ...prev, startDate: event.target.value }))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
             종료일
             <input
               type="date"
               value={form.endDate}
               onChange={(event) => setForm((prev) => ({ ...prev, endDate: event.target.value }))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
             캔들 주기
             <select
               value={form.timeframe}
               onChange={(event) =>
                 setForm((prev) => ({ ...prev, timeframe: event.target.value as BacktestTimeframe }))
               }
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
             >
               {TIMEFRAME_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -645,37 +655,37 @@ function LaboratoryPage() {
             </select>
           </label>
 
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
             그리드 하단 가격
             <input
               type="number"
               value={form.gridLowerBound}
               onChange={(event) => setForm((prev) => ({ ...prev, gridLowerBound: event.target.value }))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
             그리드 상단 가격
             <input
               type="number"
               value={form.gridUpperBound}
               onChange={(event) => setForm((prev) => ({ ...prev, gridUpperBound: event.target.value }))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
             1회 매수 금액 (KRW)
             <input
               type="number"
               value={form.gridOrderKrw}
               onChange={(event) => setForm((prev) => ({ ...prev, gridOrderKrw: event.target.value }))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
             매도 비율 (%)
             <input
               type="number"
@@ -684,28 +694,28 @@ function LaboratoryPage() {
               step={0.1}
               value={form.gridSellPct}
               onChange={(event) => setForm((prev) => ({ ...prev, gridSellPct: event.target.value }))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
             쿨다운 (초)
             <input
               type="number"
               min={1}
               value={form.gridCooldownSeconds}
               onChange={(event) => setForm((prev) => ({ ...prev, gridCooldownSeconds: event.target.value }))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-sm text-slate-700">
+          <label className="flex flex-col gap-1 text-sm text-gray-700 dark:text-gray-300">
             초기 자본금 (KRW)
             <input
               type="number"
               value={form.initialBalance}
               onChange={(event) => setForm((prev) => ({ ...prev, initialBalance: event.target.value }))}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400/20"
             />
           </label>
         </div>
@@ -729,7 +739,7 @@ function LaboratoryPage() {
             type="button"
             onClick={() => void submitSimulation()}
             disabled={isSubmitting}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-blue-500 dark:hover:bg-blue-600"
           >
             {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
             시뮬레이션 시작
@@ -738,46 +748,46 @@ function LaboratoryPage() {
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <p className="text-sm text-slate-500">최종 수익금</p>
+        <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+          <p className="text-sm text-gray-500 dark:text-gray-400">최종 수익금</p>
           <p className={`mt-2 text-2xl font-bold ${profitAmount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
             {result ? formatSignedKrw(profitAmount) : '-'}
           </p>
         </article>
 
-        <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <p className="text-sm text-slate-500">최종 수익률</p>
+        <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+          <p className="text-sm text-gray-500 dark:text-gray-400">최종 수익률</p>
           <p className={`mt-2 text-2xl font-bold ${totalReturnPct >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
             {result ? formatPercent(totalReturnPct) : '-'}
           </p>
         </article>
 
-        <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <p className="text-sm text-slate-500">MDD</p>
+        <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+          <p className="text-sm text-gray-500 dark:text-gray-400">MDD</p>
           <p className="mt-2 text-2xl font-bold text-rose-600">{result ? `${mddPct.toFixed(2)}%` : '-'}</p>
         </article>
 
-        <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <p className="text-sm text-slate-500">승률</p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">{result ? `${winRate.toFixed(2)}%` : '-'}</p>
+        <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+          <p className="text-sm text-gray-500 dark:text-gray-400">승률</p>
+          <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">{result ? `${winRate.toFixed(2)}%` : '-'}</p>
         </article>
 
-        <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <p className="text-sm text-slate-500">총 거래 횟수</p>
-          <p className="mt-2 text-2xl font-bold text-slate-900">{result ? numberOfTrades : '-'}</p>
+        <article className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+          <p className="text-sm text-gray-500 dark:text-gray-400">총 거래 횟수</p>
+          <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">{result ? numberOfTrades : '-'}</p>
         </article>
       </section>
 
-      <section className="rounded-2xl bg-slate-950 p-4 shadow-lg ring-1 ring-slate-800">
+      <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
         <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-100">백테스트 타점 차트</h2>
-            <p className="mt-1 text-xs text-slate-400">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">백테스트 타점 차트</h2>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               매수(빨강) / 매도(파랑) 마커를 차트에 오버레이하여 타점을 확인합니다.
             </p>
           </div>
           {result && (
-            <div className="rounded-md bg-slate-900 px-3 py-1.5 text-xs text-slate-300 ring-1 ring-slate-700">
+            <div className="rounded-md bg-gray-100 px-3 py-1.5 text-xs text-gray-600 ring-1 ring-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:ring-gray-600">
               {result.meta.market} · {result.meta.timeframe} · {result.meta.bars_processed} bars
             </div>
           )}
