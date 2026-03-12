@@ -381,14 +381,16 @@ function TextInput({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">{label}</span>
+      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+        {label}
+      </span>
       <input
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100"
+        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder:text-gray-400 dark:focus:border-blue-400 dark:focus:ring-blue-400 dark:disabled:bg-gray-600 dark:disabled:text-gray-400"
       />
     </label>
   )
@@ -431,8 +433,8 @@ function BotConfigEditor({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <section className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-        <h3 className="text-sm font-semibold text-slate-900">자산 배분</h3>
+      <section className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 dark:border-gray-700 dark:bg-gray-700/40">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">자산 배분</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <TextInput
             label="Symbols"
@@ -453,8 +455,8 @@ function BotConfigEditor({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-        <h3 className="text-sm font-semibold text-slate-900">전략</h3>
+      <section className="rounded-2xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">전략</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <TextInput
             label="EMA Fast"
@@ -519,8 +521,8 @@ function BotConfigEditor({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-        <h3 className="text-sm font-semibold text-slate-900">리스크</h3>
+      <section className="rounded-2xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">리스크</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <TextInput
             label="Max Capital %"
@@ -585,10 +587,10 @@ function BotConfigEditor({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-        <h3 className="text-sm font-semibold text-slate-900">스케줄</h3>
+      <section className="rounded-2xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">스케줄</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)]">
-          <label className="flex items-center gap-3 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700">
+          <label className="flex items-center gap-3 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200">
             <input
               type="checkbox"
               checked={draft.schedule.enabled}
@@ -599,7 +601,7 @@ function BotConfigEditor({
                 }))
               }
               disabled={isSaving}
-              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              className="h-4 w-4 rounded border-gray-300 bg-white text-emerald-600 focus:ring-2 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-700 dark:focus:ring-blue-400 dark:disabled:bg-gray-600"
             />
             스케줄 사용
           </label>
@@ -632,8 +634,8 @@ function BotConfigEditor({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-        <h3 className="text-sm font-semibold text-slate-900">그리드</h3>
+      <section className="rounded-2xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">그리드</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <TextInput
             label="GRID_TARGET_COIN"
@@ -726,12 +728,12 @@ function BotConfigEditor({
         </p>
       )}
 
-      <footer className="flex items-center justify-end gap-3 border-t border-slate-200 pt-4">
+      <footer className="flex items-center justify-end gap-3 border-t border-gray-200 pt-4 dark:border-gray-700">
         <button
           type="button"
           onClick={onClose}
           disabled={isSaving}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-lg border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
         >
           닫기
         </button>
@@ -765,16 +767,20 @@ function BotConfigForm({ isOpen, onClose, onSaveSuccess }: BotConfigFormProps) {
 
       <div className="fixed inset-0 overflow-y-auto">
         <div className="flex min-h-full items-center justify-center p-4">
-          <DialogPanel className="w-full max-w-5xl rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200">
-            <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+          <DialogPanel className="w-full max-w-5xl rounded-3xl bg-white shadow-2xl ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+            <header className="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-5 dark:border-gray-700">
               <div>
-                <DialogTitle className="text-xl font-semibold text-slate-900">매매 파라미터 설정</DialogTitle>
-                <p className="mt-1 text-sm text-slate-500">DB에 저장된 현재 설정값을 기준으로 폼을 미리 채웁니다.</p>
+                <DialogTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                  매매 파라미터 설정
+                </DialogTitle>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">
+                  DB에 저장된 현재 설정값을 기준으로 폼을 미리 채웁니다.
+                </p>
               </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                className="rounded-full bg-gray-100 p-2 text-gray-500 transition hover:bg-gray-200 hover:text-gray-800 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 dark:hover:text-gray-100"
                 aria-label="설정 모달 닫기"
               >
                 <X className="h-5 w-5" />
@@ -783,7 +789,7 @@ function BotConfigForm({ isOpen, onClose, onSaveSuccess }: BotConfigFormProps) {
 
             <div className="max-h-[75vh] overflow-y-auto px-6 py-5">
               {botConfigQuery.isLoading && (
-                <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-slate-500">
+                <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-gray-500 dark:text-gray-300">
                   <Loader2 className="h-5 w-5 animate-spin" />
                   현재 설정값을 불러오는 중입니다.
                 </div>
