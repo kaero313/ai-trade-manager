@@ -5,6 +5,32 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>frontend</title>
+    <script>
+      (() => {
+        const storageKey = 'theme'
+        const root = document.documentElement
+
+        const getSystemTheme = () =>
+          window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+
+        const getStoredTheme = () => {
+          try {
+            const storedTheme = window.localStorage.getItem(storageKey)
+            return storedTheme === 'light' || storedTheme === 'dark' ? storedTheme : null
+          } catch {
+            return null
+          }
+        }
+
+        const theme = getStoredTheme() ?? getSystemTheme()
+
+        if (theme === 'dark') {
+          root.classList.add('dark')
+        } else {
+          root.classList.remove('dark')
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
