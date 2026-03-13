@@ -225,8 +225,10 @@ function DashboardPage() {
         </div>
       </div>
 
-      <div className="space-y-6 lg:col-span-3 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
-        <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
+      <div className="lg:col-span-3 lg:h-full lg:min-h-0">
+        <div className="flex flex-col lg:h-full lg:min-h-0 lg:overflow-hidden">
+          <div className="space-y-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
+            <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
           <article className="rounded-2xl bg-white p-6 text-gray-900 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:ring-gray-700">
@@ -248,6 +250,8 @@ function DashboardPage() {
         <Watchlist selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
         <ControlPanel />
         <SentimentWidget />
+          </div>
+        </div>
       </div>
     </div>
   )
