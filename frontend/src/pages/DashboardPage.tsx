@@ -132,10 +132,8 @@ function DashboardPage() {
   const pnlTextColor = totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="space-y-6">
-        <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
-
+    <div className="grid h-full min-h-0 gap-6 lg:grid-cols-10">
+      <div className="space-y-6 lg:col-span-7 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
         <MarketChart symbol={selectedSymbol} />
 
         {errorMessage && (
@@ -222,7 +220,25 @@ function DashboardPage() {
         <RecentOrders orders={orders} isLoading={isOrdersLoading} errorMessage={ordersErrorMessage} />
       </div>
 
-      <div className="space-y-6 xl:sticky xl:top-24 xl:self-start">
+      <div className="space-y-6 lg:col-span-3 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+        <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
+
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+          <article className="rounded-2xl bg-white p-6 text-gray-900 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:ring-gray-700">
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-300">珥??먯궛</p>
+            <p className="mt-2 text-3xl font-bold sm:text-4xl lg:text-3xl">
+              {isLoading ? '遺덈윭?ㅻ뒗 以?..' : formatKrw(totalNetWorth)}
+            </p>
+          </article>
+
+          <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-300">珥??먯씡</p>
+            <p className={`mt-2 text-3xl font-bold sm:text-4xl lg:text-3xl ${pnlTextColor}`}>
+              {isLoading ? '遺덈윭?ㅻ뒗 以?..' : formatSignedKrw(totalPnl)}
+            </p>
+          </article>
+        </section>
+
         <BotControlPanel />
         <Watchlist selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
         <ControlPanel />
