@@ -232,16 +232,16 @@ function DashboardPage() {
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
           <article className="rounded-2xl bg-white p-6 text-gray-900 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:ring-gray-700">
-            <p className="text-sm font-medium text-gray-500 dark:text-gray-300">珥??먯궛</p>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-300">총 자산</p>
             <p className="mt-2 text-3xl font-bold sm:text-4xl lg:text-3xl">
-              {isLoading ? '遺덈윭?ㅻ뒗 以?..' : formatKrw(totalNetWorth)}
+              {isLoading ? '불러오는 중...' : formatKrw(totalNetWorth)}
             </p>
           </article>
 
           <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-            <p className="text-sm font-medium text-gray-500 dark:text-gray-300">珥??먯씡</p>
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-300">총 손익</p>
             <p className={`mt-2 text-3xl font-bold sm:text-4xl lg:text-3xl ${pnlTextColor}`}>
-              {isLoading ? '遺덈윭?ㅻ뒗 以?..' : formatSignedKrw(totalPnl)}
+              {isLoading ? '불러오는 중...' : formatSignedKrw(totalPnl)}
             </p>
           </article>
         </section>
