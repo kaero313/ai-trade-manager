@@ -132,9 +132,13 @@ function DashboardPage() {
   const pnlTextColor = totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'
 
   return (
-    <div className="grid h-full min-h-0 gap-6 lg:grid-cols-10">
-      <div className="space-y-6 lg:col-span-7 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
-        <MarketChart symbol={selectedSymbol} />
+    <div className="grid h-full min-h-0 gap-6 lg:grid-cols-10 lg:overflow-hidden">
+      <div className="flex flex-col gap-6 lg:col-span-7 lg:h-full lg:min-h-0 lg:overflow-hidden">
+        <div className="h-full min-h-0 lg:flex-1">
+          <MarketChart symbol={selectedSymbol} />
+        </div>
+
+        <div className="space-y-6 lg:max-h-[40vh] lg:flex-none lg:overflow-y-auto lg:pr-1">
 
         {errorMessage && (
           <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -218,6 +222,7 @@ function DashboardPage() {
         </section>
 
         <RecentOrders orders={orders} isLoading={isOrdersLoading} errorMessage={ordersErrorMessage} />
+        </div>
       </div>
 
       <div className="space-y-6 lg:col-span-3 lg:min-h-0 lg:overflow-y-auto lg:pr-1">

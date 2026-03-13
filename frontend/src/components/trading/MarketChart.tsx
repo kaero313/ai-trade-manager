@@ -84,7 +84,19 @@ function MarketChart({ symbol }: MarketChartProps) {
       return
     }
 
+    const getMainChartHeight = () => {
+      const wrapperHeight = wrapper.clientHeight
+      const reservedHeight = Math.floor(rsiContainer.clientHeight || 150) + 12
+      const measuredHeight = mainContainer.clientHeight || wrapperHeight - reservedHeight
+      const safeHeight = measuredHeight > 0 ? measuredHeight : 240
+      return Math.max(60, Math.floor(safeHeight))
+    }
+
+    const getRsiChartHeight = () => Math.max(150, Math.floor(rsiContainer.clientHeight || 150))
+
     const width = wrapper.clientWidth || mainContainer.clientWidth || 800
+    const mainHeight = getMainChartHeight()
+    const rsiHeight = getRsiChartHeight()
     const priceScaleWidth = 72
 
     const chartBgColor = isDarkMode ? '#1f2937' : '#ffffff'
@@ -95,7 +107,7 @@ function MarketChart({ symbol }: MarketChartProps) {
 
     const chart = createChart(mainContainer, {
       width,
-      height: 420,
+      height: mainHeight,
       layout: {
         background: { type: ColorType.Solid, color: chartBgColor },
         attributionLogo: false,
@@ -171,7 +183,7 @@ function MarketChart({ symbol }: MarketChartProps) {
 
     const rsiChart = createChart(rsiContainer, {
       width,
-      height: 150,
+      height: rsiHeight,
       layout: {
         background: { type: ColorType.Solid, color: chartBgColor },
         attributionLogo: false,
@@ -263,21 +275,32 @@ function MarketChart({ symbol }: MarketChartProps) {
     chart.timeScale().subscribeVisibleLogicalRangeChange(syncMainToRsi)
     rsiChart.timeScale().subscribeVisibleLogicalRangeChange(syncRsiToMain)
 
-    const resizeObserver = new ResizeObserver((entries) => {
-      const entry = entries[0]
-      if (!entry || !chartRef.current || !rsiChartRef.current) {
+    const resizeCharts = () => {
+      if (!chartRef.current || !rsiChartRef.current) {
         return
       }
-      const nextWidth = Math.max(320, Math.floor(entry.contentRect.width))
-      chartRef.current.applyOptions({ width: nextWidth })
-      rsiChartRef.current.applyOptions({ width: nextWidth })
+      const nextWidth = Math.max(320, Math.floor(wrapper.clientWidth || mainContainer.clientWidth || 320))
+      const nextMainHeight = getMainChartHeight()
+      const nextRsiHeight = getRsiChartHeight()
+      chartRef.current.resize(nextWidth, nextMainHeight)
+      rsiChartRef.current.resize(nextWidth, nextRsiHeight)
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      resizeCharts()
     })
     resizeObserver.observe(wrapper)
+    resizeObserver.observe(mainContainer)
+    resizeObserver.observe(rsiContainer)
+    const resizeFrameId = window.requestAnimationFrame(() => {
+      resizeCharts()
+    })
 
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(syncMainToRsi)
       rsiChart.timeScale().unsubscribeVisibleLogicalRangeChange(syncRsiToMain)
       resizeObserver.disconnect()
+      window.cancelAnimationFrame(resizeFrameId)
       chartRef.current?.remove()
       rsiChartRef.current?.remove()
       chartRef.current = null
@@ -405,7 +428,7 @@ function MarketChart({ symbol }: MarketChartProps) {
   const isEmpty = !candlesQuery.isLoading && !candlesQuery.isError && (candlesQuery.data?.length ?? 0) === 0
 
   return (
-    <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+    <section className="flex h-full min-h-[560px] flex-col rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700 lg:min-h-0">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Trading Chart</h2>
@@ -436,10 +459,10 @@ function MarketChart({ symbol }: MarketChartProps) {
         </div>
       </header>
 
-      <div className="relative">
-        <div ref={chartsWrapperRef} className="flex flex-col gap-3">
-          <div ref={mainChartContainerRef} className="h-[420px] w-full overflow-hidden rounded-xl" />
-          <div ref={rsiChartContainerRef} className="h-[150px] w-full overflow-hidden rounded-xl" />
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div ref={chartsWrapperRef} className="flex min-h-0 flex-1 flex-col gap-3">
+          <div ref={mainChartContainerRef} className="min-h-0 w-full flex-1 overflow-hidden rounded-xl" />
+          <div ref={rsiChartContainerRef} className="h-[150px] w-full shrink-0 overflow-hidden rounded-xl" />
         </div>
 
         {!normalizedSymbol && (
@@ -464,7 +487,7 @@ function MarketChart({ symbol }: MarketChartProps) {
         )}
       </div>
 
-      <div className="mt-3 flex justify-end">
+      <div className="mt-3 flex shrink-0 justify-end">
         <a
           href="https://www.tradingview.com/"
           target="_blank"
