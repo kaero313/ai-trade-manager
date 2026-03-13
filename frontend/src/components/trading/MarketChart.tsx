@@ -98,6 +98,7 @@ function MarketChart({ symbol }: MarketChartProps) {
       height: 420,
       layout: {
         background: { type: ColorType.Solid, color: chartBgColor },
+        attributionLogo: false,
         textColor: chartTextColor,
       },
       grid: {
@@ -173,6 +174,7 @@ function MarketChart({ symbol }: MarketChartProps) {
       height: 150,
       layout: {
         background: { type: ColorType.Solid, color: chartBgColor },
+        attributionLogo: false,
         textColor: chartTextColor,
       },
       grid: {
@@ -460,6 +462,17 @@ function MarketChart({ symbol }: MarketChartProps) {
             표시할 캔들 데이터가 없습니다.
           </div>
         )}
+      </div>
+
+      <div className="mt-3 flex justify-end">
+        <a
+          href="https://www.tradingview.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-gray-400 transition hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+        >
+          Charts by TradingView
+        </a>
       </div>
     </section>
   )
