@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import AiInsightBriefing from '../components/trading/AiInsightBriefing'
 import AiCoreStatus from '../components/trading/AiCoreStatus'
 import BotControlPanel from '../components/trading/BotControlPanel'
 import ControlPanel from '../components/trading/ControlPanel'
@@ -138,6 +139,8 @@ function DashboardPage() {
         <div className="h-full min-h-0 lg:flex-1">
           <MarketChart symbol={selectedSymbol} />
         </div>
+
+        <AiInsightBriefing symbol={selectedSymbol} />
 
         <div className="space-y-6 lg:max-h-[40vh] lg:flex-none lg:overflow-y-auto lg:pr-1">
 
