@@ -55,6 +55,7 @@ function MarketChart({ symbol }: MarketChartProps) {
   const isDarkMode = theme === 'dark'
   const normalizedSymbol = useMemo(() => (symbol ? symbol.trim().toUpperCase() : ''), [symbol])
   const [timeframe, setTimeframe] = useState<MarketTimeframe>('60m')
+  const [isAiOverlayEnabled, setIsAiOverlayEnabled] = useState(false)
 
   const chartsWrapperRef = useRef<HTMLDivElement | null>(null)
   const mainChartContainerRef = useRef<HTMLDivElement | null>(null)
@@ -437,25 +438,58 @@ function MarketChart({ symbol }: MarketChartProps) {
           </p>
         </div>
 
-        <div className="inline-flex rounded-lg bg-gray-100 p-1 ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
-          {TIMEFRAME_OPTIONS.map((option) => {
-            const active = option.value === timeframe
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setTimeframe(option.value)}
-                disabled={!normalizedSymbol}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                  active
-                    ? 'bg-blue-500 text-white shadow-sm dark:bg-blue-600'
-                    : 'text-gray-500 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800'
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="inline-flex rounded-lg bg-gray-100 p-1 ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
+            {TIMEFRAME_OPTIONS.map((option) => {
+              const active = option.value === timeframe
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setTimeframe(option.value)}
+                  disabled={!normalizedSymbol}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                    active
+                      ? 'bg-blue-500 text-white shadow-sm dark:bg-blue-600'
+                      : 'text-gray-500 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="flex flex-col items-end gap-1">
+            <button
+              type="button"
+              aria-pressed={isAiOverlayEnabled}
+              onClick={() => setIsAiOverlayEnabled((previousValue) => !previousValue)}
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition ${
+                isAiOverlayEnabled
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
+                  : 'border-gray-300 bg-white text-gray-600 hover:border-sky-300 hover:text-sky-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-sky-500/40 dark:hover:text-sky-300'
+              }`}
+            >
+              <span
+                className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] ${
+                  isAiOverlayEnabled
+                    ? 'border-emerald-400 bg-emerald-400 text-white'
+                    : 'border-gray-400 bg-transparent text-transparent dark:border-gray-500'
                 }`}
               >
-                {option.label}
-              </button>
-            )
-          })}
+                ✓
+              </span>
+              <span>Show AI Predictive Lines</span>
+            </button>
+            <p
+              className={`text-[11px] font-medium ${
+                isAiOverlayEnabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'
+              }`}
+            >
+              {isAiOverlayEnabled ? 'AI 오버레이 켜짐' : 'AI 오버레이 꺼짐'}
+            </p>
+          </div>
         </div>
       </header>
 
