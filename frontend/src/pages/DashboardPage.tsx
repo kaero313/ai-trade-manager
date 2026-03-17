@@ -142,7 +142,7 @@ function DashboardPage() {
 
         <AiInsightBriefing symbol={selectedSymbol} />
 
-        <div className="space-y-6 lg:max-h-[40vh] lg:flex-none lg:overflow-y-auto lg:pr-1">
+        <div className="space-y-6 lg:max-h-[35vh] lg:flex-none lg:overflow-y-auto lg:pr-1">
 
         {errorMessage && (
           <section className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
