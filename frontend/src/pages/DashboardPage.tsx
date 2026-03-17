@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import AiCoreStatus from '../components/trading/AiCoreStatus'
 import BotControlPanel from '../components/trading/BotControlPanel'
 import ControlPanel from '../components/trading/ControlPanel'
 import MarketChart from '../components/trading/MarketChart'
@@ -213,6 +214,7 @@ function DashboardPage() {
         <div className="flex flex-col lg:h-full lg:min-h-0 lg:overflow-hidden">
           <div className="space-y-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
             <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
+            <AiCoreStatus />
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
           <article className="rounded-2xl bg-white p-6 text-gray-900 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:ring-gray-700">
