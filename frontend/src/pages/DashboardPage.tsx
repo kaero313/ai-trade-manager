@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import AiInsightBriefing from '../components/trading/AiInsightBriefing'
+import AiMarketSentiment from '../components/trading/AiMarketSentiment'
 import AiCoreStatus from '../components/trading/AiCoreStatus'
 import BotControlPanel from '../components/trading/BotControlPanel'
 import ControlPanel from '../components/trading/ControlPanel'
@@ -136,7 +137,10 @@ function DashboardPage() {
   return (
     <div className="grid h-full min-h-0 gap-6 lg:grid-cols-10 lg:overflow-hidden">
       <div className="flex flex-col gap-6 lg:col-span-7 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2">
-        <AiInsightBriefing symbol={selectedSymbol} />
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.95fr)]">
+          <AiInsightBriefing symbol={selectedSymbol} />
+          <AiMarketSentiment />
+        </div>
 
         <div className="min-h-[560px] shrink-0">
           <MarketChart symbol={selectedSymbol} />
