@@ -142,7 +142,7 @@ function DashboardPage() {
           <AiMarketSentiment />
         </div>
 
-        <div className="min-h-[560px] shrink-0">
+        <div className="min-h-[400px] shrink-0">
           <MarketChart symbol={selectedSymbol} />
         </div>
 
