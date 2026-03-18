@@ -213,8 +213,7 @@ function DashboardPage() {
         </div>
       </div>
 
-      <div className="lg:col-span-3 lg:h-full lg:min-h-0">
-        <div className="flex flex-col lg:h-full lg:min-h-0 lg:overflow-hidden">
+      <div className="flex flex-col lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden">
           <div className="space-y-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
             <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
             <AiCoreStatus />
@@ -240,7 +239,6 @@ function DashboardPage() {
         <ControlPanel />
         <SentimentWidget />
           </div>
-        </div>
       </div>
     </div>
   )
