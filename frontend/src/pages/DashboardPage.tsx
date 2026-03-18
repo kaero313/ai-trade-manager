@@ -135,8 +135,8 @@ function DashboardPage() {
 
   return (
     <div className="grid h-full min-h-0 gap-6 lg:grid-cols-10 lg:overflow-hidden">
-      <div className="flex flex-col gap-6 lg:col-span-7 lg:h-full lg:min-h-0 lg:overflow-hidden">
-        <div className="min-h-[500px] shrink-0 lg:min-h-0 lg:flex-1">
+      <div className="flex flex-col gap-6 lg:col-span-7 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2">
+        <div className="min-h-[560px] shrink-0">
           <MarketChart symbol={selectedSymbol} />
         </div>
 
