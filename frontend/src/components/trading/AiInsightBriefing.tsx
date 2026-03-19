@@ -15,9 +15,9 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
   ]
 
   return (
-    <section className="shrink-0 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
-        <div className="rounded-xl bg-gradient-to-br from-emerald-50 via-white to-sky-50 p-5 ring-1 ring-emerald-100 dark:from-emerald-500/10 dark:via-gray-800 dark:to-sky-500/10 dark:ring-emerald-500/20">
+    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+      <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)] lg:overflow-y-auto">
+        <div className="min-h-0 rounded-xl bg-gradient-to-br from-emerald-50 via-white to-sky-50 p-5 ring-1 ring-emerald-100 dark:from-emerald-500/10 dark:via-gray-800 dark:to-sky-500/10 dark:ring-emerald-500/20">
           <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-600 dark:text-emerald-400">AI Briefing</p>
           <p className="mt-3 text-sm text-gray-500 dark:text-gray-300">{symbolDescription}</p>
           <h2 className="mt-4 text-2xl font-bold text-gray-900 dark:text-gray-100">AI 스탠스: BUY</h2>
@@ -40,7 +40,7 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
           </div>
         </div>
 
-        <div className="rounded-xl bg-gray-50 p-5 ring-1 ring-gray-200 dark:bg-gray-900/60 dark:ring-gray-700">
+        <div className="min-h-0 rounded-xl bg-gray-50 p-5 ring-1 ring-gray-200 dark:bg-gray-900/60 dark:ring-gray-700">
           <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">판단 근거 (XAI)</h3>
           <ul className="mt-4 space-y-3 text-sm leading-6 text-gray-700 dark:text-gray-200">
             {reasons.map((reason) => (

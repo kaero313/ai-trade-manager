@@ -153,10 +153,10 @@ function DashboardPage() {
 
         <div className="flex flex-col gap-6 lg:col-span-6 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
           <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
-          <div className="min-h-[400px] shrink-0 lg:min-h-0 lg:flex-1">
+          <div className="min-h-0 flex-1">
             <MarketChart symbol={selectedSymbol} />
           </div>
-          <div className="shrink-0">
+          <div className="min-h-0">
             <AiInsightBriefing symbol={selectedSymbol} />
           </div>
         </div>

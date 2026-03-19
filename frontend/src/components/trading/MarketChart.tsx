@@ -429,7 +429,7 @@ function MarketChart({ symbol }: MarketChartProps) {
   const isEmpty = !candlesQuery.isLoading && !candlesQuery.isError && (candlesQuery.data?.length ?? 0) === 0
 
   return (
-    <section className="flex h-full min-h-[400px] flex-col overflow-hidden rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Trading Chart</h2>
