@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import AiCoreStatus from '../components/trading/AiCoreStatus'
 import AiInsightBriefing from '../components/trading/AiInsightBriefing'
 import AiMarketSentiment from '../components/trading/AiMarketSentiment'
 import BotControlPanel from '../components/trading/BotControlPanel'
@@ -125,41 +126,46 @@ function DashboardPage() {
   const pnlTextColor = totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'
 
   return (
-    <div className="grid h-full min-h-0 gap-6 lg:grid-cols-12 lg:overflow-hidden">
-      <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
-        <AiMarketSentiment />
-        <div className="min-h-[320px] lg:min-h-0 lg:flex-1 [&>aside]:h-full">
-          <WatchlistSidebar selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <header className="flex shrink-0 items-center justify-between rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+        <div className="flex items-center gap-4">
+          <AiCoreStatus />
         </div>
-      </div>
-      <div className="flex flex-col gap-6 lg:col-span-6 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
-        <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
-        <div className="min-h-[400px] shrink-0 lg:min-h-0 lg:flex-1">
-          <MarketChart symbol={selectedSymbol} />
+        <div className="flex items-center gap-6 text-sm font-semibold">
+          <div className="flex flex-col items-end">
+            <span className="text-xs text-gray-500 dark:text-gray-400">총 자산</span>
+            <span className="text-gray-900 dark:text-gray-100">{isLoading ? '...' : formatKrw(totalNetWorth)}</span>
+          </div>
+          <div className="flex flex-col items-end">
+            <span className="text-xs text-gray-500 dark:text-gray-400">총 손익</span>
+            <span className={pnlTextColor}>{isLoading ? '...' : formatSignedKrw(totalPnl)}</span>
+          </div>
         </div>
-        <div className="shrink-0">
-          <AiInsightBriefing symbol={selectedSymbol} />
-        </div>
-      </div>
-      <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
-        <BotControlPanel />
+      </header>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-1">
-          <article className="rounded-2xl bg-white p-6 text-gray-900 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:ring-gray-700">
-            <p className="text-sm font-medium text-gray-500 dark:text-gray-300">총 자산</p>
-            <p className="mt-2 text-3xl font-bold sm:text-4xl lg:text-3xl">{isLoading ? '불러오는 중...' : formatKrw(totalNetWorth)}</p>
-          </article>
-
-          <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-            <p className="text-sm font-medium text-gray-500 dark:text-gray-300">총 손익</p>
-            <p className={`mt-2 text-3xl font-bold sm:text-4xl lg:text-3xl ${pnlTextColor}`}>
-              {isLoading ? '불러오는 중...' : formatSignedKrw(totalPnl)}
-            </p>
-          </article>
+      <div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-12 lg:overflow-hidden">
+        <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
+          <AiMarketSentiment />
+          <div className="min-h-[320px] lg:min-h-0 lg:flex-1 [&>aside]:h-full">
+            <WatchlistSidebar selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
+          </div>
         </div>
 
-        <div className="min-h-[300px] pr-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-          <RecentOrders orders={orders} isLoading={isOrdersLoading} errorMessage={ordersErrorMessage} />
+        <div className="flex flex-col gap-6 lg:col-span-6 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
+          <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
+          <div className="min-h-[400px] shrink-0 lg:min-h-0 lg:flex-1">
+            <MarketChart symbol={selectedSymbol} />
+          </div>
+          <div className="shrink-0">
+            <AiInsightBriefing symbol={selectedSymbol} />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
+          <BotControlPanel />
+          <div className="min-h-[300px] pr-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+            <RecentOrders orders={orders} isLoading={isOrdersLoading} errorMessage={ordersErrorMessage} />
+          </div>
         </div>
       </div>
     </div>
