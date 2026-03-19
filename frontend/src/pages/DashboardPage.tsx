@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 
 import AiCoreStatus from '../components/trading/AiCoreStatus'
+import AiInsightBriefing from '../components/trading/AiInsightBriefing'
 import AiMarketSentiment from '../components/trading/AiMarketSentiment'
-import BotControlPanel from '../components/trading/BotControlPanel'
+import MarketChart from '../components/trading/MarketChart'
+import MarketSearchBar from '../components/trading/MarketSearchBar'
 import PortfolioChart from '../components/trading/PortfolioChart'
 import RecentOrders from '../components/trading/RecentOrders'
 import WatchlistSidebar from '../components/trading/Watchlist'
@@ -132,8 +134,14 @@ function DashboardPage() {
           <WatchlistSidebar selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
         </div>
       </div>
-      <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
-        <BotControlPanel />
+      <div className="flex flex-col gap-6 lg:col-span-6 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
+        <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
+        <div className="min-h-[400px] shrink-0 lg:min-h-0 lg:flex-1">
+          <MarketChart symbol={selectedSymbol} />
+        </div>
+        <div className="shrink-0">
+          <AiInsightBriefing symbol={selectedSymbol} />
+        </div>
       </div>
       <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
         <AiCoreStatus />
