@@ -1,11 +1,8 @@
 import { useEffect, useState } from 'react'
 
 import AiCoreStatus from '../components/trading/AiCoreStatus'
-import AiInsightBriefing from '../components/trading/AiInsightBriefing'
 import AiMarketSentiment from '../components/trading/AiMarketSentiment'
 import BotControlPanel from '../components/trading/BotControlPanel'
-import MarketChart from '../components/trading/MarketChart'
-import MarketSearchBar from '../components/trading/MarketSearchBar'
 import PortfolioChart from '../components/trading/PortfolioChart'
 import RecentOrders from '../components/trading/RecentOrders'
 import WatchlistSidebar from '../components/trading/Watchlist'
@@ -129,21 +126,16 @@ function DashboardPage() {
 
   return (
     <div className="grid h-full min-h-0 gap-6 lg:grid-cols-12 lg:overflow-hidden">
-      <div className="flex flex-col gap-6 lg:col-span-6 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2">
-        <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
-        <div className="min-h-[400px] shrink-0">
-          <MarketChart symbol={selectedSymbol} />
-        </div>
-        <AiInsightBriefing symbol={selectedSymbol} />
-      </div>
-      <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2">
+      <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
         <AiMarketSentiment />
-        <BotControlPanel />
         <div className="min-h-[320px] lg:min-h-0 lg:flex-1 [&>aside]:h-full">
           <WatchlistSidebar selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
         </div>
       </div>
-      <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2">
+      <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
+        <BotControlPanel />
+      </div>
+      <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
         <AiCoreStatus />
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-1">
