@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import AiCoreStatus from '../components/trading/AiCoreStatus'
 import AiInsightBriefing from '../components/trading/AiInsightBriefing'
 import AiMarketSentiment from '../components/trading/AiMarketSentiment'
 import BotControlPanel from '../components/trading/BotControlPanel'
@@ -9,11 +10,20 @@ import WatchlistSidebar from '../components/trading/Watchlist'
 import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
 import type { OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
 
+function formatKrw(value: number): string {
+  return `₩${new Intl.NumberFormat('ko-KR').format(Math.round(value))}`
+}
+
+function formatSignedKrw(value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '-' : ''
+  return `${sign}${formatKrw(Math.abs(value))}`
+}
+
 function DashboardPage() {
-  const [, setPortfolio] = useState<PortfolioSummary | null>(null)
+  const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [, setOrders] = useState<OrderHistoryItem[]>([])
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
-  const [, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(true)
   const [, setIsOrdersLoading] = useState(true)
   const [, setErrorMessage] = useState<string | null>(null)
   const [, setOrdersErrorMessage] = useState<string | null>(null)
@@ -110,6 +120,10 @@ function DashboardPage() {
     }
   }, [])
 
+  const totalNetWorth = portfolio?.total_net_worth ?? 0
+  const totalPnl = portfolio?.total_pnl ?? 0
+  const pnlTextColor = totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'
+
   return (
     <div className="grid h-full min-h-0 gap-6 lg:grid-cols-12 lg:overflow-hidden">
       <div className="flex flex-col gap-6 lg:col-span-6 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2">
@@ -126,7 +140,23 @@ function DashboardPage() {
           <WatchlistSidebar selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
         </div>
       </div>
-      <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2"></div>
+      <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2">
+        <AiCoreStatus />
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-1">
+          <article className="rounded-2xl bg-white p-6 text-gray-900 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:ring-gray-700">
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-300">총 자산</p>
+            <p className="mt-2 text-3xl font-bold sm:text-4xl lg:text-3xl">{isLoading ? '불러오는 중...' : formatKrw(totalNetWorth)}</p>
+          </article>
+
+          <article className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+            <p className="text-sm font-medium text-gray-500 dark:text-gray-300">총 손익</p>
+            <p className={`mt-2 text-3xl font-bold sm:text-4xl lg:text-3xl ${pnlTextColor}`}>
+              {isLoading ? '불러오는 중...' : formatSignedKrw(totalPnl)}
+            </p>
+          </article>
+        </div>
+      </div>
     </div>
   )
 }
