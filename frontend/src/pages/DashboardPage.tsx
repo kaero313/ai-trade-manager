@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react'
 
-import AiCoreStatus from '../components/trading/AiCoreStatus'
 import AiInsightBriefing from '../components/trading/AiInsightBriefing'
 import AiMarketSentiment from '../components/trading/AiMarketSentiment'
+import BotControlPanel from '../components/trading/BotControlPanel'
 import MarketChart from '../components/trading/MarketChart'
 import MarketSearchBar from '../components/trading/MarketSearchBar'
-import PortfolioChart from '../components/trading/PortfolioChart'
 import RecentOrders from '../components/trading/RecentOrders'
 import WatchlistSidebar from '../components/trading/Watchlist'
 import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
-import type { AssetItem, OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
+import type { OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
 
 function formatKrw(value: number): string {
   return `₩${new Intl.NumberFormat('ko-KR').format(Math.round(value))}`
@@ -123,7 +122,6 @@ function DashboardPage() {
 
   const totalNetWorth = portfolio?.total_net_worth ?? 0
   const totalPnl = portfolio?.total_pnl ?? 0
-  const assets: AssetItem[] = portfolio?.items ?? []
   const pnlTextColor = totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'
 
   return (
@@ -144,7 +142,7 @@ function DashboardPage() {
         </div>
       </div>
       <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
-        <AiCoreStatus />
+        <BotControlPanel />
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-1">
           <article className="rounded-2xl bg-white p-6 text-gray-900 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:text-gray-100 dark:ring-gray-700">
@@ -160,11 +158,7 @@ function DashboardPage() {
           </article>
         </div>
 
-        <div className="min-h-[250px] shrink-0">
-          <PortfolioChart items={assets} isLoading={isLoading} />
-        </div>
-
-        <div className="min-h-[300px] lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+        <div className="min-h-[300px] pr-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <RecentOrders orders={orders} isLoading={isOrdersLoading} errorMessage={ordersErrorMessage} />
         </div>
       </div>
