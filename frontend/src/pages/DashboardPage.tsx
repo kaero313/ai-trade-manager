@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
 
+import AiInsightBriefing from '../components/trading/AiInsightBriefing'
+import MarketChart from '../components/trading/MarketChart'
+import MarketSearchBar from '../components/trading/MarketSearchBar'
 import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
 import type { OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
 
 function DashboardPage() {
   const [, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [, setOrders] = useState<OrderHistoryItem[]>([])
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
   const [, setIsLoading] = useState(true)
   const [, setIsOrdersLoading] = useState(true)
   const [, setErrorMessage] = useState<string | null>(null)
@@ -105,7 +109,13 @@ function DashboardPage() {
 
   return (
     <div className="grid h-full min-h-0 gap-6 lg:grid-cols-12 lg:overflow-hidden">
-      <div className="flex flex-col gap-6 lg:col-span-6 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2"></div>
+      <div className="flex flex-col gap-6 lg:col-span-6 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2">
+        <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
+        <div className="min-h-[400px] shrink-0">
+          <MarketChart symbol={selectedSymbol} />
+        </div>
+        <AiInsightBriefing symbol={selectedSymbol} />
+      </div>
       <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2"></div>
       <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:pr-2"></div>
     </div>
