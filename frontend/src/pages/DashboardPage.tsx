@@ -6,9 +6,11 @@ import AiMarketSentiment from '../components/trading/AiMarketSentiment'
 import BotControlPanel from '../components/trading/BotControlPanel'
 import MarketChart from '../components/trading/MarketChart'
 import MarketSearchBar from '../components/trading/MarketSearchBar'
+import PortfolioChart from '../components/trading/PortfolioChart'
+import RecentOrders from '../components/trading/RecentOrders'
 import WatchlistSidebar from '../components/trading/Watchlist'
 import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
-import type { OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
+import type { AssetItem, OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
 
 function formatKrw(value: number): string {
   return `₩${new Intl.NumberFormat('ko-KR').format(Math.round(value))}`
@@ -21,12 +23,12 @@ function formatSignedKrw(value: number): string {
 
 function DashboardPage() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
-  const [, setOrders] = useState<OrderHistoryItem[]>([])
+  const [orders, setOrders] = useState<OrderHistoryItem[]>([])
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [, setIsOrdersLoading] = useState(true)
+  const [isOrdersLoading, setIsOrdersLoading] = useState(true)
   const [, setErrorMessage] = useState<string | null>(null)
-  const [, setOrdersErrorMessage] = useState<string | null>(null)
+  const [ordersErrorMessage, setOrdersErrorMessage] = useState<string | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -122,6 +124,7 @@ function DashboardPage() {
 
   const totalNetWorth = portfolio?.total_net_worth ?? 0
   const totalPnl = portfolio?.total_pnl ?? 0
+  const assets: AssetItem[] = portfolio?.items ?? []
   const pnlTextColor = totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'
 
   return (
@@ -155,6 +158,14 @@ function DashboardPage() {
               {isLoading ? '불러오는 중...' : formatSignedKrw(totalPnl)}
             </p>
           </article>
+        </div>
+
+        <div className="min-h-[250px] shrink-0">
+          <PortfolioChart items={assets} isLoading={isLoading} />
+        </div>
+
+        <div className="min-h-[300px] lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          <RecentOrders orders={orders} isLoading={isOrdersLoading} errorMessage={ordersErrorMessage} />
         </div>
       </div>
     </div>
