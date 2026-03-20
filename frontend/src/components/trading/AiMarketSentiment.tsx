@@ -1,14 +1,9 @@
 const sentimentScore = 72
-const gaugeDegrees = sentimentScore * 1.8
 
 const trendStrength = '강함'
 const volatilityWarning = '주의'
 const sentimentLabel = '탐욕'
 const sentimentDescription = '단기 추세는 우상향이지만 과열 진입 구간을 경계 중입니다.'
-
-const gaugeStyle = {
-  background: `conic-gradient(from 180deg, #38bdf8 0deg, #10b981 92deg, #fb7185 ${gaugeDegrees}deg, #e5e7eb ${gaugeDegrees}deg, #e5e7eb 180deg, transparent 180deg 360deg)`,
-}
 
 function AiMarketSentiment() {
   return (
@@ -20,7 +15,7 @@ function AiMarketSentiment() {
               AI Fear & Greed Index
             </p>
             <h2 className="mt-3 break-words text-2xl font-bold text-gray-900 dark:text-gray-100">
-              시장 심리지수 72
+              시장 심리지수 {sentimentScore}
             </h2>
             <p className="mt-2 break-words text-sm text-gray-500 dark:text-gray-300">
               AI가 현재 시장 참여자의 위험 선호도를 해석한 Mock 지표입니다.
@@ -35,21 +30,45 @@ function AiMarketSentiment() {
 
         <div className="mt-6 grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)]">
           <div className="min-w-0 rounded-xl bg-white/80 p-4 ring-1 ring-white/70 backdrop-blur dark:bg-gray-900/50 dark:ring-gray-700/80">
-            <div className="relative mx-auto aspect-[3/2] w-full max-w-[240px] overflow-hidden">
-              <div
-                className="absolute inset-x-0 bottom-0 mx-auto aspect-square w-full rounded-full"
-                style={gaugeStyle}
-              />
-              <div className="absolute inset-x-0 bottom-0 mx-auto aspect-square w-[80%] rounded-full bg-white dark:bg-gray-900" />
-              <div className="absolute inset-x-0 bottom-0 h-1/2 bg-white dark:bg-gray-900" />
+            <div className="space-y-4">
+              <div className="flex min-w-0 items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
+                    Current Position
+                  </p>
+                  <p className="mt-2 text-3xl font-black tracking-tight text-gray-900 dark:text-gray-100">
+                    {sentimentScore}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
+                    Market Bias
+                  </p>
+                  <p className="mt-2 break-words text-lg font-bold text-rose-600 dark:text-rose-300">
+                    {sentimentLabel}
+                  </p>
+                </div>
+              </div>
 
-              <div className="absolute inset-x-0 bottom-[10%] flex flex-col items-center px-3">
-                <span className="text-3xl font-black tracking-tight text-gray-900 sm:text-4xl dark:text-gray-100">
-                  {sentimentScore}
-                </span>
-                <span className="mt-1 break-words text-center text-xs font-semibold uppercase tracking-[0.22em] text-gray-500 dark:text-gray-400">
-                  {sentimentLabel}
-                </span>
+              <div className="space-y-3">
+                <div className="relative pt-4">
+                  <div className="h-3 w-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-400 to-rose-400" />
+                  <div
+                    className="absolute top-0 -translate-x-1/2"
+                    style={{ left: `${sentimentScore}%` }}
+                  >
+                    <span className="block h-3 w-3 rounded-full border-2 border-white bg-gray-950 shadow-sm dark:border-gray-900 dark:bg-white" />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                  <span>0 Fear</span>
+                  <span>100 Greed</span>
+                </div>
+
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  공포에서 탐욕까지 현재 시장 심리 위치를 한 줄로 요약합니다.
+                </p>
               </div>
             </div>
           </div>
