@@ -18,7 +18,7 @@ function AiMarketSentiment() {
               시장 심리지수 {sentimentScore}
             </h2>
             <p className="mt-2 break-words text-sm text-gray-500 dark:text-gray-300">
-              AI가 현재 시장 참여자의 위험 선호도를 해석한 Mock 지표입니다.
+              AI가 현재 시장 참여자의 위험 선호도를 해석한 Mock 지수입니다.
             </p>
           </div>
 
@@ -28,7 +28,7 @@ function AiMarketSentiment() {
           </span>
         </div>
 
-        <div className="mt-6 grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)]">
+        <div className="mt-5 flex min-w-0 flex-col gap-4">
           <div className="min-w-0 rounded-xl bg-white/80 p-4 ring-1 ring-white/70 backdrop-blur dark:bg-gray-900/50 dark:ring-gray-700/80">
             <div className="space-y-4">
               <div className="flex min-w-0 items-end justify-between gap-3">
@@ -51,7 +51,7 @@ function AiMarketSentiment() {
               </div>
 
               <div className="space-y-3">
-                <div className="relative pt-4">
+                <div className="relative w-full pt-4">
                   <div className="h-3 w-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-400 to-rose-400" />
                   <div
                     className="absolute top-0 -translate-x-1/2"
@@ -73,41 +73,39 @@ function AiMarketSentiment() {
             </div>
           </div>
 
-          <div className="min-w-0 space-y-3">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              <article className="min-w-0 rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-100 dark:bg-emerald-500/10 dark:ring-emerald-500/20">
-                <p className="break-words text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-300">
-                  현재 트렌드 강도
-                </p>
-                <p className="mt-2 break-words text-2xl font-bold text-gray-900 dark:text-gray-100">
-                  {trendStrength}
-                </p>
-              </article>
-
-              <article className="min-w-0 rounded-xl bg-rose-50 p-4 ring-1 ring-rose-100 dark:bg-rose-500/10 dark:ring-rose-500/20">
-                <p className="break-words text-xs font-semibold uppercase tracking-[0.2em] text-rose-600 dark:text-rose-300">
-                  변동성 경고
-                </p>
-                <p className="mt-2 break-words text-2xl font-bold text-gray-900 dark:text-gray-100">
-                  {volatilityWarning}
-                </p>
-              </article>
-            </div>
-
-            <div className="min-w-0 overflow-hidden rounded-xl bg-gray-50 p-4 text-gray-900 ring-1 ring-gray-200 dark:bg-gray-950 dark:text-gray-100 dark:ring-gray-800">
-              <div className="flex flex-wrap gap-2">
-                <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-500/20">
-                  Momentum Expansion
-                </span>
-                <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200 dark:bg-rose-500/15 dark:text-rose-300 dark:ring-rose-500/20">
-                  Volatility Elevated
-                </span>
-              </div>
-
-              <p className="mt-4 break-words text-sm leading-6 text-gray-700 dark:text-gray-200">
-                {sentimentDescription}
+          <div className="grid grid-cols-2 gap-3">
+            <article className="min-w-0 rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-100 dark:bg-emerald-500/10 dark:ring-emerald-500/20">
+              <p className="break-words text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-300">
+                현재 트렌드 강도
               </p>
+              <p className="mt-2 break-words text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {trendStrength}
+              </p>
+            </article>
+
+            <article className="min-w-0 rounded-xl bg-rose-50 p-4 ring-1 ring-rose-100 dark:bg-rose-500/10 dark:ring-rose-500/20">
+              <p className="break-words text-xs font-semibold uppercase tracking-[0.2em] text-rose-600 dark:text-rose-300">
+                변동성 경고
+              </p>
+              <p className="mt-2 break-words text-2xl font-bold text-gray-900 dark:text-gray-100">
+                {volatilityWarning}
+              </p>
+            </article>
+          </div>
+
+          <div className="min-w-0 overflow-hidden rounded-xl bg-gray-50 p-4 text-gray-900 ring-1 ring-gray-200 dark:bg-gray-950 dark:text-gray-100 dark:ring-gray-800">
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-500/20">
+                Momentum Expansion
+              </span>
+              <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200 dark:bg-rose-500/15 dark:text-rose-300 dark:ring-rose-500/20">
+                Volatility Elevated
+              </span>
             </div>
+
+            <p className="mt-4 break-words text-sm leading-6 text-gray-700 dark:text-gray-200">
+              {sentimentDescription}
+            </p>
           </div>
         </div>
       </div>
