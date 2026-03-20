@@ -9,8 +9,8 @@ const sentimentDescription = '단기 추세는 우상향이지만 과열 진입 
 
 function AiMarketSentiment() {
   return (
-    <section className="min-w-0 shrink-0 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <div className="h-full min-w-0 overflow-hidden bg-gradient-to-br from-sky-50 via-white to-rose-50 p-4 dark:from-sky-500/10 dark:via-gray-800 dark:to-rose-500/10 sm:p-5">
+    <section className="min-w-0 shrink-0 rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+      <div className="h-full min-w-0 rounded-2xl bg-gradient-to-br from-sky-50 via-white to-rose-50 p-4 dark:from-sky-500/10 dark:via-gray-800 dark:to-rose-500/10 sm:p-5">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 break-words">
             <div className="flex min-w-0 items-center gap-2">
@@ -24,7 +24,7 @@ function AiMarketSentiment() {
                 >
                   <Info className="h-4 w-4" />
                 </span>
-                <div className="absolute left-0 top-full z-50 mt-2 hidden w-72 rounded-xl bg-gray-900 px-4 py-3 text-xs leading-5 text-white shadow-lg ring-1 ring-gray-800 group-hover:block dark:bg-white dark:text-gray-900 dark:ring-gray-200">
+                <div className="absolute right-0 top-full z-50 mt-2 hidden w-max max-w-[240px] whitespace-normal break-words rounded-xl bg-gray-900 px-4 py-3 text-left text-xs leading-5 text-white shadow-lg ring-1 ring-gray-800 group-hover:block dark:bg-white dark:text-gray-900 dark:ring-gray-200">
                   <p className="font-semibold">시장 심리지수 가이드</p>
                   <div className="mt-2 space-y-1">
                     <p>0~25: 극단적 공포 (바닥/매수 찬스)</p>
