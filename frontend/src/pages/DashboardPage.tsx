@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 
 import AiInsightBriefing from '../components/trading/AiInsightBriefing'
 import AiMarketSentiment from '../components/trading/AiMarketSentiment'
+import AiNewsBoard from '../components/trading/AiNewsBoard'
 import BotControlPanel from '../components/trading/BotControlPanel'
 import ControlPanel from '../components/trading/ControlPanel'
 import MarketChart from '../components/trading/MarketChart'
@@ -15,6 +16,7 @@ import type { AssetItem, OrderHistoryItem, PortfolioSummary } from '../services/
 
 function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const [macroTab, setMacroTab] = useState<'sentiment' | 'news'>('sentiment')
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [orders, setOrders] = useState<OrderHistoryItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -126,7 +128,42 @@ function DashboardPage() {
   return (
     <div className="grid h-full min-h-0 gap-6 lg:grid-cols-12 lg:overflow-hidden">
       <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
-        <AiMarketSentiment />
+        <div className="shrink-0 space-y-3">
+          <div className="inline-flex rounded-xl bg-white p-1 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+            <button
+              type="button"
+              onClick={() => setMacroTab('sentiment')}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                macroTab === 'sentiment'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+              }`}
+            >
+              시장 심리(Sentiment)
+            </button>
+            <button
+              type="button"
+              onClick={() => setMacroTab('news')}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                macroTab === 'news'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+              }`}
+            >
+              글로벌 시황 뉴스(News)
+            </button>
+          </div>
+
+          <div className="min-h-[320px] max-h-[340px] overflow-hidden">
+            {macroTab === 'sentiment' ? (
+              <div className="h-full overflow-y-auto pr-1">
+                <AiMarketSentiment />
+              </div>
+            ) : (
+              <AiNewsBoard />
+            )}
+          </div>
+        </div>
         <div className="min-h-[320px] overflow-hidden lg:min-h-0 lg:flex-1 [&>aside]:flex [&>aside]:h-full [&>aside]:min-h-0 [&>aside]:flex-1">
           <WatchlistSidebar selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
         </div>
