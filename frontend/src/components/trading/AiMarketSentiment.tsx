@@ -35,16 +35,16 @@ function AiMarketSentiment() {
 
         <div className="mt-6 grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)]">
           <div className="min-w-0 rounded-xl bg-white/80 p-4 ring-1 ring-white/70 backdrop-blur dark:bg-gray-900/50 dark:ring-gray-700/80">
-            <div className="relative mx-auto h-40 w-full max-w-[260px] overflow-hidden">
+            <div className="relative mx-auto aspect-[3/2] w-full max-w-[240px] overflow-hidden">
               <div
-                className="absolute inset-x-0 bottom-0 mx-auto h-[240px] w-[240px] rounded-full"
+                className="absolute inset-x-0 bottom-0 mx-auto aspect-square w-full rounded-full"
                 style={gaugeStyle}
               />
-              <div className="absolute inset-x-0 bottom-0 mx-auto h-[192px] w-[192px] rounded-full bg-white dark:bg-gray-900" />
+              <div className="absolute inset-x-0 bottom-0 mx-auto aspect-square w-[80%] rounded-full bg-white dark:bg-gray-900" />
               <div className="absolute inset-x-0 bottom-0 h-1/2 bg-white dark:bg-gray-900" />
 
-              <div className="absolute inset-x-0 bottom-4 flex flex-col items-center">
-                <span className="text-4xl font-black tracking-tight text-gray-900 dark:text-gray-100">
+              <div className="absolute inset-x-0 bottom-[10%] flex flex-col items-center px-3">
+                <span className="text-3xl font-black tracking-tight text-gray-900 sm:text-4xl dark:text-gray-100">
                   {sentimentScore}
                 </span>
                 <span className="mt-1 break-words text-center text-xs font-semibold uppercase tracking-[0.22em] text-gray-500 dark:text-gray-400">
@@ -75,17 +75,17 @@ function AiMarketSentiment() {
               </article>
             </div>
 
-            <div className="min-w-0 overflow-hidden rounded-xl bg-gray-950 p-4 text-gray-100 ring-1 ring-gray-900 dark:bg-gray-950">
+            <div className="min-w-0 overflow-hidden rounded-xl bg-gray-50 p-4 text-gray-900 ring-1 ring-gray-200 dark:bg-gray-950 dark:text-gray-100 dark:ring-gray-800">
               <div className="flex flex-wrap gap-2">
-                <span className="rounded-full bg-sky-500/15 px-3 py-1 text-xs font-semibold text-sky-300 ring-1 ring-sky-500/20">
+                <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-500/20">
                   Momentum Expansion
                 </span>
-                <span className="rounded-full bg-rose-500/15 px-3 py-1 text-xs font-semibold text-rose-300 ring-1 ring-rose-500/20">
+                <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200 dark:bg-rose-500/15 dark:text-rose-300 dark:ring-rose-500/20">
                   Volatility Elevated
                 </span>
               </div>
 
-              <p className="mt-4 break-words text-sm leading-6 text-gray-200">
+              <p className="mt-4 break-words text-sm leading-6 text-gray-700 dark:text-gray-200">
                 {sentimentDescription}
               </p>
             </div>
