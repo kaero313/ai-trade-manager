@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import AiInsightBriefing from '../components/trading/AiInsightBriefing'
 import AiMarketSentiment from '../components/trading/AiMarketSentiment'
 import BotControlPanel from '../components/trading/BotControlPanel'
+import ControlPanel from '../components/trading/ControlPanel'
 import MarketChart from '../components/trading/MarketChart'
 import MarketSearchBar from '../components/trading/MarketSearchBar'
 import PortfolioChart from '../components/trading/PortfolioChart'
@@ -134,7 +135,10 @@ function DashboardPage() {
       </div>
 
       <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
-        <BotControlPanel />
+        <div className="flex flex-col gap-4">
+          <ControlPanel />
+          <BotControlPanel />
+        </div>
         <div className="min-h-[250px] shrink-0">
           <PortfolioChart items={assets} isLoading={isLoading} />
         </div>
