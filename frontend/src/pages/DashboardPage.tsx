@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 
-import AiCoreStatus from '../components/trading/AiCoreStatus'
 import AiInsightBriefing from '../components/trading/AiInsightBriefing'
 import AiMarketSentiment from '../components/trading/AiMarketSentiment'
 import BotControlPanel from '../components/trading/BotControlPanel'
@@ -11,15 +10,6 @@ import RecentOrders from '../components/trading/RecentOrders'
 import WatchlistSidebar from '../components/trading/Watchlist'
 import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
 import type { AssetItem, OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
-
-function formatKrw(value: number): string {
-  return `₩${new Intl.NumberFormat('ko-KR').format(Math.round(value))}`
-}
-
-function formatSignedKrw(value: number): string {
-  const sign = value > 0 ? '+' : value < 0 ? '-' : ''
-  return `${sign}${formatKrw(Math.abs(value))}`
-}
 
 function DashboardPage() {
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
@@ -122,55 +112,34 @@ function DashboardPage() {
     }
   }, [])
 
-  const totalNetWorth = portfolio?.total_net_worth ?? 0
-  const totalPnl = portfolio?.total_pnl ?? 0
   const assets: AssetItem[] = portfolio?.items ?? []
-  const pnlTextColor = totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
-      <header className="flex shrink-0 items-center justify-between rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-        <div className="flex items-center gap-4">
-          <AiCoreStatus />
+    <div className="grid h-full min-h-0 gap-6 lg:grid-cols-12 lg:overflow-hidden">
+      <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
+        <AiMarketSentiment />
+        <div className="min-h-[320px] lg:min-h-0 lg:flex-1 [&>aside]:h-full">
+          <WatchlistSidebar selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
         </div>
-        <div className="flex items-center gap-6 text-sm font-semibold">
-          <div className="flex flex-col items-end">
-            <span className="text-xs text-gray-500 dark:text-gray-400">총 자산</span>
-            <span className="text-gray-900 dark:text-gray-100">{isLoading ? '...' : formatKrw(totalNetWorth)}</span>
-          </div>
-          <div className="flex flex-col items-end">
-            <span className="text-xs text-gray-500 dark:text-gray-400">총 손익</span>
-            <span className={pnlTextColor}>{isLoading ? '...' : formatSignedKrw(totalPnl)}</span>
-          </div>
-        </div>
-      </header>
+      </div>
 
-      <div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-12 lg:overflow-hidden">
-        <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
-          <AiMarketSentiment />
-          <div className="min-h-[320px] lg:min-h-0 lg:flex-1 [&>aside]:h-full">
-            <WatchlistSidebar selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
-          </div>
+      <div className="flex flex-col gap-6 lg:col-span-6 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
+        <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
+        <div className="min-h-0 flex-1">
+          <MarketChart symbol={selectedSymbol} />
         </div>
-
-        <div className="flex flex-col gap-6 lg:col-span-6 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
-          <MarketSearchBar onSelectSymbol={setSelectedSymbol} />
-          <div className="min-h-0 flex-1">
-            <MarketChart symbol={selectedSymbol} />
-          </div>
-          <div className="min-h-0">
-            <AiInsightBriefing symbol={selectedSymbol} />
-          </div>
+        <div className="min-h-0">
+          <AiInsightBriefing symbol={selectedSymbol} />
         </div>
+      </div>
 
-        <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
-          <BotControlPanel />
-          <div className="min-h-[250px] shrink-0">
-            <PortfolioChart items={assets} isLoading={isLoading} />
-          </div>
-          <div className="min-h-[200px] pr-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-            <RecentOrders orders={orders} isLoading={isOrdersLoading} errorMessage={ordersErrorMessage} />
-          </div>
+      <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
+        <BotControlPanel />
+        <div className="min-h-[250px] shrink-0">
+          <PortfolioChart items={assets} isLoading={isLoading} />
+        </div>
+        <div className="min-h-[200px] pr-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+          <RecentOrders orders={orders} isLoading={isOrdersLoading} errorMessage={ordersErrorMessage} />
         </div>
       </div>
     </div>
