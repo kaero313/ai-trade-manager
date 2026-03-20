@@ -57,12 +57,10 @@ function ControlPanel() {
   return (
     <aside className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Control Panel</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">비상 조치 전용 패널</p>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">비상 제어</h2>
       </header>
 
       <section>
-        <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">비상 제어</p>
         <button
           type="button"
           onClick={handleLiquidate}
