@@ -128,7 +128,7 @@ function DashboardPage() {
   return (
     <div className="grid h-full min-h-0 gap-6 lg:grid-cols-12 lg:overflow-hidden">
       <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
-        <div className="shrink-0 space-y-3">
+        <div className="flex shrink-0 flex-col gap-3">
           <div className="inline-flex rounded-xl bg-white p-1 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
             <button
               type="button"
@@ -154,13 +154,15 @@ function DashboardPage() {
             </button>
           </div>
 
-          <div className="min-h-[320px] max-h-[340px] overflow-hidden">
+          <div className="flex h-[340px] min-h-[320px] max-h-[340px] flex-col overflow-hidden">
             {macroTab === 'sentiment' ? (
-              <div className="h-full overflow-y-auto pr-1">
+              <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto pr-1">
                 <AiMarketSentiment />
               </div>
             ) : (
-              <AiNewsBoard />
+              <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                <AiNewsBoard />
+              </div>
             )}
           </div>
         </div>
