@@ -151,7 +151,7 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
                 onClick={() => onSelectSymbol?.(symbol)}
                 className={`cursor-pointer rounded-xl border px-3 py-2.5 transition ${
                   isSelected
-                    ? 'border-emerald-300 bg-emerald-50/60 ring-1 ring-emerald-200'
+                    ? 'border-emerald-300 bg-emerald-50/60 ring-1 ring-emerald-200 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:ring-emerald-500/30'
                     : 'border-gray-200 bg-gray-50/60 hover:border-gray-300 hover:bg-gray-100/70 dark:border-gray-700 dark:bg-gray-700/40 dark:hover:border-gray-600 dark:hover:bg-gray-700/70'
                 }`}
               >
