@@ -162,7 +162,7 @@ function BotControlPanel() {
           onClick={() => setIsConfigModalOpen(true)}
           className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
         >
-          설정()
+          봇 설정
         </button>
       </section>
 
