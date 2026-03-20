@@ -1,3 +1,5 @@
+import { Info } from 'lucide-react'
+
 const sentimentScore = 72
 
 const trendStrength = '강함'
@@ -11,9 +13,29 @@ function AiMarketSentiment() {
       <div className="h-full min-w-0 overflow-hidden bg-gradient-to-br from-sky-50 via-white to-rose-50 p-4 dark:from-sky-500/10 dark:via-gray-800 dark:to-rose-500/10 sm:p-5">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 break-words">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-600 dark:text-sky-300">
-              AI Fear & Greed Index
-            </p>
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-600 dark:text-sky-300">
+                AI Fear & Greed Index
+              </p>
+              <span className="group relative inline-flex shrink-0">
+                <span
+                  aria-label="시장 심리지수 점수 구간 가이드"
+                  className="inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:text-gray-500 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                >
+                  <Info className="h-4 w-4" />
+                </span>
+                <div className="absolute left-0 top-full z-50 mt-2 hidden w-72 rounded-xl bg-gray-900 px-4 py-3 text-xs leading-5 text-white shadow-lg ring-1 ring-gray-800 group-hover:block dark:bg-white dark:text-gray-900 dark:ring-gray-200">
+                  <p className="font-semibold">시장 심리지수 가이드</p>
+                  <div className="mt-2 space-y-1">
+                    <p>0~25: 극단적 공포 (바닥/매수 찬스)</p>
+                    <p>26~45: 공포 (하락/관망 우세)</p>
+                    <p>46~55: 중립 (시장 방향성 부재)</p>
+                    <p>56~74: 탐욕 (상승/매수 강세)</p>
+                    <p>75~100: 극단적 탐욕 (버블/익절 경고)</p>
+                  </div>
+                </div>
+              </span>
+            </div>
             <h2 className="mt-3 break-words text-2xl font-bold text-gray-900 dark:text-gray-100">
               시장 심리지수 {sentimentScore}
             </h2>
