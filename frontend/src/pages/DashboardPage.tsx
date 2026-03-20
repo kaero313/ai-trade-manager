@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import AiInsightBriefing from '../components/trading/AiInsightBriefing'
 import AiMarketSentiment from '../components/trading/AiMarketSentiment'
@@ -13,13 +14,20 @@ import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
 import type { AssetItem, OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
 
 function DashboardPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [orders, setOrders] = useState<OrderHistoryItem[]>([])
-  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isOrdersLoading, setIsOrdersLoading] = useState(true)
   const [, setErrorMessage] = useState<string | null>(null)
   const [ordersErrorMessage, setOrdersErrorMessage] = useState<string | null>(null)
+
+  const selectedSymbol = searchParams.get('symbol')
+  const setSelectedSymbol = (symbol: string) => {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('symbol', symbol)
+    setSearchParams(nextParams, { replace: true })
+  }
 
   useEffect(() => {
     let isMounted = true
