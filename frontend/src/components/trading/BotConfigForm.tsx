@@ -189,10 +189,10 @@ function parseFiniteNumber(
 
   const parsed = Number(normalizedValue)
   if (!Number.isFinite(parsed)) {
-    throw new Error(`${label}은(는) 유효한 숫자여야 합니다.`)
+    throw new Error(`${label}에는 올바른 숫자를 입력해 주세요.`)
   }
   if (options.integer && !Number.isInteger(parsed)) {
-    throw new Error(`${label}은(는) 정수여야 합니다.`)
+    throw new Error(`${label}에는 정수만 입력할 수 있습니다.`)
   }
   if (options.exclusiveMin !== undefined && parsed <= options.exclusiveMin) {
     throw new Error(`${label}은(는) ${options.exclusiveMin}보다 커야 합니다.`)
@@ -240,11 +240,11 @@ function parseAllocationList(rawValue: string): number[] {
     .filter(Boolean)
 
   if (tokens.length === 0) {
-    throw new Error('배분 비율을 최소 1개 이상 입력해 주세요.')
+    throw new Error('종목별 자산 배분 비율을 최소 1개 이상 입력해 주세요.')
   }
 
   return tokens.map((token, index) =>
-    parseFiniteNumber(token, `배분 비율 ${index + 1}`, {
+    parseFiniteNumber(token, `종목별 자산 배분 비율 ${index + 1}`, {
       min: 0,
     }),
   )
@@ -255,95 +255,119 @@ function buildPayload(draft: BotConfigDraft): BotConfig {
   const allocationPctPerSymbol = parseAllocationList(draft.allocationPctPerSymbol)
 
   if (symbols.length !== allocationPctPerSymbol.length) {
-    throw new Error('심볼 개수와 배분 비율 개수는 반드시 같아야 합니다.')
+    throw new Error('매매 대상 심볼 수와 자산 배분 비율 수는 반드시 같아야 합니다.')
   }
 
-  const scheduleStartHour = parseNullableHour(draft.schedule.startHour, '시작 시간')
-  const scheduleEndHour = parseNullableHour(draft.schedule.endHour, '종료 시간')
+  const scheduleStartHour = parseNullableHour(draft.schedule.startHour, '거래 시작 시간')
+  const scheduleEndHour = parseNullableHour(draft.schedule.endHour, '거래 종료 시간')
 
   if (
     scheduleStartHour !== null &&
     scheduleEndHour !== null &&
     scheduleStartHour >= scheduleEndHour
   ) {
-    throw new Error('종료 시간은 시작 시간보다 커야 합니다.')
+    throw new Error('거래 종료 시간은 거래 시작 시간보다 커야 합니다.')
   }
 
   const targetCoin = draft.grid.targetCoin.replace(/^KRW-/i, '').trim().toUpperCase()
   if (!targetCoin) {
-    throw new Error('타겟 코인을 입력해 주세요.')
+    throw new Error('거래 대상 코인을 입력해 주세요.')
   }
 
-  const gridLowerBound = parseFiniteNumber(draft.grid.lowerBound, 'GRID_LOWER_BOUND', {
-    exclusiveMin: 0,
-  })
-  const gridUpperBound = parseFiniteNumber(draft.grid.upperBound, 'GRID_UPPER_BOUND', {
-    exclusiveMin: 0,
-  })
+  const gridLowerBound = parseFiniteNumber(
+    draft.grid.lowerBound,
+    '그리드 매매 하단 가격 (Lower Bound)',
+    {
+      exclusiveMin: 0,
+    },
+  )
+  const gridUpperBound = parseFiniteNumber(
+    draft.grid.upperBound,
+    '그리드 매매 상단 가격 (Upper Bound)',
+    {
+      exclusiveMin: 0,
+    },
+  )
   if (gridLowerBound >= gridUpperBound) {
-    throw new Error('GRID_LOWER_BOUND는 GRID_UPPER_BOUND보다 작아야 합니다.')
+    throw new Error('그리드 매매 하단 가격은 상단 가격보다 작아야 합니다.')
   }
 
-  const gridOrderKrw = parseFiniteNumber(draft.grid.orderKrw, 'GRID_ORDER_KRW', {
-    exclusiveMin: 0,
-  })
-  const gridSellPct = parseFiniteNumber(draft.grid.sellPct, 'GRID_SELL_PCT', {
+  const gridOrderKrw = parseFiniteNumber(
+    draft.grid.orderKrw,
+    '1회 주문당 투자 금액 (KRW)',
+    {
+      exclusiveMin: 0,
+    },
+  )
+  const gridSellPct = parseFiniteNumber(draft.grid.sellPct, '목표 익절 수익률 (%)', {
     exclusiveMin: 0,
     max: 100,
   })
-  const gridCooldownSeconds = parseFiniteNumber(draft.grid.cooldownSeconds, 'GRID_COOLDOWN_SECONDS', {
-    integer: true,
-    min: 1,
-  })
+  const gridCooldownSeconds = parseFiniteNumber(
+    draft.grid.cooldownSeconds,
+    '재주문 대기 시간 (Cool-down 초)',
+    {
+      integer: true,
+      min: 1,
+    },
+  )
 
   const tradeMode = draft.grid.tradeMode.trim().toLowerCase() || 'grid'
 
-  const payload: BotConfig = {
+  return {
     symbols,
     allocation_pct_per_symbol: allocationPctPerSymbol,
     strategy: {
-      ema_fast: parseFiniteNumber(draft.strategy.emaFast, 'EMA Fast', {
+      ema_fast: parseFiniteNumber(draft.strategy.emaFast, '빠른 EMA 기간', {
         integer: true,
         min: 1,
       }),
-      ema_slow: parseFiniteNumber(draft.strategy.emaSlow, 'EMA Slow', {
+      ema_slow: parseFiniteNumber(draft.strategy.emaSlow, '느린 EMA 기간', {
         integer: true,
         min: 1,
       }),
-      rsi: parseFiniteNumber(draft.strategy.rsi, 'RSI', {
+      rsi: parseFiniteNumber(draft.strategy.rsi, 'RSI 계산 기간', {
         integer: true,
         min: 1,
       }),
-      rsi_min: parseFiniteNumber(draft.strategy.rsiMin, 'RSI Min', {
+      rsi_min: parseFiniteNumber(draft.strategy.rsiMin, 'RSI 최소 진입 기준', {
         integer: true,
         min: 1,
       }),
-      trailing_stop_pct: parseFiniteNumber(draft.strategy.trailingStopPct, 'Trailing Stop %', {
+      trailing_stop_pct: parseFiniteNumber(draft.strategy.trailingStopPct, '추적 손절 비율', {
         exclusiveMin: 0,
       }),
     },
     risk: {
-      max_capital_pct: parseFiniteNumber(draft.risk.maxCapitalPct, 'Max Capital %', {
+      max_capital_pct: parseFiniteNumber(draft.risk.maxCapitalPct, '최대 총 투자 비중', {
         exclusiveMin: 0,
       }),
-      max_daily_loss_pct: parseFiniteNumber(draft.risk.maxDailyLossPct, 'Max Daily Loss %', {
-        exclusiveMin: 0,
-      }),
-      position_size_pct: parseFiniteNumber(draft.risk.positionSizePct, 'Position Size %', {
+      max_daily_loss_pct: parseFiniteNumber(
+        draft.risk.maxDailyLossPct,
+        '일일 최대 손실 허용치',
+        {
+          exclusiveMin: 0,
+        },
+      ),
+      position_size_pct: parseFiniteNumber(draft.risk.positionSizePct, '1회 진입 비중', {
         exclusiveMin: 0,
       }),
       max_concurrent_positions: parseFiniteNumber(
         draft.risk.maxConcurrentPositions,
-        'Max Concurrent',
+        '최대 동시 보유 포지션 수',
         {
           integer: true,
           min: 1,
         },
       ),
-      cooldown_minutes: parseFiniteNumber(draft.risk.cooldownMinutes, 'Cooldown Minutes', {
-        integer: true,
-        min: 1,
-      }),
+      cooldown_minutes: parseFiniteNumber(
+        draft.risk.cooldownMinutes,
+        '종목 재진입 대기 시간 (분)',
+        {
+          integer: true,
+          min: 1,
+        },
+      ),
     },
     schedule: {
       enabled: Boolean(draft.schedule.enabled),
@@ -360,8 +384,6 @@ function buildPayload(draft: BotConfigDraft): BotConfig {
       trade_mode: tradeMode,
     },
   }
-
-  return payload
 }
 
 function TextInput({
@@ -371,6 +393,7 @@ function TextInput({
   disabled,
   type = 'text',
   placeholder,
+  hint,
 }: {
   label: string
   value: string
@@ -378,10 +401,11 @@ function TextInput({
   disabled: boolean
   type?: 'text' | 'number'
   placeholder?: string
+  hint?: string
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+      <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
         {label}
       </span>
       <input
@@ -392,6 +416,7 @@ function TextInput({
         placeholder={placeholder}
         className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder:text-gray-400 dark:focus:border-blue-400 dark:focus:ring-blue-400 dark:disabled:bg-gray-600 dark:disabled:text-gray-400"
       />
+      {hint && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{hint}</p>}
     </label>
   )
 }
@@ -423,7 +448,7 @@ function BotConfigEditor({
       queryClient.setQueryData(['bot-config-modal'], savedConfig)
       void queryClient.invalidateQueries({ queryKey: ['bot-config-modal'] })
 
-      onSaveSuccess('설정이 저장되어 즉시 배포되었습니다.')
+      onSaveSuccess('설정이 저장되고 즉시 반영되었습니다.')
     } catch (error) {
       setSaveError(resolveErrorMessage(error, '설정을 저장하지 못했습니다.'))
     } finally {
@@ -437,29 +462,31 @@ function BotConfigEditor({
         <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">자산 배분</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <TextInput
-            label="Symbols"
+            label="매매 대상 심볼 목록"
             value={draft.symbols}
             onChange={(nextValue) => setDraft((current) => ({ ...current, symbols: nextValue }))}
             disabled={isSaving}
-            placeholder="KRW-BTC, KRW-ETH"
+            placeholder="예: KRW-BTC, KRW-ETH"
+            hint="쉼표로 구분해 입력하세요. 예: KRW-BTC, KRW-ETH"
           />
           <TextInput
-            label="Allocation"
+            label="종목별 자산 배분 비율"
             value={draft.allocationPctPerSymbol}
             onChange={(nextValue) =>
               setDraft((current) => ({ ...current, allocationPctPerSymbol: nextValue }))
             }
             disabled={isSaving}
-            placeholder="0.5, 0.5"
+            placeholder="예: 0.5, 0.5"
+            hint="심볼 순서와 같은 개수로 입력하세요. 예: 0.5, 0.5"
           />
         </div>
       </section>
 
       <section className="rounded-2xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">전략</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">전략 설정</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <TextInput
-            label="EMA Fast"
+            label="빠른 EMA 기간"
             value={draft.strategy.emaFast}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -469,9 +496,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 12"
+            hint="단기 추세를 빠르게 반영하는 이동평균 기간입니다."
           />
           <TextInput
-            label="EMA Slow"
+            label="느린 EMA 기간"
             value={draft.strategy.emaSlow}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -481,9 +510,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 26"
+            hint="중기 추세를 반영하는 기준 이동평균 기간입니다."
           />
           <TextInput
-            label="RSI"
+            label="RSI 계산 기간"
             value={draft.strategy.rsi}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -493,9 +524,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 14"
+            hint="RSI 지표를 계산할 캔들 개수입니다."
           />
           <TextInput
-            label="RSI Min"
+            label="RSI 최소 진입 기준"
             value={draft.strategy.rsiMin}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -505,9 +538,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 50"
+            hint="이 값 이상일 때만 진입하도록 제한합니다."
           />
           <TextInput
-            label="Trailing Stop %"
+            label="추적 손절 비율"
             value={draft.strategy.trailingStopPct}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -517,15 +552,17 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 0.03"
+            hint="예: 0.03은 3%를 의미합니다."
           />
         </div>
       </section>
 
       <section className="rounded-2xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">리스크</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">리스크 관리</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <TextInput
-            label="Max Capital %"
+            label="최대 총 투자 비중"
             value={draft.risk.maxCapitalPct}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -535,9 +572,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 0.1"
+            hint="예: 0.1은 전체 자산의 10%를 의미합니다."
           />
           <TextInput
-            label="Max Daily Loss %"
+            label="일일 최대 손실 허용치"
             value={draft.risk.maxDailyLossPct}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -547,9 +586,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 0.05"
+            hint="예: 0.05는 하루 손실 허용치를 5%로 둡니다."
           />
           <TextInput
-            label="Position Size %"
+            label="1회 진입 비중"
             value={draft.risk.positionSizePct}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -559,9 +600,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 0.2"
+            hint="예: 0.2는 한 번 진입할 때 20%를 사용합니다."
           />
           <TextInput
-            label="Max Concurrent"
+            label="최대 동시 보유 포지션 수"
             value={draft.risk.maxConcurrentPositions}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -571,9 +614,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 3"
+            hint="동시에 보유할 수 있는 종목 수 제한입니다."
           />
           <TextInput
-            label="Cooldown Minutes"
+            label="종목 재진입 대기 시간 (분)"
             value={draft.risk.cooldownMinutes}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -583,30 +628,37 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 60"
+            hint="같은 종목에 다시 진입하기 전 대기할 시간입니다."
           />
         </div>
       </section>
 
       <section className="rounded-2xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">스케줄</h3>
-        <div className="mt-4 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)_minmax(0,1fr)]">
-          <label className="flex items-center gap-3 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200">
-            <input
-              type="checkbox"
-              checked={draft.schedule.enabled}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  schedule: { ...current.schedule, enabled: event.target.checked },
-                }))
-              }
-              disabled={isSaving}
-              className="h-4 w-4 rounded border-gray-300 bg-white text-emerald-600 focus:ring-2 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-700 dark:focus:ring-blue-400 dark:disabled:bg-gray-600"
-            />
-            스케줄 사용
-          </label>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">자동 매매 시간</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)]">
+          <div>
+            <label className="flex items-center gap-3 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200">
+              <input
+                type="checkbox"
+                checked={draft.schedule.enabled}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    schedule: { ...current.schedule, enabled: event.target.checked },
+                  }))
+                }
+                disabled={isSaving}
+                className="h-4 w-4 rounded border-gray-300 bg-white text-emerald-600 focus:ring-2 focus:ring-blue-500 dark:border-gray-500 dark:bg-gray-700 dark:focus:ring-blue-400 dark:disabled:bg-gray-600"
+              />
+              시간 조건 사용
+            </label>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              체크하면 지정한 시간대에만 자동 매매를 수행합니다.
+            </p>
+          </div>
           <TextInput
-            label="Start Hour"
+            label="거래 시작 시간 (0~23시)"
             value={draft.schedule.startHour}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -616,10 +668,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
-            placeholder="0~23"
+            placeholder="예: 9"
+            hint="비워두면 시작 시간 제한 없이 동작합니다."
           />
           <TextInput
-            label="End Hour"
+            label="거래 종료 시간 (0~23시)"
             value={draft.schedule.endHour}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -629,16 +682,17 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
-            placeholder="0~23"
+            placeholder="예: 23"
+            hint="비워두면 종료 시간 제한 없이 동작합니다."
           />
         </div>
       </section>
 
       <section className="rounded-2xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">그리드</h3>
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">그리드 매매</h3>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <TextInput
-            label="GRID_TARGET_COIN"
+            label="거래 대상 코인"
             value={draft.grid.targetCoin}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -647,9 +701,11 @@ function BotConfigEditor({
               }))
             }
             disabled={isSaving}
+            placeholder="예: BTC"
+            hint="KRW- 접두사는 생략하고 코인 심볼만 입력해도 됩니다."
           />
           <TextInput
-            label="GRID_UPPER_BOUND"
+            label="그리드 매매 상단 가격 (Upper Bound)"
             value={draft.grid.upperBound}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -659,9 +715,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 110000000"
+            hint="예: 110,000,000"
           />
           <TextInput
-            label="GRID_LOWER_BOUND"
+            label="그리드 매매 하단 가격 (Lower Bound)"
             value={draft.grid.lowerBound}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -671,9 +729,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 95000000"
+            hint="예: 95,000,000"
           />
           <TextInput
-            label="GRID_ORDER_KRW"
+            label="1회 주문당 투자 금액 (KRW)"
             value={draft.grid.orderKrw}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -683,9 +743,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 10000"
+            hint="예: 10,000"
           />
           <TextInput
-            label="GRID_SELL_PCT"
+            label="목표 익절 수익률 (%)"
             value={draft.grid.sellPct}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -695,9 +757,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 1.5"
+            hint="예: 1.5"
           />
           <TextInput
-            label="GRID_COOLDOWN_SECONDS"
+            label="재주문 대기 시간 (Cool-down 초)"
             value={draft.grid.cooldownSeconds}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -707,9 +771,11 @@ function BotConfigEditor({
             }
             disabled={isSaving}
             type="number"
+            placeholder="예: 60"
+            hint="예: 60"
           />
           <TextInput
-            label="TRADE_MODE"
+            label="매매 모드"
             value={draft.grid.tradeMode}
             onChange={(nextValue) =>
               setDraft((current) => ({
@@ -718,6 +784,8 @@ function BotConfigEditor({
               }))
             }
             disabled={isSaving}
+            placeholder="예: grid"
+            hint="일반적으로 grid 값을 사용합니다."
           />
         </div>
       </section>
@@ -743,7 +811,7 @@ function BotConfigEditor({
           className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-          <span>{isSaving ? '배포 중...' : 'Save & Deploy'}</span>
+          <span>{isSaving ? '저장 중...' : '설정 저장하기'}</span>
         </button>
       </footer>
     </form>
@@ -771,10 +839,10 @@ function BotConfigForm({ isOpen, onClose, onSaveSuccess }: BotConfigFormProps) {
             <header className="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-5 dark:border-gray-700">
               <div>
                 <DialogTitle className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-                  매매 파라미터 설정
+                  봇 파라미터 설정
                 </DialogTitle>
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">
-                  DB에 저장된 현재 설정값을 기준으로 폼을 미리 채웁니다.
+                  현재 저장된 설정값을 불러와 누구나 이해하기 쉽게 수정할 수 있습니다.
                 </p>
               </div>
               <button
