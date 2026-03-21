@@ -46,3 +46,4 @@ class BotStatus(BaseModel):
     running: bool
     last_heartbeat: str | None = None
     last_error: str | None = None
+    latest_action: str | None = None
