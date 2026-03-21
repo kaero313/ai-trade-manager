@@ -51,6 +51,7 @@ export interface BotStatus {
   running: boolean
   last_heartbeat: string | null
   last_error: string | null
+  latest_action: string | null
 }
 
 export async function getBotStatus(): Promise<BotStatus> {

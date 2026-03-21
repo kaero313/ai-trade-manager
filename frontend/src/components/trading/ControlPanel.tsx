@@ -44,6 +44,7 @@ function ControlPanel() {
         running: false,
         last_heartbeat: previous?.last_heartbeat ?? null,
         last_error: previous?.last_error ?? null,
+        latest_action: 'AI 엔진 대기 중...',
       }))
       void queryClient.invalidateQueries({ queryKey: ['bot-status'] })
       setSuccessMessage('전량 롤백 요청을 전송했습니다.')
