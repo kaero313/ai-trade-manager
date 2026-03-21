@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     slack_trade_channel_ids: str | None = None
     OPENAI_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
+    opensearch_url: str = "http://localhost:9200"
 
     postgres_user: str = "postgres"
     postgres_password: str = "postgres"
