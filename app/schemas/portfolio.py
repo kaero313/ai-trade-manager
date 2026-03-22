@@ -16,3 +16,4 @@ class PortfolioSummary(BaseModel):
     total_net_worth: float = Field(...)
     total_pnl: float = Field(...)
     items: list[AssetItem] = Field(...)
+    error: str | None = Field(default=None)

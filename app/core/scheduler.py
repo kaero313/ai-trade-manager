@@ -86,21 +86,30 @@ def run_market_sentiment_refresh_scheduler_job() -> None:
     try:
         asyncio.run(refresh_market_sentiment_cache_job())
     except Exception:
-        logger.exception("market sentiment refresh scheduler job failed.")
+        logger.error(
+            "시장 심리 갱신 스케줄 작업이 실패했습니다. 서버는 계속 실행합니다.",
+            exc_info=True,
+        )
 
 
 def run_market_news_ingestion_scheduler_job() -> None:
     try:
         asyncio.run(run_market_news_ingestion_job())
     except Exception:
-        logger.exception("market_news ingestion scheduler job failed.")
+        logger.error(
+            "시장 뉴스 적재 스케줄 작업이 실패했습니다. 서버는 계속 실행합니다.",
+            exc_info=True,
+        )
 
 
 def run_daily_ai_briefing_job() -> None:
     try:
         asyncio.run(daily_ai_briefing(force_refresh_news=False, provider=DEFAULT_PROVIDER))
     except Exception:
-        logger.exception("daily_ai_briefing 스케줄 작업 실행 중 오류가 발생했습니다.")
+        logger.error(
+            "daily_ai_briefing 스케줄 작업이 실패했습니다. 서버는 계속 실행합니다.",
+            exc_info=True,
+        )
 
 
 def trigger_daily_ai_briefing_now() -> None:
@@ -108,7 +117,10 @@ def trigger_daily_ai_briefing_now() -> None:
         try:
             asyncio.run(daily_ai_briefing(force_refresh_news=True, provider=DEFAULT_PROVIDER))
         except Exception:
-            logger.exception("daily_ai_briefing 수동 실행 중 오류가 발생했습니다.")
+            logger.error(
+                "daily_ai_briefing 수동 실행이 실패했습니다. 서버는 계속 실행합니다.",
+                exc_info=True,
+            )
 
     threading.Thread(
         target=_runner,
