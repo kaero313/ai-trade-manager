@@ -54,6 +54,12 @@ export interface BotStatus {
   latest_action: string | null
 }
 
+export interface MarketSentimentSnapshot {
+  score: number
+  classification: string
+  updated_at: string
+}
+
 export async function getBotStatus(): Promise<BotStatus> {
   const { data } = await apiClient.get<BotStatus>('/status')
   return data
@@ -81,4 +87,9 @@ export async function updateBotConfig(config: BotConfig): Promise<BotConfig> {
 
 export async function liquidateAll(): Promise<void> {
   await apiClient.post('/bot/liquidate')
+}
+
+export async function getMarketSentiment(): Promise<MarketSentimentSnapshot> {
+  const { data } = await apiClient.get<MarketSentimentSnapshot>('/markets/sentiment')
+  return data
 }
