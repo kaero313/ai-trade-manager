@@ -5,6 +5,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.db.repository import get_or_create_bot_config
+from app.db.repository import merge_bot_config_metadata
 from app.db.session import AsyncSessionLocal
 from app.models.schemas import BotConfig as BotConfigSchema
 from app.services.bot_service import get_bot_status, start_bot, stop_bot
@@ -215,7 +216,10 @@ class TelegramBotService:
 
             if changed:
                 config.risk = risk
-                bot_config.config_json = config.model_dump()
+                bot_config.config_json = merge_bot_config_metadata(
+                    config.model_dump(),
+                    bot_config.config_json,
+                )
                 await db.commit()
                 await self.client.send_message(
                     "리스크 설정 변경: " + ", ".join(changed),
