@@ -10,11 +10,13 @@ from apscheduler.triggers.cron import CronTrigger
 from app.api.routes.ai import analyze_portfolio
 from app.api.routes.news import get_news_sentiment
 from app.db.session import AsyncSessionLocal
+from app.services.rag.ingestion import run_market_news_ingestion_job
 
 logger = logging.getLogger(__name__)
 
 SCHEDULER_TIMEZONE = "Asia/Seoul"
 DAILY_BRIEFING_JOB_ID = "daily_ai_briefing"
+MARKET_NEWS_INGESTION_JOB_ID = "market_news_ingestion_hourly"
 DEFAULT_PROVIDER = "openai"
 
 scheduler = BackgroundScheduler(timezone=SCHEDULER_TIMEZONE)
@@ -25,8 +27,9 @@ def start_scheduler() -> None:
         return
 
     register_daily_jobs()
+    register_market_news_jobs()
     scheduler.start()
-    logger.info("APScheduler 시작: timezone=%s", SCHEDULER_TIMEZONE)
+    logger.info("APScheduler started: timezone=%s", SCHEDULER_TIMEZONE)
 
 
 def stop_scheduler() -> None:
@@ -48,6 +51,26 @@ def register_daily_jobs() -> None:
         max_instances=1,
         misfire_grace_time=1800,
     )
+
+
+def register_market_news_jobs() -> None:
+    trigger = CronTrigger(minute=0, timezone=SCHEDULER_TIMEZONE)
+    scheduler.add_job(
+        run_market_news_ingestion_scheduler_job,
+        trigger=trigger,
+        id=MARKET_NEWS_INGESTION_JOB_ID,
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=1800,
+    )
+
+
+def run_market_news_ingestion_scheduler_job() -> None:
+    try:
+        asyncio.run(run_market_news_ingestion_job())
+    except Exception:
+        logger.exception("market_news ingestion scheduler job failed.")
 
 
 def run_daily_ai_briefing_job() -> None:
