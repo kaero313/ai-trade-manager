@@ -15,6 +15,8 @@ MARKET_NEWS_INDEX_BODY = {
         "properties": {
             "title": {"type": "text"},
             "content": {"type": "text"},
+            "source": {"type": "keyword"},
+            "link": {"type": "keyword"},
             "published_at": {"type": "date"},
             "embedding": {
                 "type": "knn_vector",

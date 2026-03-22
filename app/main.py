@@ -10,6 +10,7 @@ from app.core.logging import configure_logging
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.db.repository import get_or_create_bot_config
 from app.db.session import AsyncSessionLocal
+from app.services.rag.opensearch_client import close_opensearch_client
 from app.services.slack_bot import slack_bot
 from app.services.telegram_bot import telegram_bot
 from app.services.trading.engine import TradingEngine
@@ -36,6 +37,10 @@ async def lifespan(_app: FastAPI):
     finally:
         trading_engine._is_running = False
         stop_scheduler()
+        try:
+            await close_opensearch_client()
+        except Exception:
+            logger.exception("Failed to close AsyncOpenSearch client.")
         await telegram_bot.stop()
         slack_bot.stop()
 
