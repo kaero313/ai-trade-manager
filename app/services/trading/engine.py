@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.db.repository import extract_bot_config_metadata
 from app.models.domain import Asset, BotConfig, OrderHistory, Position
 from app.models.schemas import BotConfig as BotConfigSchema
 from app.services.brokers.factory import BrokerFactory
@@ -291,6 +292,7 @@ class TradingEngine:
 
     def _normalize_config_json(self, raw_config: Any) -> dict[str, Any]:
         candidate = raw_config if isinstance(raw_config, dict) else {}
+        metadata = extract_bot_config_metadata(candidate)
         try:
             normalized = BotConfigSchema.model_validate(candidate).model_dump()
         except Exception:
@@ -311,6 +313,9 @@ class TradingEngine:
         legacy_cooldown_until = candidate.get("grid_cooldown_until")
         if legacy_cooldown_until is not None:
             normalized["grid_cooldown_until"] = legacy_cooldown_until
+
+        if metadata:
+            normalized["metadata"] = metadata
 
         return normalized
 

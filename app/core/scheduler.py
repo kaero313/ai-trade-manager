@@ -10,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.api.routes.ai import analyze_portfolio
 from app.api.routes.news import get_news_sentiment
 from app.db.session import AsyncSessionLocal
+from app.services.market.sentiment_fetcher import refresh_market_sentiment_cache
 from app.services.rag.ingestion import run_market_news_ingestion_job
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 SCHEDULER_TIMEZONE = "Asia/Seoul"
 DAILY_BRIEFING_JOB_ID = "daily_ai_briefing"
 MARKET_NEWS_INGESTION_JOB_ID = "market_news_ingestion_hourly"
+MARKET_SENTIMENT_REFRESH_JOB_ID = "market_sentiment_refresh"
 DEFAULT_PROVIDER = "openai"
 
 scheduler = BackgroundScheduler(timezone=SCHEDULER_TIMEZONE)
@@ -28,6 +30,7 @@ def start_scheduler() -> None:
 
     register_daily_jobs()
     register_market_news_jobs()
+    register_market_sentiment_jobs()
     scheduler.start()
     logger.info("APScheduler started: timezone=%s", SCHEDULER_TIMEZONE)
 
@@ -66,6 +69,26 @@ def register_market_news_jobs() -> None:
     )
 
 
+def register_market_sentiment_jobs() -> None:
+    trigger = CronTrigger(hour="*/4", minute=5, timezone=SCHEDULER_TIMEZONE)
+    scheduler.add_job(
+        run_market_sentiment_refresh_scheduler_job,
+        trigger=trigger,
+        id=MARKET_SENTIMENT_REFRESH_JOB_ID,
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+        misfire_grace_time=1800,
+    )
+
+
+def run_market_sentiment_refresh_scheduler_job() -> None:
+    try:
+        asyncio.run(refresh_market_sentiment_cache_job())
+    except Exception:
+        logger.exception("market sentiment refresh scheduler job failed.")
+
+
 def run_market_news_ingestion_scheduler_job() -> None:
     try:
         asyncio.run(run_market_news_ingestion_job())
@@ -92,6 +115,11 @@ def trigger_daily_ai_briefing_now() -> None:
         name="daily-ai-briefing-manual",
         daemon=True,
     ).start()
+
+
+async def refresh_market_sentiment_cache_job() -> None:
+    async with AsyncSessionLocal() as db:
+        await refresh_market_sentiment_cache(db)
 
 
 async def daily_ai_briefing(force_refresh_news: bool = False, provider: str = DEFAULT_PROVIDER) -> None:

@@ -1,4 +1,6 @@
-﻿from pydantic import BaseModel, Field
+from datetime import datetime
+
+from pydantic import BaseModel, Field
 
 
 class StrategyParams(BaseModel):
@@ -47,3 +49,9 @@ class BotStatus(BaseModel):
     last_heartbeat: str | None = None
     last_error: str | None = None
     latest_action: str | None = None
+
+
+class MarketSentimentSnapshot(BaseModel):
+    score: int = Field(..., ge=0, le=100)
+    classification: str = Field(...)
+    updated_at: datetime = Field(...)

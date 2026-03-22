@@ -3,12 +3,17 @@ import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.session import get_db
+from app.models.schemas import MarketSentimentSnapshot
 from app.services.brokers.factory import BrokerFactory
-from app.services.indicators import IndicatorCalculator
 from app.services.brokers.upbit import UpbitAPIError
+from app.services.indicators import IndicatorCalculator
+from app.services.market.sentiment_fetcher import MarketSentimentFetchError
+from app.services.market.sentiment_fetcher import get_or_refresh_market_sentiment
 
 router = APIRouter()
 broker = BrokerFactory.get_broker("UPBIT")
@@ -176,6 +181,14 @@ async def get_tickers(
             )
         )
     return items
+
+
+@router.get("/sentiment", response_model=MarketSentimentSnapshot)
+async def get_market_sentiment(db: AsyncSession = Depends(get_db)) -> MarketSentimentSnapshot:
+    try:
+        return await get_or_refresh_market_sentiment(db)
+    except MarketSentimentFetchError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/{symbol}/candles", response_model=list[CandleItem])
