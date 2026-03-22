@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 
 BUY_FEE_MULTIPLIER = 1.0005
 SELL_FEE_MULTIPLIER = 0.9995
+UPBIT_KEY_MISSING_ERROR = "UPBIT_KEY_MISSING"
+UPBIT_API_ERROR_CODE = "UPBIT_API_ERROR"
+PORTFOLIO_AGGREGATION_FAILED_ERROR = "PORTFOLIO_AGGREGATION_FAILED"
 
 
 def _to_float(value: Any) -> float:
@@ -21,12 +24,17 @@ def _to_float(value: Any) -> float:
         return 0.0
 
 
-def _empty_portfolio() -> PortfolioSummary:
+def _empty_portfolio(error: str | None = None) -> PortfolioSummary:
     return PortfolioSummary(
         total_net_worth=0.0,
         total_pnl=0.0,
         items=[],
+        error=error,
     )
+
+
+def _is_missing_upbit_key_error(exc: ValueError) -> bool:
+    return "key not configured" in str(exc).lower()
 
 
 class PortfolioService:
@@ -109,13 +117,28 @@ class PortfolioService:
                 total_net_worth=total_net_worth,
                 total_pnl=total_pnl,
                 items=items,
+                error=None,
             )
+        except ValueError as exc:
+            if _is_missing_upbit_key_error(exc):
+                logger.warning(
+                    "Portfolio aggregation bypassed because Upbit API keys are missing: %s",
+                    exc,
+                )
+                return _empty_portfolio(error=UPBIT_KEY_MISSING_ERROR)
+
+            logger.error(
+                "Portfolio aggregation failed due to unexpected value error: %s",
+                exc,
+                exc_info=True,
+            )
+            return _empty_portfolio(error=PORTFOLIO_AGGREGATION_FAILED_ERROR)
         except DecodeError as exc:
             logger.error("Portfolio aggregation failed due to JWT decode error: %s", exc, exc_info=True)
-            return _empty_portfolio()
+            return _empty_portfolio(error=UPBIT_API_ERROR_CODE)
         except UpbitAPIError as exc:
             logger.error("Portfolio aggregation failed due to Upbit API error: %s", exc, exc_info=True)
-            return _empty_portfolio()
+            return _empty_portfolio(error=UPBIT_API_ERROR_CODE)
         except Exception as exc:
             logger.error("Portfolio aggregation failed due to unexpected error: %s", exc, exc_info=True)
-            return _empty_portfolio()
+            return _empty_portfolio(error=PORTFOLIO_AGGREGATION_FAILED_ERROR)

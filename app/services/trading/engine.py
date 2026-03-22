@@ -55,7 +55,10 @@ class TradingEngine:
                         else:
                             logger.info("지원되지 않는 거래 모드입니다: mode=%s", trade_mode)
                 except Exception:
-                    logger.exception("TradingEngine 루프 처리 중 예외 발생")
+                    logger.error(
+                        "TradingEngine 루프 처리 중 예외가 발생했습니다. 다음 주기에서 계속 실행합니다.",
+                        exc_info=True,
+                    )
 
                 await asyncio.sleep(5)
         finally:
