@@ -11,6 +11,7 @@ interface LayoutProps {
 
 function Layout({ children }: LayoutProps) {
   const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null)
+  const [portfolioErrorCode, setPortfolioErrorCode] = useState<string | null>(null)
   const [isPortfolioLoading, setIsPortfolioLoading] = useState(true)
 
   useEffect(() => {
@@ -27,8 +28,13 @@ function Layout({ children }: LayoutProps) {
           return
         }
         setPortfolioSummary(summary)
+        setPortfolioErrorCode(summary.error ?? null)
       } catch (error) {
         console.warn('[Layout polling] portfolio refresh failed', error)
+        if (!isMounted) {
+          return
+        }
+        setPortfolioErrorCode('PORTFOLIO_FETCH_FAILED')
       } finally {
         if (isMounted) {
           setIsPortfolioLoading(false)
@@ -48,8 +54,13 @@ function Layout({ children }: LayoutProps) {
           return
         }
         setPortfolioSummary(summary)
+        setPortfolioErrorCode(summary.error ?? null)
       } catch (error) {
         console.warn('[Layout polling] portfolio refresh failed', error)
+        if (!isMounted) {
+          return
+        }
+        setPortfolioErrorCode('PORTFOLIO_FETCH_FAILED')
       } finally {
         isPolling = false
       }
@@ -86,6 +97,7 @@ function Layout({ children }: LayoutProps) {
         totalNetWorth={totalNetWorth}
         totalPnl={totalPnl}
         isPortfolioLoading={isPortfolioLoading}
+        portfolioError={portfolioErrorCode}
       />
       <main className="mx-auto flex-1 min-h-0 w-full max-w-full overflow-y-auto px-4 pb-10 pt-24 sm:px-6 lg:px-8">
         {children}

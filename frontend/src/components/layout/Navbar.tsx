@@ -8,6 +8,7 @@ interface NavbarProps {
   totalNetWorth: number
   totalPnl: number
   isPortfolioLoading: boolean
+  portfolioError: string | null
 }
 
 function formatKrw(value: number): string {
@@ -19,9 +20,15 @@ function formatSignedKrw(value: number): string {
   return `${sign}${formatKrw(Math.abs(value))}`
 }
 
-function Navbar({ aiStatus, totalNetWorth, totalPnl, isPortfolioLoading }: NavbarProps) {
-  const pnlTextColor =
-    totalPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+function Navbar({ aiStatus, totalNetWorth, totalPnl, isPortfolioLoading, portfolioError }: NavbarProps) {
+  const hasPortfolioError = portfolioError !== null
+  const pnlTextColor = hasPortfolioError
+    ? 'text-gray-500 dark:text-gray-400'
+    : totalPnl >= 0
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : 'text-rose-600 dark:text-rose-400'
+  const totalNetWorthLabel = isPortfolioLoading ? '...' : hasPortfolioError ? '조회 불가' : formatKrw(totalNetWorth)
+  const totalPnlLabel = isPortfolioLoading ? '...' : hasPortfolioError ? '-' : formatSignedKrw(totalPnl)
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-gray-200 bg-white/95 text-gray-900 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100">
@@ -60,12 +67,12 @@ function Navbar({ aiStatus, totalNetWorth, totalPnl, isPortfolioLoading }: Navba
           <div className="hidden items-center gap-4 lg:flex">
             <span className="whitespace-nowrap text-xs font-semibold text-gray-600 dark:text-gray-300">
               총 자산:{' '}
-              <span className="text-gray-900 dark:text-gray-100">
-                {isPortfolioLoading ? '...' : formatKrw(totalNetWorth)}
+              <span className={hasPortfolioError ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100'}>
+                {totalNetWorthLabel}
               </span>
             </span>
             <span className={`whitespace-nowrap text-xs font-semibold ${pnlTextColor}`}>
-              총 손익: {isPortfolioLoading ? '...' : formatSignedKrw(totalPnl)}
+              총 손익: {totalPnlLabel}
             </span>
           </div>
         </div>

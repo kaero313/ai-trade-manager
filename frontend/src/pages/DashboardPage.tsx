@@ -18,6 +18,7 @@ function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [macroTab, setMacroTab] = useState<'sentiment' | 'news'>('sentiment')
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
+  const [portfolioErrorCode, setPortfolioErrorCode] = useState<string | null>(null)
   const [orders, setOrders] = useState<OrderHistoryItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isOrdersLoading, setIsOrdersLoading] = useState(true)
@@ -53,12 +54,14 @@ function DashboardPage() {
 
       if (portfolioResult.status === 'fulfilled') {
         setPortfolio(portfolioResult.value)
+        setPortfolioErrorCode(portfolioResult.value.error ?? null)
       }
       if (ordersResult.status === 'fulfilled') {
         setOrders(ordersResult.value)
       }
 
       if (portfolioResult.status === 'rejected') {
+        setPortfolioErrorCode('PORTFOLIO_FETCH_FAILED')
         setErrorMessage('대시보드 데이터를 불러오지 못했습니다.')
       }
 
@@ -88,7 +91,9 @@ function DashboardPage() {
 
         if (portfolioResult.status === 'fulfilled') {
           setPortfolio(portfolioResult.value)
+          setPortfolioErrorCode(portfolioResult.value.error ?? null)
         } else {
+          setPortfolioErrorCode('PORTFOLIO_FETCH_FAILED')
           console.warn('[Dashboard polling] portfolio refresh failed', portfolioResult.reason)
         }
 
@@ -184,7 +189,7 @@ function DashboardPage() {
       <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
         <div className="flex flex-col gap-4">
           <ControlPanel />
-          <BotControlPanel />
+          <BotControlPanel portfolioError={portfolioErrorCode} />
         </div>
         <div className="min-h-[250px] shrink-0">
           <PortfolioChart items={assets} isLoading={isLoading} />
