@@ -15,6 +15,7 @@ export interface PortfolioSummary {
   total_net_worth: number
   total_pnl: number
   items: AssetItem[]
+  error?: string | null
 }
 
 export interface OrderHistoryItem {

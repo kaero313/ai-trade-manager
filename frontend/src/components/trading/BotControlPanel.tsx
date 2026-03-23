@@ -14,6 +14,10 @@ interface NoticeState {
   type: NoticeType
 }
 
+interface BotControlPanelProps {
+  portfolioError?: string | null
+}
+
 function resolveErrorMessage(error: unknown, fallback: string): string {
   if (isAxiosError(error)) {
     const detail = error.response?.data?.detail
@@ -27,7 +31,19 @@ function resolveErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-function BotControlPanel() {
+function resolvePortfolioWarningMessage(portfolioError: string | null | undefined): string | null {
+  if (portfolioError === null || portfolioError === undefined) {
+    return null
+  }
+
+  if (portfolioError === 'UPBIT_KEY_MISSING') {
+    return '업비트 API 키가 설정되지 않아 자산 조회 및 매매 기능이 제한됩니다.'
+  }
+
+  return '업비트 자산 정보를 불러오지 못해 자산 조회 및 매매 기능이 제한됩니다.'
+}
+
+function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
   const queryClient = useQueryClient()
   const [activeAction, setActiveAction] = useState<ActionType>(null)
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false)
@@ -72,6 +88,7 @@ function BotControlPanel() {
       : isActive
         ? '트레이딩 봇이 현재 가동 중입니다.'
         : '트레이딩 봇이 현재 정지 상태입니다.'
+  const portfolioWarningMessage = resolvePortfolioWarningMessage(portfolioError)
 
   const handleStart = async () => {
     setActiveAction('start')
@@ -126,6 +143,12 @@ function BotControlPanel() {
         <span className={`h-2.5 w-2.5 rounded-full ${isError ? 'bg-rose-500' : isActive ? 'bg-emerald-500' : 'bg-gray-400 dark:bg-gray-500'}`} />
         <p>{description}</p>
       </div>
+
+      {portfolioWarningMessage && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          {portfolioWarningMessage}
+        </div>
+      )}
 
       <section className="mt-5 border-t border-gray-200 pt-5 dark:border-gray-700">
         <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">봇 원격 제어</p>
