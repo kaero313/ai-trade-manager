@@ -1,4 +1,5 @@
 import json
+from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import select
@@ -69,6 +70,11 @@ async def get_system_config_value(
     return config.config_value
 
 
+async def list_system_configs(db: AsyncSession) -> list[SystemConfigORM]:
+    result = await db.execute(select(SystemConfigORM).order_by(SystemConfigORM.id))
+    return list(result.scalars().all())
+
+
 async def upsert_system_config(
     db: AsyncSession,
     config_key: str,
@@ -91,6 +97,38 @@ async def upsert_system_config(
     await db.commit()
     await db.refresh(config)
     return config
+
+
+async def bulk_upsert_system_configs(
+    db: AsyncSession,
+    items: Sequence[tuple[str, str]],
+) -> list[SystemConfigORM]:
+    if not items:
+        return await list_system_configs(db)
+
+    values_by_key = {config_key: config_value for config_key, config_value in items}
+    result = await db.execute(
+        select(SystemConfigORM).where(SystemConfigORM.config_key.in_(values_by_key))
+    )
+    existing_configs = {
+        config.config_key: config for config in result.scalars().all()
+    }
+
+    for config_key, config_value in values_by_key.items():
+        existing_config = existing_configs.get(config_key)
+        if existing_config is None:
+            db.add(
+                SystemConfigORM(
+                    config_key=config_key,
+                    config_value=config_value,
+                )
+            )
+            continue
+
+        existing_config.config_value = config_value
+
+    await db.commit()
+    return await list_system_configs(db)
 
 
 async def seed_system_configs_if_empty(db: AsyncSession) -> None:
