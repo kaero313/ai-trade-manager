@@ -1,7 +1,10 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
-import { Loader2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { AlertTriangle, Loader2, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 
+import { fetchFavorites, fetchTickers, removeFavorite, type FavoriteItem, type TickerItem } from '../api/markets'
 import InfoTooltip from '../components/common/InfoTooltip'
 import BotConfigForm from '../components/trading/BotConfigForm'
 import { useSystemConfigs, useUpdateSystemConfigs } from '../hooks/useSystemConfigs'
@@ -87,14 +90,394 @@ function buildScheduleDraft(items: SystemConfigItem[] | undefined): ScheduleDraf
   }
 }
 
-function PlaceholderCard({ title, description }: { title: string; description: string }) {
+function formatPrice(value: number | undefined): string {
+  if (value === undefined) {
+    return '-'
+  }
+
+  return `${new Intl.NumberFormat('ko-KR', {
+    maximumFractionDigits: 0,
+  }).format(value)} KRW`
+}
+
+function formatSignedPercent(rate: number | undefined): string {
+  if (rate === undefined) {
+    return '-'
+  }
+
+  const percent = rate * 100
+  const sign = percent > 0 ? '+' : ''
+  return `${sign}${percent.toFixed(2)}%`
+}
+
+function formatCreatedAt(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return '-'
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed)
+}
+
+function resolveTickerTone(rate: number | undefined): string {
+  if (rate === undefined || rate === 0) {
+    return 'text-gray-600 dark:text-gray-300'
+  }
+
+  return rate > 0
+    ? 'text-rose-600 dark:text-rose-300'
+    : 'text-blue-600 dark:text-blue-300'
+}
+interface BulkDeleteResult {
+  succeededSymbols: string[]
+  failedSymbols: string[]
+}
+
+function BulkWatchlistPanel() {
+  const queryClient = useQueryClient()
+  const [selectedSymbols, setSelectedSymbols] = useState<string[]>([])
+  const [notice, setNotice] = useState<NoticeState | null>(null)
+
+  const favoritesQuery = useQuery({
+    queryKey: ['favorites'],
+    queryFn: fetchFavorites,
+  })
+
+  const symbols = useMemo(() => {
+    return (favoritesQuery.data ?? []).map((item) => item.symbol.toUpperCase())
+  }, [favoritesQuery.data])
+
+  const tickersQueryKey = useMemo(() => ['watchlist-tickers', symbols.join(',')], [symbols])
+
+  const tickersQuery = useQuery({
+    queryKey: tickersQueryKey,
+    queryFn: () => fetchTickers(symbols),
+    enabled: symbols.length > 0,
+    refetchInterval: 3000,
+    refetchIntervalInBackground: true,
+    placeholderData: (previousData) => previousData,
+  })
+
+  useEffect(() => {
+    setSelectedSymbols((current) => current.filter((symbol) => symbols.includes(symbol)))
+  }, [symbols])
+
+  const tickerMap = useMemo(() => {
+    const map = new Map<string, TickerItem>()
+    for (const row of tickersQuery.data ?? []) {
+      map.set(row.symbol.toUpperCase(), row)
+    }
+    return map
+  }, [tickersQuery.data])
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (symbolsToDelete: string[]): Promise<BulkDeleteResult> => {
+      const results = await Promise.allSettled(symbolsToDelete.map((symbol) => removeFavorite(symbol)))
+      const failedSymbols = results.flatMap((result, index) =>
+        result.status === 'rejected' ? [symbolsToDelete[index]] : [],
+      )
+      const succeededSymbols = symbolsToDelete.filter((symbol) => !failedSymbols.includes(symbol))
+
+      if (succeededSymbols.length > 0) {
+        await queryClient.invalidateQueries({ queryKey: ['favorites'] })
+        await queryClient.invalidateQueries({ queryKey: ['watchlist-tickers'] })
+      }
+
+      return { succeededSymbols, failedSymbols }
+    },
+  })
+
+  const allSelected = symbols.length > 0 && selectedSymbols.length === symbols.length
+
+  const handleToggleAll = () => {
+    setSelectedSymbols(allSelected ? [] : symbols)
+  }
+
+  const handleToggleSymbol = (symbol: string) => {
+    setSelectedSymbols((current) =>
+      current.includes(symbol) ? current.filter((item) => item !== symbol) : [...current, symbol],
+    )
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedSymbols.length === 0) {
+      setNotice({ type: 'info', message: '삭제할 관심 종목을 먼저 선택해 주세요.' })
+      return
+    }
+
+    try {
+      const result = await bulkDeleteMutation.mutateAsync(selectedSymbols)
+      setSelectedSymbols(result.failedSymbols)
+
+      if (result.failedSymbols.length === 0) {
+        setNotice({
+          type: 'success',
+          message: `${result.succeededSymbols.length}개의 관심 종목을 일괄 삭제했습니다.`,
+        })
+        return
+      }
+
+      if (result.succeededSymbols.length === 0) {
+        setNotice({
+          type: 'error',
+          message: '선택한 관심 종목을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        })
+        return
+      }
+
+      setNotice({
+        type: 'info',
+        message: `${result.succeededSymbols.length}개 삭제, ${result.failedSymbols.length}개는 유지되었습니다.`,
+      })
+    } catch (error) {
+      setNotice({
+        type: 'error',
+        message: resolveErrorMessage(error, '관심 종목 일괄 삭제 중 오류가 발생했습니다.'),
+      })
+    }
+  }
+
   return (
     <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <div className="flex min-h-[360px] items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 text-center dark:border-gray-600 dark:bg-gray-700/30">
-        <div>
-          <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{title} 준비 중</p>
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{description}</p>
+      <header className="border-b border-gray-200 pb-5 dark:border-gray-700">
+        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-emerald-600 dark:text-emerald-300">
+          Bulk Watchlist Manager
+        </p>
+        <div className="mt-3 flex items-center gap-2">
+          <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">관심 종목 집중 관리</h2>
+          <InfoTooltip
+            title="관심 종목 집중 관리"
+            content="표에서 체크박스로 여러 종목을 선택해 한 번에 삭제할 수 있습니다. 종목명 링크를 누르면 대시보드 차트 화면으로 바로 이동합니다."
+          />
         </div>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
+          현재 백엔드는 실현 수익률 대신 실시간 24시간 등락률을 제공합니다. 관심 종목이 많아져도 표로
+          일괄 관리하고, 불필요한 심볼은 한 번에 정리할 수 있습니다.
+        </p>
+      </header>
+
+      <div className="mt-6 space-y-5">
+        <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-4 dark:border-gray-700 dark:bg-gray-700/20 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-700 dark:text-gray-200">
+            <span className="rounded-full bg-white px-3 py-1 font-semibold shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+              총 {symbols.length}개 종목
+            </span>
+            <span className="rounded-full bg-white px-3 py-1 font-semibold shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+              선택 {selectedSymbols.length}개
+            </span>
+            <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={handleToggleAll}
+                disabled={symbols.length === 0 || bulkDeleteMutation.isPending}
+                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              전체 선택
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void handleBulkDelete()}
+            disabled={selectedSymbols.length === 0 || bulkDeleteMutation.isPending}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-rose-300"
+          >
+            {bulkDeleteMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+            <span>{bulkDeleteMutation.isPending ? '삭제 중...' : '선택 종목 삭제'}</span>
+          </button>
+        </div>
+
+        {notice && (
+          <div
+            className={`rounded-xl px-4 py-3 text-sm ${
+              notice.type === 'success'
+                ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+                : notice.type === 'info'
+                  ? 'border border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-600 dark:bg-gray-700/40 dark:text-gray-200'
+                  : 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200'
+            }`}
+          >
+            {notice.message}
+          </div>
+        )}
+
+        {favoritesQuery.isLoading && (
+          <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-gray-500 dark:text-gray-300">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            관심 종목 목록을 불러오는 중입니다.
+          </div>
+        )}
+
+        {favoritesQuery.isError && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+            {resolveErrorMessage(favoritesQuery.error, '관심 종목 목록을 불러오지 못했습니다.')}
+          </div>
+        )}
+
+        {!favoritesQuery.isLoading && !favoritesQuery.isError && symbols.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center dark:border-gray-600 dark:bg-gray-700/30">
+            <p className="text-base font-semibold text-gray-900 dark:text-gray-100">아직 등록된 관심 종목이 없습니다.</p>
+            <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              대시보드 검색창의 별표 버튼으로 종목을 추가하면 여기에서 표 형태로 관리할 수 있습니다.
+            </p>
+          </div>
+        )}
+
+        {!favoritesQuery.isLoading && !favoritesQuery.isError && symbols.length > 0 && (
+          <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-700/40">
+                  <tr>
+                    <th className="w-14 px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-200">
+                      선택
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-200">종목명</th>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-200">브로커</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-200">현재가</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-200">
+                      24시간 등락률
+                    </th>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-200">추가일자</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white dark:divide-gray-700 dark:bg-gray-800">
+                  {(favoritesQuery.data ?? []).map((favorite: FavoriteItem) => {
+                    const symbol = favorite.symbol.toUpperCase()
+                    const ticker = tickerMap.get(symbol)
+                    const isSelected = selectedSymbols.includes(symbol)
+
+                    return (
+                      <tr
+                        key={favorite.id}
+                        className={
+                          isSelected
+                            ? 'bg-emerald-50/70 dark:bg-emerald-500/5'
+                            : 'hover:bg-gray-50/80 dark:hover:bg-gray-700/30'
+                        }
+                      >
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSymbol(symbol)}
+                            disabled={bulkDeleteMutation.isPending}
+                            className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex min-w-[180px] flex-col">
+                            <Link
+                              to={`/?symbol=${encodeURIComponent(symbol)}`}
+                              className="font-semibold text-slate-900 transition hover:text-emerald-600 dark:text-gray-100 dark:hover:text-emerald-300"
+                            >
+                              {symbol}
+                            </Link>
+                            <span className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                              대시보드 차트로 바로 이동
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-300">{favorite.broker}</td>
+                        <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-gray-100">
+                          {formatPrice(ticker?.current_price)}
+                        </td>
+                        <td className={`px-4 py-3 text-right font-semibold ${resolveTickerTone(ticker?.signed_change_rate)}`}>
+                          {formatSignedPercent(ticker?.signed_change_rate)}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                          {formatCreatedAt(favorite.created_at)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {tickersQuery.isError && (
+              <div className="border-t border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
+                {resolveErrorMessage(tickersQuery.error, '일부 실시간 시세를 불러오지 못했습니다. 저장된 관심 종목 표는 계속 사용할 수 있습니다.')}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function DangerZonePanel() {
+  return (
+    <section className="rounded-2xl border border-rose-200 bg-rose-50/80 p-6 shadow-sm ring-1 ring-rose-100 dark:border-rose-500/20 dark:bg-rose-500/10 dark:ring-rose-500/10">
+      <header className="border-b border-rose-200 pb-5 dark:border-rose-500/20">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-600 text-white shadow-sm">
+            <AlertTriangle className="h-5 w-5" />
+          </span>
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-rose-600 dark:text-rose-300">
+              Danger Zone
+            </p>
+            <h2 className="mt-1 text-2xl font-semibold text-rose-900 dark:text-rose-100">
+              시스템 어드민
+            </h2>
+          </div>
+        </div>
+        <p className="mt-4 max-w-3xl text-sm leading-6 text-rose-800 dark:text-rose-100/90">
+          시스템 장애나 백테스트 찌꺼기 누적 상황에 대비한 관리자용 정리 구역입니다. 현재는 UI 뼈대만
+          선점해 두고, 실제 삭제 API는 후속 작업에서 연결됩니다.
+        </p>
+      </header>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        {[
+          {
+            title: '백테스트 캐시 정리',
+            description: '로컬 백테스트 산출물과 누적 캐시를 정리하는 버튼 자리입니다.',
+          },
+          {
+            title: '시장 심리 캐시 초기화',
+            description: '심리지수 캐시를 강제로 비우고 다시 수집하는 관리자용 버튼 자리입니다.',
+          },
+          {
+            title: '뉴스 인덱스 정리',
+            description: 'OpenSearch 뉴스 데이터 또는 실패한 적재 부산물을 초기화하는 버튼 자리입니다.',
+          },
+        ].map((item) => (
+          <div
+            key={item.title}
+            className="rounded-2xl border border-rose-200 bg-white/80 p-4 dark:border-rose-500/20 dark:bg-gray-900/20"
+          >
+            <h3 className="text-base font-semibold text-rose-900 dark:text-rose-100">{item.title}</h3>
+            <p className="mt-2 min-h-[72px] text-sm leading-6 text-rose-800/90 dark:text-rose-100/80">
+              {item.description}
+            </p>
+            <button
+              type="button"
+              disabled
+              className="mt-4 inline-flex w-full cursor-not-allowed items-center justify-center rounded-lg border border-rose-300 bg-rose-100 px-4 py-2 text-sm font-semibold text-rose-700 opacity-70 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-100"
+            >
+              준비 중
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 rounded-xl border border-rose-200 bg-white/70 px-4 py-3 text-sm text-rose-800 dark:border-rose-500/20 dark:bg-gray-900/20 dark:text-rose-100/90">
+        실제 정리 버튼이 연결되면 복구가 어려운 데이터 삭제가 포함될 수 있으므로, 운영 환경에서는 권한과
+        확인 절차를 함께 묶어야 합니다.
       </div>
     </section>
   )
@@ -313,7 +696,6 @@ function ScheduleSettingsPanel() {
 
 function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTabKey>('bot')
-  const activeItem = SETTINGS_TABS.find((item) => item.key === activeTab) ?? SETTINGS_TABS[0]
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-6">
@@ -367,12 +749,8 @@ function SettingsPage() {
         <div className="min-h-0 overflow-y-auto pr-1">
           {activeTab === 'bot' && <BotConfigForm />}
           {activeTab === 'schedule' && <ScheduleSettingsPanel />}
-          {activeTab === 'watchlist' && (
-            <PlaceholderCard title={activeItem.label} description={activeItem.description} />
-          )}
-          {activeTab === 'admin' && (
-            <PlaceholderCard title={activeItem.label} description={activeItem.description} />
-          )}
+          {activeTab === 'watchlist' && <BulkWatchlistPanel />}
+          {activeTab === 'admin' && <DangerZonePanel />}
         </div>
       </div>
     </div>
