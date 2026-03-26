@@ -100,53 +100,73 @@ async def load_scheduler_runtime_config() -> SchedulerRuntimeConfig:
     )
 
 
-def register_daily_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
-    trigger = CronTrigger(
+def _build_daily_briefing_trigger(runtime_config: SchedulerRuntimeConfig) -> CronTrigger:
+    return CronTrigger(
         hour=runtime_config.ai_briefing_hour,
         minute=runtime_config.ai_briefing_minute,
         timezone=SCHEDULER_TIMEZONE,
     )
-    scheduler.add_job(
-        run_daily_ai_briefing_job,
-        trigger=trigger,
-        id=DAILY_BRIEFING_JOB_ID,
-        replace_existing=True,
-        coalesce=True,
-        max_instances=1,
-        misfire_grace_time=1800,
-    )
 
 
-def register_market_news_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
-    trigger = CronTrigger(
+def _build_market_news_trigger(runtime_config: SchedulerRuntimeConfig) -> CronTrigger:
+    return CronTrigger(
         hour=f"*/{runtime_config.news_interval_hours}",
         minute=0,
         timezone=SCHEDULER_TIMEZONE,
     )
-    scheduler.add_job(
+
+
+def _build_market_sentiment_trigger(runtime_config: SchedulerRuntimeConfig) -> CronTrigger:
+    return CronTrigger(
+        minute=f"*/{runtime_config.sentiment_interval_minutes}",
+        timezone=SCHEDULER_TIMEZONE,
+    )
+
+
+def _upsert_scheduler_job(
+    job_id: str,
+    func,
+    trigger: CronTrigger,
+) -> None:
+    existing_job = scheduler.get_job(job_id)
+    if existing_job is None:
+        scheduler.add_job(
+            func,
+            trigger=trigger,
+            id=job_id,
+            replace_existing=True,
+            coalesce=True,
+            max_instances=1,
+            misfire_grace_time=1800,
+        )
+        logger.info("Scheduler job added: job_id=%s trigger=%s", job_id, trigger)
+        return
+
+    scheduler.reschedule_job(job_id, trigger=trigger)
+    logger.info("Scheduler job rescheduled: job_id=%s trigger=%s", job_id, trigger)
+
+
+def register_daily_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
+    _upsert_scheduler_job(
+        DAILY_BRIEFING_JOB_ID,
+        run_daily_ai_briefing_job,
+        _build_daily_briefing_trigger(runtime_config),
+    )
+
+
+def register_market_news_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
+    _upsert_scheduler_job(
+        MARKET_NEWS_INGESTION_JOB_ID,
         run_market_news_ingestion_scheduler_job,
-        trigger=trigger,
-        id=MARKET_NEWS_INGESTION_JOB_ID,
-        replace_existing=True,
-        coalesce=True,
-        max_instances=1,
-        misfire_grace_time=1800,
+        _build_market_news_trigger(runtime_config),
     )
 
 
 def register_market_sentiment_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
-    trigger = CronTrigger(
-        minute=f"*/{runtime_config.sentiment_interval_minutes}",
-        timezone=SCHEDULER_TIMEZONE,
-    )
-    scheduler.add_job(
+    _upsert_scheduler_job(
+        MARKET_SENTIMENT_REFRESH_JOB_ID,
         run_market_sentiment_refresh_scheduler_job,
-        trigger=trigger,
-        id=MARKET_SENTIMENT_REFRESH_JOB_ID,
-        replace_existing=True,
-        coalesce=True,
-        max_instances=1,
-        misfire_grace_time=1800,
+        _build_market_sentiment_trigger(runtime_config),
     )
 
 
