@@ -2,8 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
-import BotConfigForm from './BotConfigForm'
 import { getBotStatus, startBot, stopBot } from '../../services/api'
 
 type ActionType = 'start' | 'stop' | null
@@ -44,9 +44,9 @@ function resolvePortfolioWarningMessage(portfolioError: string | null | undefine
 }
 
 function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [activeAction, setActiveAction] = useState<ActionType>(null)
-  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false)
   const [notice, setNotice] = useState<NoticeState | null>(null)
 
   const botStatusQuery = useQuery({
@@ -122,11 +122,6 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
     }
   }
 
-  const handleConfigSaveSuccess = (message: string) => {
-    setNotice({ message, type: 'success' })
-    setIsConfigModalOpen(false)
-  }
-
   return (
     <aside className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="flex items-start justify-between gap-3">
@@ -182,10 +177,10 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
         </div>
         <button
           type="button"
-          onClick={() => setIsConfigModalOpen(true)}
+          onClick={() => navigate('/settings')}
           className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
         >
-          봇 설정
+          시스템 설정으로 이동
         </button>
       </section>
 
@@ -201,13 +196,6 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
         </p>
       )}
 
-      {isConfigModalOpen && (
-        <BotConfigForm
-          isOpen={isConfigModalOpen}
-          onClose={() => setIsConfigModalOpen(false)}
-          onSaveSuccess={handleConfigSaveSuccess}
-        />
-      )}
     </aside>
   )
 }
