@@ -5,7 +5,6 @@ from typing import Any
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.repository import get_or_create_bot_config
 from app.db.repository import read_cached_market_sentiment
 from app.db.repository import store_market_sentiment_cache
 from app.models.schemas import MarketSentimentSnapshot
@@ -68,8 +67,7 @@ async def fetch_market_sentiment() -> MarketSentimentSnapshot:
 
 
 async def get_cached_market_sentiment(db: AsyncSession) -> MarketSentimentSnapshot | None:
-    bot_config = await get_or_create_bot_config(db)
-    return read_cached_market_sentiment(bot_config.config_json)
+    return await read_cached_market_sentiment(db)
 
 
 async def refresh_market_sentiment_cache(db: AsyncSession) -> MarketSentimentSnapshot:
