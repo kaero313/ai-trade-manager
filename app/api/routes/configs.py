@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +14,7 @@ from app.models.schemas import SystemConfigItem
 from app.models.schemas import SystemConfigUpdateItem
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 SCHEDULER_CONFIG_KEYS = {
     NEWS_INTERVAL_HOURS_KEY,
@@ -52,7 +55,13 @@ async def update_system_configs(
     )
 
     if any(config_key in SCHEDULER_CONFIG_KEYS for config_key in config_keys):
-        await reload_scheduler_jobs()
+        try:
+            await reload_scheduler_jobs()
+        except Exception:
+            logger.error(
+                "SystemConfig 저장 후 스케줄러 핫스왑 적용에 실패했습니다.",
+                exc_info=True,
+            )
 
     return [
         SystemConfigItem(
