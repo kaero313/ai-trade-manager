@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,6 +10,10 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.api.routes.ai import analyze_portfolio
 from app.api.routes.news import get_news_sentiment
+from app.db.repository import AI_BRIEFING_TIME_KEY
+from app.db.repository import NEWS_INTERVAL_HOURS_KEY
+from app.db.repository import SENTIMENT_INTERVAL_MINUTES_KEY
+from app.db.repository import get_system_config_value
 from app.db.session import AsyncSessionLocal
 from app.services.market.sentiment_fetcher import refresh_market_sentiment_cache
 from app.services.rag.ingestion import run_market_news_ingestion_job
@@ -21,30 +26,86 @@ MARKET_NEWS_INGESTION_JOB_ID = "market_news_ingestion_hourly"
 MARKET_SENTIMENT_REFRESH_JOB_ID = "market_sentiment_refresh"
 DEFAULT_PROVIDER = "openai"
 
+DEFAULT_NEWS_INTERVAL_HOURS = 4
+DEFAULT_SENTIMENT_INTERVAL_MINUTES = 5
+DEFAULT_AI_BRIEFING_HOUR = 8
+DEFAULT_AI_BRIEFING_MINUTE = 30
+
 scheduler = BackgroundScheduler(timezone=SCHEDULER_TIMEZONE)
 
 
-def start_scheduler() -> None:
-    if scheduler.running:
-        return
-
-    register_daily_jobs()
-    register_market_news_jobs()
-    register_market_sentiment_jobs()
-    scheduler.start()
-    logger.info("APScheduler started: timezone=%s", SCHEDULER_TIMEZONE)
+@dataclass(slots=True)
+class SchedulerRuntimeConfig:
+    news_interval_hours: int = DEFAULT_NEWS_INTERVAL_HOURS
+    sentiment_interval_minutes: int = DEFAULT_SENTIMENT_INTERVAL_MINUTES
+    ai_briefing_hour: int = DEFAULT_AI_BRIEFING_HOUR
+    ai_briefing_minute: int = DEFAULT_AI_BRIEFING_MINUTE
 
 
-def stop_scheduler() -> None:
-    if not scheduler.running:
-        return
+def _parse_interval_hours(raw_value: str | None) -> int:
+    try:
+        value = int(str(raw_value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return DEFAULT_NEWS_INTERVAL_HOURS
 
-    scheduler.shutdown(wait=False)
-    logger.info("APScheduler 종료")
+    if value <= 0 or value >= 24:
+        return DEFAULT_NEWS_INTERVAL_HOURS
+    return value
 
 
-def register_daily_jobs() -> None:
-    trigger = CronTrigger(hour=8, minute=30, timezone=SCHEDULER_TIMEZONE)
+def _parse_interval_minutes(raw_value: str | None) -> int:
+    try:
+        value = int(str(raw_value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return DEFAULT_SENTIMENT_INTERVAL_MINUTES
+
+    if value <= 0 or value >= 60:
+        return DEFAULT_SENTIMENT_INTERVAL_MINUTES
+    return value
+
+
+def _parse_ai_briefing_time(raw_value: str | None) -> tuple[int, int]:
+    if not raw_value:
+        return DEFAULT_AI_BRIEFING_HOUR, DEFAULT_AI_BRIEFING_MINUTE
+
+    try:
+        hour_text, minute_text = str(raw_value).strip().split(":", maxsplit=1)
+        hour = int(hour_text)
+        minute = int(minute_text)
+    except (ValueError, AttributeError):
+        return DEFAULT_AI_BRIEFING_HOUR, DEFAULT_AI_BRIEFING_MINUTE
+
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return DEFAULT_AI_BRIEFING_HOUR, DEFAULT_AI_BRIEFING_MINUTE
+    return hour, minute
+
+
+async def load_scheduler_runtime_config() -> SchedulerRuntimeConfig:
+    async with AsyncSessionLocal() as db:
+        news_interval_hours = _parse_interval_hours(
+            await get_system_config_value(db, NEWS_INTERVAL_HOURS_KEY)
+        )
+        sentiment_interval_minutes = _parse_interval_minutes(
+            await get_system_config_value(db, SENTIMENT_INTERVAL_MINUTES_KEY)
+        )
+        ai_briefing_hour, ai_briefing_minute = _parse_ai_briefing_time(
+            await get_system_config_value(db, AI_BRIEFING_TIME_KEY)
+        )
+
+    return SchedulerRuntimeConfig(
+        news_interval_hours=news_interval_hours,
+        sentiment_interval_minutes=sentiment_interval_minutes,
+        ai_briefing_hour=ai_briefing_hour,
+        ai_briefing_minute=ai_briefing_minute,
+    )
+
+
+def register_daily_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
+    trigger = CronTrigger(
+        hour=runtime_config.ai_briefing_hour,
+        minute=runtime_config.ai_briefing_minute,
+        timezone=SCHEDULER_TIMEZONE,
+    )
     scheduler.add_job(
         run_daily_ai_briefing_job,
         trigger=trigger,
@@ -56,8 +117,12 @@ def register_daily_jobs() -> None:
     )
 
 
-def register_market_news_jobs() -> None:
-    trigger = CronTrigger(minute=0, timezone=SCHEDULER_TIMEZONE)
+def register_market_news_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
+    trigger = CronTrigger(
+        hour=f"*/{runtime_config.news_interval_hours}",
+        minute=0,
+        timezone=SCHEDULER_TIMEZONE,
+    )
     scheduler.add_job(
         run_market_news_ingestion_scheduler_job,
         trigger=trigger,
@@ -69,8 +134,11 @@ def register_market_news_jobs() -> None:
     )
 
 
-def register_market_sentiment_jobs() -> None:
-    trigger = CronTrigger(hour="*/4", minute=5, timezone=SCHEDULER_TIMEZONE)
+def register_market_sentiment_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
+    trigger = CronTrigger(
+        minute=f"*/{runtime_config.sentiment_interval_minutes}",
+        timezone=SCHEDULER_TIMEZONE,
+    )
     scheduler.add_job(
         run_market_sentiment_refresh_scheduler_job,
         trigger=trigger,
@@ -80,6 +148,38 @@ def register_market_sentiment_jobs() -> None:
         max_instances=1,
         misfire_grace_time=1800,
     )
+
+
+async def reload_scheduler_jobs() -> SchedulerRuntimeConfig:
+    runtime_config = await load_scheduler_runtime_config()
+    register_daily_jobs(runtime_config)
+    register_market_news_jobs(runtime_config)
+    register_market_sentiment_jobs(runtime_config)
+    logger.info(
+        "Scheduler jobs reloaded: news_interval_hours=%s sentiment_interval_minutes=%s ai_briefing_time=%02d:%02d",
+        runtime_config.news_interval_hours,
+        runtime_config.sentiment_interval_minutes,
+        runtime_config.ai_briefing_hour,
+        runtime_config.ai_briefing_minute,
+    )
+    return runtime_config
+
+
+async def start_scheduler() -> None:
+    if scheduler.running:
+        return
+
+    await reload_scheduler_jobs()
+    scheduler.start()
+    logger.info("APScheduler started: timezone=%s", SCHEDULER_TIMEZONE)
+
+
+def stop_scheduler() -> None:
+    if not scheduler.running:
+        return
+
+    scheduler.shutdown(wait=False)
+    logger.info("APScheduler 종료")
 
 
 def run_market_sentiment_refresh_scheduler_job() -> None:
@@ -153,12 +253,12 @@ async def daily_ai_briefing(force_refresh_news: bool = False, provider: str = DE
             provider=resolved_provider,
         )
         slack_bot.send_message(
-            text="🌅 AI 모닝 브리핑",
+            text="🧠 AI 모닝 브리핑",
             blocks=blocks,
         )
     except Exception:
         logger.exception("daily_ai_briefing 생성 중 오류가 발생했습니다.")
-        slack_bot.send_message("🚨 [브리핑 실패] AI 모닝 브리핑 생성 중 오류가 발생했습니다.")
+        slack_bot.send_message("⚠️ [브리핑 실패] AI 모닝 브리핑 생성 중 오류가 발생했습니다.")
 
 
 def _build_briefing_blocks(
@@ -176,19 +276,23 @@ def _build_briefing_blocks(
     summary_lines = summary_lines[:3]
 
     now_local = datetime.now().astimezone()
-    updated_local = updated_at.astimezone() if updated_at.tzinfo else updated_at.replace(tzinfo=timezone.utc).astimezone()
+    updated_local = (
+        updated_at.astimezone()
+        if updated_at.tzinfo
+        else updated_at.replace(tzinfo=timezone.utc).astimezone()
+    )
 
     blocks: list[dict[str, Any]] = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": "🌅 AI 모닝 브리핑"},
+            "text": {"type": "plain_text", "text": "🧠 AI 모닝 브리핑"},
         },
         {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
                 "text": (
-                    f"*시장 심리 점수:* `{score}` ({label})\n"
+                    f"*시장 심리 지수:* `{score}` ({label})\n"
                     f"*분석 시각:* `{updated_local.strftime('%Y-%m-%d %H:%M:%S')}`"
                 ),
             },

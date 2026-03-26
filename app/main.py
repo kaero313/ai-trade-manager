@@ -9,6 +9,7 @@ from app.api.router import api_router
 from app.core.logging import configure_logging
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.db.repository import get_or_create_bot_config
+from app.db.repository import seed_system_configs_if_empty
 from app.db.session import AsyncSessionLocal
 from app.services.rag.opensearch_client import close_opensearch_client
 from app.services.slack_bot import slack_bot
@@ -23,13 +24,14 @@ trading_engine = TradingEngine(AsyncSessionLocal)
 async def lifespan(_app: FastAPI):
     async with AsyncSessionLocal() as db:
         await get_or_create_bot_config(db)
+        await seed_system_configs_if_empty(db)
 
     await telegram_bot.start()
     slack_bot.start()
     if not slack_bot.enabled:
         logger.info("SlackBot 패스: SLACK_BOT_TOKEN/SLACK_APP_TOKEN/SLACK_ALLOWED_USER_ID 미설정")
 
-    start_scheduler()
+    await start_scheduler()
     trading_task = asyncio.create_task(trading_engine.run_loop(), name="trading-engine-loop")
 
     try:

@@ -56,6 +56,15 @@ class BotConfig(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class SystemConfig(Base):
+    __tablename__ = "system_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    config_key: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    config_value: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 class Favorite(Base):
     __tablename__ = "favorites"
     __table_args__ = (

@@ -1,13 +1,38 @@
+import json
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import BotConfig as BotConfigORM
+from app.models.domain import SystemConfig as SystemConfigORM
 from app.models.schemas import BotConfig as BotConfigSchema
 from app.models.schemas import MarketSentimentSnapshot
 
 BOT_CONFIG_METADATA_KEY = "metadata"
 MARKET_SENTIMENT_METADATA_KEY = "market_sentiment"
+NEWS_INTERVAL_HOURS_KEY = "news_interval_hours"
+SENTIMENT_INTERVAL_MINUTES_KEY = "sentiment_interval_minutes"
+AI_BRIEFING_TIME_KEY = "ai_briefing_time"
+MARKET_SENTIMENT_SNAPSHOT_KEY = "market_sentiment_snapshot"
+
+SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
+    {
+        "config_key": NEWS_INTERVAL_HOURS_KEY,
+        "config_value": "4",
+        "description": "시장 뉴스 수집 주기(시간)",
+    },
+    {
+        "config_key": SENTIMENT_INTERVAL_MINUTES_KEY,
+        "config_value": "5",
+        "description": "시장 심리 지수 갱신 주기(분)",
+    },
+    {
+        "config_key": AI_BRIEFING_TIME_KEY,
+        "config_value": "08:30",
+        "description": "일일 AI 브리핑 실행 시각(HH:MM)",
+    },
+)
 
 
 async def get_or_create_bot_config(db: AsyncSession) -> BotConfigORM:
@@ -24,6 +49,67 @@ async def get_or_create_bot_config(db: AsyncSession) -> BotConfigORM:
     await db.commit()
     await db.refresh(bot_config)
     return bot_config
+
+
+async def get_system_config(db: AsyncSession, config_key: str) -> SystemConfigORM | None:
+    result = await db.execute(
+        select(SystemConfigORM).where(SystemConfigORM.config_key == config_key)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_system_config_value(
+    db: AsyncSession,
+    config_key: str,
+    default: str | None = None,
+) -> str | None:
+    config = await get_system_config(db, config_key)
+    if config is None:
+        return default
+    return config.config_value
+
+
+async def upsert_system_config(
+    db: AsyncSession,
+    config_key: str,
+    config_value: str,
+    description: str | None = None,
+) -> SystemConfigORM:
+    config = await get_system_config(db, config_key)
+    if config is None:
+        config = SystemConfigORM(
+            config_key=config_key,
+            config_value=config_value,
+            description=description,
+        )
+        db.add(config)
+    else:
+        config.config_value = config_value
+        if description is not None:
+            config.description = description
+
+    await db.commit()
+    await db.refresh(config)
+    return config
+
+
+async def seed_system_configs_if_empty(db: AsyncSession) -> None:
+    result = await db.execute(select(SystemConfigORM.id).limit(1))
+    existing_id = result.scalar_one_or_none()
+    if existing_id is not None:
+        return
+
+    db.add_all(
+        [
+            SystemConfigORM(
+                config_key=item["config_key"],
+                config_value=item["config_value"],
+                description=item["description"],
+            )
+            for item in SYSTEM_CONFIG_SEEDS
+        ]
+    )
+    await db.commit()
 
 
 def normalize_bot_config_payload(raw_payload: Any) -> dict[str, Any]:
@@ -48,13 +134,21 @@ def merge_bot_config_metadata(config_payload: dict[str, Any], existing_payload: 
     return merged_payload
 
 
-def read_cached_market_sentiment(raw_payload: Any) -> MarketSentimentSnapshot | None:
-    metadata = extract_bot_config_metadata(raw_payload)
-    sentiment_payload = metadata.get(MARKET_SENTIMENT_METADATA_KEY)
-    if not isinstance(sentiment_payload, dict):
+async def read_cached_market_sentiment(db: AsyncSession) -> MarketSentimentSnapshot | None:
+    raw_snapshot = await get_system_config_value(db, MARKET_SENTIMENT_SNAPSHOT_KEY)
+    if raw_snapshot is None:
         return None
+
     try:
-        return MarketSentimentSnapshot.model_validate(sentiment_payload)
+        payload = json.loads(raw_snapshot)
+    except json.JSONDecodeError:
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    try:
+        return MarketSentimentSnapshot.model_validate(payload)
     except Exception:
         return None
 
@@ -62,13 +156,10 @@ def read_cached_market_sentiment(raw_payload: Any) -> MarketSentimentSnapshot | 
 async def store_market_sentiment_cache(
     db: AsyncSession,
     sentiment: MarketSentimentSnapshot,
-) -> BotConfigORM:
-    bot_config = await get_or_create_bot_config(db)
-    payload = normalize_bot_config_payload(bot_config.config_json)
-    metadata = extract_bot_config_metadata(payload)
-    metadata[MARKET_SENTIMENT_METADATA_KEY] = sentiment.model_dump(mode="json")
-    payload[BOT_CONFIG_METADATA_KEY] = metadata
-    bot_config.config_json = payload
-    await db.commit()
-    await db.refresh(bot_config)
-    return bot_config
+) -> SystemConfigORM:
+    return await upsert_system_config(
+        db=db,
+        config_key=MARKET_SENTIMENT_SNAPSHOT_KEY,
+        config_value=json.dumps(sentiment.model_dump(mode="json"), ensure_ascii=False),
+        description="Alternative.me 시장 심리 지수 캐시(JSON)",
+    )
