@@ -55,3 +55,15 @@ class MarketSentimentSnapshot(BaseModel):
     score: int = Field(..., ge=0, le=100)
     classification: str = Field(...)
     updated_at: datetime = Field(...)
+
+
+class SystemConfigItem(BaseModel):
+    id: int = Field(...)
+    config_key: str = Field(...)
+    config_value: str = Field(...)
+    description: str | None = Field(default=None)
+
+
+class SystemConfigUpdateItem(BaseModel):
+    config_key: str = Field(..., min_length=1)
+    config_value: str = Field(...)
