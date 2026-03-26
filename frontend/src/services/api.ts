@@ -60,6 +60,18 @@ export interface MarketSentimentSnapshot {
   updated_at: string
 }
 
+export interface SystemConfigItem {
+  id: number
+  config_key: string
+  config_value: string
+  description: string | null
+}
+
+export interface SystemConfigUpdateItem {
+  config_key: string
+  config_value: string
+}
+
 export async function getBotStatus(): Promise<BotStatus> {
   const { data } = await apiClient.get<BotStatus>('/status')
   return data
@@ -91,5 +103,17 @@ export async function liquidateAll(): Promise<void> {
 
 export async function getMarketSentiment(): Promise<MarketSentimentSnapshot> {
   const { data } = await apiClient.get<MarketSentimentSnapshot>('/markets/sentiment')
+  return data
+}
+
+export async function getSystemConfigs(): Promise<SystemConfigItem[]> {
+  const { data } = await apiClient.get<SystemConfigItem[]>('/system/configs')
+  return data
+}
+
+export async function updateSystemConfigs(
+  items: SystemConfigUpdateItem[],
+): Promise<SystemConfigItem[]> {
+  const { data } = await apiClient.put<SystemConfigItem[]>('/system/configs', items)
   return data
 }
