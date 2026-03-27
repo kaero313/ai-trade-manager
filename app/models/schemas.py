@@ -64,6 +64,18 @@ class AIAnalysisResponse(BaseModel):
     )
 
 
+class AIAnalysisLogItem(BaseModel):
+    id: int
+    symbol: str
+    decision: Literal["BUY", "SELL", "HOLD"]
+    confidence: int
+    recommended_weight: int
+    reasoning: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class MarketSentimentSnapshot(BaseModel):
     score: int = Field(..., ge=0, le=100)
     classification: str = Field(...)
