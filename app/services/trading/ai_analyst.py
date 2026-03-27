@@ -5,8 +5,12 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.domain import AIAnalysisLog
+from app.models.schemas import AIAnalysisResponse
 from app.schemas.portfolio import AssetItem
 from app.schemas.portfolio import PortfolioSummary
+from app.services.ai.analyzer import AIAnalyzerFactory
+from app.services.ai.providers.gemini import GeminiAnalyzer
 from app.services.brokers.factory import BrokerFactory
 from app.services.indicators import IndicatorCalculator
 from app.services.market.sentiment_fetcher import get_cached_market_sentiment
@@ -21,6 +25,20 @@ TECHNICAL_TIMEFRAME = "60m"
 TECHNICAL_CANDLE_COUNT = 200
 NEWS_RESULT_LIMIT = 3
 NEWS_SUMMARY_MAX_CHARS = 180
+
+ANALYSIS_SYSTEM_PROMPT = """
+당신은 월스트리트 엘리트 코인 트레이더입니다.
+주어진 시장 데이터만 근거로 BUY, SELL, HOLD 중 하나를 결정하십시오.
+반드시 JSON 스키마에 맞는 값만 반환하십시오.
+
+규칙:
+- decision은 BUY, SELL, HOLD 중 하나만 허용됩니다.
+- confidence는 0~100 정수여야 합니다.
+- recommended_weight는 0~100 정수여야 합니다.
+- reasoning은 1~3문장으로 짧고 구체적으로 작성하십시오.
+- 제공되지 않은 정보는 추측하지 마십시오.
+- 데이터가 부족하거나 근거가 충돌하면 HOLD를 선택하고 confidence를 낮게 유지하십시오.
+""".strip()
 
 broker = BrokerFactory.get_broker("UPBIT")
 indicator_calculator = IndicatorCalculator()
@@ -334,9 +352,9 @@ async def _build_sentiment_context(db: AsyncSession) -> dict[str, Any]:
     }
 
 
-async def gather_market_context(db: AsyncSession, symbol: str) -> dict[str, Any]:
+def _build_empty_context(symbol: str) -> dict[str, Any]:
     normalized_symbol = _normalize_symbol(symbol)
-    context: dict[str, Any] = {
+    return {
         "symbol": normalized_symbol,
         "portfolio": {
             "held": False,
@@ -365,6 +383,10 @@ async def gather_market_context(db: AsyncSession, symbol: str) -> dict[str, Any]
         },
     }
 
+
+async def gather_market_context(db: AsyncSession, symbol: str) -> dict[str, Any]:
+    normalized_symbol = _normalize_symbol(symbol)
+    context = _build_empty_context(normalized_symbol)
     market_row: dict[str, Any] | None = None
 
     try:
@@ -385,7 +407,8 @@ async def gather_market_context(db: AsyncSession, symbol: str) -> dict[str, Any]
             timeframe=TECHNICAL_TIMEFRAME,
             count=TECHNICAL_CANDLE_COUNT,
         )
-        enriched_candles = indicator_calculator.calculate_from_candles(_normalize_candles(raw_candles))
+        normalized_candles = _normalize_candles(raw_candles)
+        enriched_candles = indicator_calculator.calculate_from_candles(normalized_candles)
         context["technical"] = {
             **_compress_technical_snapshot(enriched_candles),
             "error": None,
@@ -474,3 +497,69 @@ def format_market_context_for_llm(context: dict[str, Any]) -> str:
     )
 
     return "\n".join(lines)
+
+
+def _build_analysis_user_prompt(symbol: str, context_text: str) -> str:
+    return (
+        f"대상 종목: {symbol}\n\n"
+        "아래 시장 컨텍스트를 보고 포지션을 결정하십시오.\n"
+        "반드시 BUY, SELL, HOLD 중 하나만 선택하고, 확신도와 추천 비중을 정수로 제시하십시오.\n\n"
+        f"{context_text}"
+    )
+
+
+def _build_fallback_analysis() -> AIAnalysisResponse:
+    return AIAnalysisResponse(
+        decision="HOLD",
+        confidence=0,
+        recommended_weight=0,
+        reasoning="AI 분석 실패로 보수적으로 HOLD를 반환했습니다.",
+    )
+
+
+def _get_gemini_analyzer() -> GeminiAnalyzer:
+    analyzer = AIAnalyzerFactory.get_analyzer("gemini")
+    if not isinstance(analyzer, GeminiAnalyzer):
+        raise RuntimeError("Gemini 분석기 초기화에 실패했습니다.")
+    return analyzer
+
+
+async def _persist_ai_analysis_log(
+    db: AsyncSession,
+    symbol: str,
+    analysis: AIAnalysisResponse,
+) -> None:
+    try:
+        db.add(
+            AIAnalysisLog(
+                symbol=_normalize_symbol(symbol),
+                decision=analysis.decision,
+                confidence=analysis.confidence,
+                recommended_weight=analysis.recommended_weight,
+                reasoning=analysis.reasoning,
+            )
+        )
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        logger.error("AI 분석 로그 저장 실패: %s", exc, exc_info=True)
+
+
+async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisResponse:
+    normalized_symbol = _normalize_symbol(symbol)
+    context = await gather_market_context(db, normalized_symbol)
+    context_text = format_market_context_for_llm(context)
+
+    try:
+        analyzer = _get_gemini_analyzer()
+        analysis = await analyzer.generate_structured_analysis(
+            system_prompt=ANALYSIS_SYSTEM_PROMPT,
+            user_prompt=_build_analysis_user_prompt(normalized_symbol, context_text),
+            response_model=AIAnalysisResponse,
+        )
+    except Exception as exc:
+        logger.error("AI 구조화 분석 실패: symbol=%s error=%s", normalized_symbol, exc, exc_info=True)
+        analysis = _build_fallback_analysis()
+
+    await _persist_ai_analysis_log(db, normalized_symbol, analysis)
+    return analysis
