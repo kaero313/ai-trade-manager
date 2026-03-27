@@ -15,6 +15,7 @@ MARKET_SENTIMENT_METADATA_KEY = "market_sentiment"
 NEWS_INTERVAL_HOURS_KEY = "news_interval_hours"
 SENTIMENT_INTERVAL_MINUTES_KEY = "sentiment_interval_minutes"
 AI_BRIEFING_TIME_KEY = "ai_briefing_time"
+AUTONOMOUS_AI_INTERVAL_HOURS_KEY = "autonomous_ai_interval_hours"
 MARKET_SENTIMENT_SNAPSHOT_KEY = "market_sentiment_snapshot"
 
 SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
@@ -32,6 +33,11 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
         "config_key": AI_BRIEFING_TIME_KEY,
         "config_value": "08:30",
         "description": "일일 AI 브리핑 실행 시각(HH:MM)",
+    },
+    {
+        "config_key": AUTONOMOUS_AI_INTERVAL_HOURS_KEY,
+        "config_value": "1",
+        "description": "Watchlist AI 자율주행 분석 주기(시간)",
     },
 )
 
@@ -132,21 +138,22 @@ async def bulk_upsert_system_configs(
 
 
 async def seed_system_configs_if_empty(db: AsyncSession) -> None:
-    result = await db.execute(select(SystemConfigORM.id).limit(1))
-    existing_id = result.scalar_one_or_none()
-    if existing_id is not None:
+    result = await db.execute(select(SystemConfigORM.config_key))
+    existing_keys = set(result.scalars().all())
+
+    missing_configs = [
+        SystemConfigORM(
+            config_key=item["config_key"],
+            config_value=item["config_value"],
+            description=item["description"],
+        )
+        for item in SYSTEM_CONFIG_SEEDS
+        if item["config_key"] not in existing_keys
+    ]
+    if not missing_configs:
         return
 
-    db.add_all(
-        [
-            SystemConfigORM(
-                config_key=item["config_key"],
-                config_value=item["config_value"],
-                description=item["description"],
-            )
-            for item in SYSTEM_CONFIG_SEEDS
-        ]
-    )
+    db.add_all(missing_configs)
     await db.commit()
 
 
