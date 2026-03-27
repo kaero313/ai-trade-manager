@@ -54,6 +54,16 @@ export interface BotStatus {
   latest_action: string | null
 }
 
+export interface LatestAiAnalysis {
+  id: number
+  symbol: string
+  decision: 'BUY' | 'SELL' | 'HOLD'
+  confidence: number
+  recommended_weight: number
+  reasoning: string
+  created_at: string
+}
+
 export interface MarketSentimentSnapshot {
   score: number
   classification: string
@@ -103,6 +113,13 @@ export async function liquidateAll(): Promise<void> {
 
 export async function getMarketSentiment(): Promise<MarketSentimentSnapshot> {
   const { data } = await apiClient.get<MarketSentimentSnapshot>('/markets/sentiment')
+  return data
+}
+
+export async function getLatestAiAnalysis(symbol: string): Promise<LatestAiAnalysis | null> {
+  const { data } = await apiClient.get<LatestAiAnalysis | null>('/ai/latest-analysis', {
+    params: { symbol },
+  })
   return data
 }
 

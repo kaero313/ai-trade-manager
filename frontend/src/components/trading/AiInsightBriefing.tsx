@@ -1,56 +1,309 @@
+import { useQuery } from '@tanstack/react-query'
+
+import { getLatestAiAnalysis } from '../../services/api'
+import type { LatestAiAnalysis } from '../../services/api'
+
 interface AiInsightBriefingProps {
   symbol: string | null
 }
 
-function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
-  const normalizedSymbol = symbol?.trim().toUpperCase() || null
-  const symbolDescription = normalizedSymbol
-    ? `현재 ${normalizedSymbol}에 대한 AI 분석입니다`
-    : '현재 선택된 종목에 대한 AI 분석 대기 중입니다'
+type DecisionTone = {
+  badgeClassName: string
+  chipClassName: string
+  panelClassName: string
+  progressClassName: string
+  glowClassName: string
+  label: string
+  caption: string
+}
 
-  const reasons = [
-    '1시간 봉 기준 RSI 30 미만 진입',
-    '100M KRW 주요 매물대 지지 테스트 완료',
-    '단기 거래량 회복과 저점 방어 동시 확인',
-  ]
+function normalizeSymbol(symbol: string | null): string | null {
+  const normalized = symbol?.trim().toUpperCase() ?? ''
+  return normalized.length > 0 ? normalized : null
+}
+
+function clampPercentage(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function formatUpdatedAt(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return '-'
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function resolveDecisionTone(decision: LatestAiAnalysis['decision']): DecisionTone {
+  if (decision === 'BUY') {
+    return {
+      badgeClassName:
+        'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200',
+      chipClassName:
+        'border border-emerald-200/80 bg-white/90 text-emerald-700 dark:border-emerald-500/30 dark:bg-gray-800/90 dark:text-emerald-200',
+      panelClassName:
+        'bg-gradient-to-br from-emerald-500 via-emerald-500 to-teal-500 text-white shadow-[0_18px_40px_rgba(16,185,129,0.28)]',
+      progressClassName: 'from-emerald-400 via-emerald-500 to-teal-500',
+      glowClassName: 'bg-emerald-300/30',
+      label: '매수 우위',
+      caption: '상승 여지가 더 크다고 판단했습니다.',
+    }
+  }
+
+  if (decision === 'SELL') {
+    return {
+      badgeClassName:
+        'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200',
+      chipClassName:
+        'border border-rose-200/80 bg-white/90 text-rose-700 dark:border-rose-500/30 dark:bg-gray-800/90 dark:text-rose-200',
+      panelClassName:
+        'bg-gradient-to-br from-rose-500 via-rose-500 to-red-500 text-white shadow-[0_18px_40px_rgba(244,63,94,0.28)]',
+      progressClassName: 'from-rose-400 via-rose-500 to-red-500',
+      glowClassName: 'bg-rose-300/30',
+      label: '매도 우위',
+      caption: '리스크 회피와 차익 실현을 우선했습니다.',
+    }
+  }
+
+  return {
+    badgeClassName:
+      'border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200',
+    chipClassName:
+      'border border-amber-200/80 bg-white/90 text-amber-700 dark:border-amber-500/30 dark:bg-gray-800/90 dark:text-amber-200',
+    panelClassName:
+      'bg-gradient-to-br from-amber-400 via-amber-500 to-slate-500 text-white shadow-[0_18px_40px_rgba(245,158,11,0.25)]',
+    progressClassName: 'from-amber-300 via-amber-400 to-slate-500',
+    glowClassName: 'bg-amber-300/30',
+    label: '관망 우위',
+    caption: '방향성이 선명해질 때까지 보수적으로 접근합니다.',
+  }
+}
+
+function InsightSkeleton() {
+  return (
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+      <div className="grid min-h-0 gap-5 p-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
+        <div className="space-y-4 rounded-2xl bg-gray-100/80 p-5 animate-pulse dark:bg-gray-700/50">
+          <div className="h-4 w-28 rounded-full bg-gray-200 dark:bg-gray-600" />
+          <div className="h-10 w-40 rounded-2xl bg-gray-200 dark:bg-gray-600" />
+          <div className="h-5 w-24 rounded-full bg-gray-200 dark:bg-gray-600" />
+          <div className="space-y-2 pt-4">
+            <div className="h-3 w-24 rounded-full bg-gray-200 dark:bg-gray-600" />
+            <div className="h-3 w-full rounded-full bg-gray-200 dark:bg-gray-600" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="h-20 rounded-2xl bg-gray-200 dark:bg-gray-600" />
+            <div className="h-20 rounded-2xl bg-gray-200 dark:bg-gray-600" />
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 animate-pulse dark:border-gray-700 dark:bg-gray-900/60">
+          <div className="h-4 w-32 rounded-full bg-gray-200 dark:bg-gray-700" />
+          <div className="mt-4 space-y-3">
+            <div className="h-4 w-full rounded-full bg-gray-200 dark:bg-gray-700" />
+            <div className="h-4 w-full rounded-full bg-gray-200 dark:bg-gray-700" />
+            <div className="h-4 w-4/5 rounded-full bg-gray-200 dark:bg-gray-700" />
+            <div className="h-4 w-5/6 rounded-full bg-gray-200 dark:bg-gray-700" />
+            <div className="h-4 w-3/4 rounded-full bg-gray-200 dark:bg-gray-700" />
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function EmptyInsightCard({
+  title,
+  description,
+}: {
+  title: string
+  description: string
+}) {
+  return (
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+      <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 px-6 py-10 text-center">
+        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+          AI Briefing
+        </span>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{title}</h3>
+        <p className="max-w-xl break-words text-sm leading-6 text-gray-500 dark:text-gray-400">
+          {description}
+        </p>
+      </div>
+    </section>
+  )
+}
+
+function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
+  const normalizedSymbol = normalizeSymbol(symbol)
+
+  const analysisQuery = useQuery({
+    queryKey: ['latest-ai-analysis', normalizedSymbol],
+    queryFn: () => getLatestAiAnalysis(normalizedSymbol as string),
+    enabled: Boolean(normalizedSymbol),
+    refetchInterval: 10000,
+    refetchIntervalInBackground: true,
+    placeholderData: (previousData) => previousData,
+  })
+
+  if (!normalizedSymbol) {
+    return (
+      <EmptyInsightCard
+        title="AI 브리핑 대기 중"
+        description="종목을 선택하면 해당 코인에 대한 최신 AI 추론 로그를 실시간으로 표시합니다."
+      />
+    )
+  }
+
+  const analysis = analysisQuery.data
+  const showSkeleton =
+    !analysis &&
+    (analysisQuery.isLoading || analysisQuery.isPending || (analysisQuery.isError && !analysisQuery.data))
+
+  if (showSkeleton) {
+    return <InsightSkeleton />
+  }
+
+  if (!analysis) {
+    return (
+      <EmptyInsightCard
+        title={`${normalizedSymbol} 최신 추론 없음`}
+        description="아직 이 종목에 대해 저장된 AI 분석 로그가 없습니다. 백그라운드 추론 엔진이 다음 회차에 로그를 쌓으면 이 영역에 즉시 반영됩니다."
+      />
+    )
+  }
+
+  const tone = resolveDecisionTone(analysis.decision)
+  const confidence = clampPercentage(analysis.confidence)
+  const recommendedWeight = clampPercentage(analysis.recommended_weight)
+
+  let syncStatus = `업데이트 ${formatUpdatedAt(analysis.created_at)}`
+  if (analysisQuery.isFetching) {
+    syncStatus = `${syncStatus} · 최신 추론 동기화 중...`
+  } else if (analysisQuery.isError) {
+    syncStatus = `${syncStatus} · 최근 데이터 기준으로 표시 중`
+  }
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)] lg:overflow-y-auto">
-        <div className="min-h-0 rounded-xl bg-gradient-to-br from-emerald-50 via-white to-sky-50 p-5 ring-1 ring-emerald-100 dark:from-emerald-500/10 dark:via-gray-800 dark:to-sky-500/10 dark:ring-emerald-500/20">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-600 dark:text-emerald-400">AI Briefing</p>
-          <p className="mt-3 text-sm text-gray-500 dark:text-gray-300">{symbolDescription}</p>
-          <h2 className="mt-4 text-2xl font-bold text-gray-900 dark:text-gray-100">AI 스탠스: BUY</h2>
-          <p className="mt-1 text-sm font-semibold text-emerald-600 dark:text-emerald-400">(매수 우위)</p>
-
-          <div className="mt-5 flex flex-wrap items-center gap-4">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-emerald-200 bg-white text-xl font-bold text-emerald-600 shadow-inner dark:border-emerald-500/30 dark:bg-gray-900 dark:text-emerald-300">
-              88%
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+      <div className="grid min-h-0 gap-5 p-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
+        <div className={`relative overflow-hidden rounded-[24px] p-5 ${tone.panelClassName}`}>
+          <div className={`absolute -right-10 -top-10 h-36 w-36 rounded-full blur-3xl ${tone.glowClassName}`} />
+          <div className="relative flex h-full min-h-0 flex-col gap-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/70">
+                  AI Briefing
+                </p>
+                <h3 className="mt-2 break-words text-2xl font-semibold">{normalizedSymbol}</h3>
+                <p className="mt-2 break-words text-sm text-white/80">{tone.caption}</p>
+              </div>
+              <span
+                className={`inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-semibold ${tone.chipClassName}`}
+              >
+                {analysis.decision}
+              </span>
             </div>
 
-            <div className="space-y-2">
-              <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                신뢰도 88%
-              </span>
-              <span className="inline-flex items-center rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700 ring-1 ring-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20">
-                1H Momentum Positive
-              </span>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/70">스탠스</p>
+                <p className="mt-2 text-3xl font-semibold">{analysis.decision}</p>
+                <p className="mt-2 text-sm text-white/85">{tone.label}</p>
+              </div>
+
+              <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/70">추천 비중</p>
+                <p className="mt-2 text-3xl font-semibold">{recommendedWeight}%</p>
+                <p className="mt-2 text-sm text-white/85">리스크 조절을 반영한 제안치입니다.</p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/70">확신도</p>
+                  <p className="mt-2 text-2xl font-semibold">{confidence}%</p>
+                </div>
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tone.chipClassName}`}>
+                  실시간 추론 로그
+                </span>
+              </div>
+
+              <div className="mt-4">
+                <div className="h-3 w-full overflow-hidden rounded-full bg-white/20">
+                  <div
+                    className={`h-full rounded-full bg-gradient-to-r transition-[width] duration-500 ${tone.progressClassName}`}
+                    style={{ width: `${confidence}%` }}
+                  />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-xs text-white/70">
+                  <span>0</span>
+                  <span>{syncStatus}</span>
+                  <span>100</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="min-h-0 rounded-xl bg-gray-50 p-5 ring-1 ring-gray-200 dark:bg-gray-900/60 dark:ring-gray-700">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">판단 근거 (XAI)</h3>
-          <ul className="mt-4 space-y-3 text-sm leading-6 text-gray-700 dark:text-gray-200">
-            {reasons.map((reason) => (
-              <li key={reason} className="flex gap-3">
-                <span className="mt-1 text-emerald-500">•</span>
-                <span>{reason}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">실시간 체결강도 및 호가 해석을 반영한 임시 브리핑</p>
+        <div className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-gray-200 bg-gray-50 p-5 dark:border-gray-700 dark:bg-gray-900/60">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">
+                Explainable AI
+              </p>
+              <h3 className="mt-2 text-xl font-semibold text-gray-900 dark:text-gray-100">
+                판단 근거 (XAI)
+              </h3>
+            </div>
+            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tone.badgeClassName}`}>
+              {tone.label}
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                심볼
+              </p>
+              <p className="mt-2 break-words text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {analysis.symbol}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                스탠스
+              </p>
+              <p className="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {analysis.decision}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                최근 갱신
+              </p>
+              <p className="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                {formatUpdatedAt(analysis.created_at)}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 min-h-0 max-h-64 flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 pr-3 dark:border-gray-700 dark:bg-gray-800">
+            <p className="whitespace-pre-wrap break-words text-sm leading-7 text-gray-700 dark:text-gray-300">
+              {analysis.reasoning}
+            </p>
+          </div>
         </div>
       </div>
     </section>
