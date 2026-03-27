@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class StrategyParams(BaseModel):
@@ -49,6 +50,18 @@ class BotStatus(BaseModel):
     last_heartbeat: str | None = None
     last_error: str | None = None
     latest_action: str | None = None
+
+
+class AIAnalysisResponse(BaseModel):
+    decision: Literal["BUY", "SELL", "HOLD"] = Field(...)
+    confidence: int = Field(..., ge=0, le=100, strict=True)
+    recommended_weight: int = Field(..., ge=0, le=100, strict=True)
+    reasoning: str = Field(..., min_length=1)
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
 
 
 class MarketSentimentSnapshot(BaseModel):
