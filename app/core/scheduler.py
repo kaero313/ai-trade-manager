@@ -7,16 +7,20 @@ from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import desc, select
 
 from app.api.routes.ai import analyze_portfolio
 from app.api.routes.news import get_news_sentiment
 from app.db.repository import AI_BRIEFING_TIME_KEY
+from app.db.repository import AUTONOMOUS_AI_INTERVAL_HOURS_KEY
 from app.db.repository import NEWS_INTERVAL_HOURS_KEY
 from app.db.repository import SENTIMENT_INTERVAL_MINUTES_KEY
 from app.db.repository import get_system_config_value
 from app.db.session import AsyncSessionLocal
+from app.models.domain import Favorite
 from app.services.market.sentiment_fetcher import refresh_market_sentiment_cache
 from app.services.rag.ingestion import run_market_news_ingestion_job
+from app.services.trading.ai_analyst import execute_ai_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +28,15 @@ SCHEDULER_TIMEZONE = "Asia/Seoul"
 DAILY_BRIEFING_JOB_ID = "daily_ai_briefing"
 MARKET_NEWS_INGESTION_JOB_ID = "market_news_ingestion_hourly"
 MARKET_SENTIMENT_REFRESH_JOB_ID = "market_sentiment_refresh"
+AUTONOMOUS_AI_ANALYST_JOB_ID = "autonomous_ai_analyst_watchlist"
 DEFAULT_PROVIDER = "openai"
 
 DEFAULT_NEWS_INTERVAL_HOURS = 4
 DEFAULT_SENTIMENT_INTERVAL_MINUTES = 5
 DEFAULT_AI_BRIEFING_HOUR = 8
 DEFAULT_AI_BRIEFING_MINUTE = 30
+DEFAULT_AUTONOMOUS_AI_INTERVAL_HOURS = 1
+AUTONOMOUS_AI_ANALYST_SYMBOL_DELAY_SECONDS = 2
 
 scheduler = BackgroundScheduler(timezone=SCHEDULER_TIMEZONE)
 
@@ -40,6 +47,7 @@ class SchedulerRuntimeConfig:
     sentiment_interval_minutes: int = DEFAULT_SENTIMENT_INTERVAL_MINUTES
     ai_briefing_hour: int = DEFAULT_AI_BRIEFING_HOUR
     ai_briefing_minute: int = DEFAULT_AI_BRIEFING_MINUTE
+    autonomous_ai_interval_hours: int = DEFAULT_AUTONOMOUS_AI_INTERVAL_HOURS
 
 
 def _parse_interval_hours(raw_value: str | None) -> int:
@@ -91,12 +99,16 @@ async def load_scheduler_runtime_config() -> SchedulerRuntimeConfig:
         ai_briefing_hour, ai_briefing_minute = _parse_ai_briefing_time(
             await get_system_config_value(db, AI_BRIEFING_TIME_KEY)
         )
+        autonomous_ai_interval_hours = _parse_interval_hours(
+            await get_system_config_value(db, AUTONOMOUS_AI_INTERVAL_HOURS_KEY)
+        )
 
     return SchedulerRuntimeConfig(
         news_interval_hours=news_interval_hours,
         sentiment_interval_minutes=sentiment_interval_minutes,
         ai_briefing_hour=ai_briefing_hour,
         ai_briefing_minute=ai_briefing_minute,
+        autonomous_ai_interval_hours=autonomous_ai_interval_hours,
     )
 
 
@@ -119,6 +131,14 @@ def _build_market_news_trigger(runtime_config: SchedulerRuntimeConfig) -> CronTr
 def _build_market_sentiment_trigger(runtime_config: SchedulerRuntimeConfig) -> CronTrigger:
     return CronTrigger(
         minute=f"*/{runtime_config.sentiment_interval_minutes}",
+        timezone=SCHEDULER_TIMEZONE,
+    )
+
+
+def _build_autonomous_ai_analyst_trigger(runtime_config: SchedulerRuntimeConfig) -> CronTrigger:
+    return CronTrigger(
+        hour=f"*/{runtime_config.autonomous_ai_interval_hours}",
+        minute=0,
         timezone=SCHEDULER_TIMEZONE,
     )
 
@@ -170,17 +190,27 @@ def register_market_sentiment_jobs(runtime_config: SchedulerRuntimeConfig) -> No
     )
 
 
+def register_autonomous_ai_analyst_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
+    _upsert_scheduler_job(
+        AUTONOMOUS_AI_ANALYST_JOB_ID,
+        run_autonomous_ai_analyst_job,
+        _build_autonomous_ai_analyst_trigger(runtime_config),
+    )
+
+
 async def reload_scheduler_jobs() -> SchedulerRuntimeConfig:
     runtime_config = await load_scheduler_runtime_config()
     register_daily_jobs(runtime_config)
     register_market_news_jobs(runtime_config)
     register_market_sentiment_jobs(runtime_config)
+    register_autonomous_ai_analyst_jobs(runtime_config)
     logger.info(
-        "Scheduler jobs reloaded: news_interval_hours=%s sentiment_interval_minutes=%s ai_briefing_time=%02d:%02d",
+        "Scheduler jobs reloaded: news_interval_hours=%s sentiment_interval_minutes=%s ai_briefing_time=%02d:%02d autonomous_ai_interval_hours=%s",
         runtime_config.news_interval_hours,
         runtime_config.sentiment_interval_minutes,
         runtime_config.ai_briefing_hour,
         runtime_config.ai_briefing_minute,
+        runtime_config.autonomous_ai_interval_hours,
     )
     return runtime_config
 
@@ -232,6 +262,16 @@ def run_daily_ai_briefing_job() -> None:
         )
 
 
+def run_autonomous_ai_analyst_job() -> None:
+    try:
+        asyncio.run(autonomous_ai_analyst_job())
+    except Exception:
+        logger.error(
+            "Watchlist 자율주행 AI 분석 작업이 실패했습니다. 서버는 계속 실행합니다.",
+            exc_info=True,
+        )
+
+
 def trigger_daily_ai_briefing_now() -> None:
     def _runner() -> None:
         try:
@@ -252,6 +292,39 @@ def trigger_daily_ai_briefing_now() -> None:
 async def refresh_market_sentiment_cache_job() -> None:
     async with AsyncSessionLocal() as db:
         await refresh_market_sentiment_cache(db)
+
+
+async def autonomous_ai_analyst_job() -> None:
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(Favorite.symbol).order_by(desc(Favorite.created_at), desc(Favorite.id))
+        )
+        symbols = [
+            str(symbol).strip().upper()
+            for symbol in result.scalars().all()
+            if str(symbol).strip()
+        ]
+
+    if not symbols:
+        logger.info("Watchlist 자율주행 AI 분석 대상이 없습니다.")
+        return
+
+    logger.info("Watchlist 자율주행 AI 분석 시작: symbol_count=%s", len(symbols))
+
+    for index, symbol in enumerate(symbols):
+        try:
+            async with AsyncSessionLocal() as db:
+                await execute_ai_analysis(db, symbol)
+            logger.info("Watchlist 자율주행 AI 분석 완료: symbol=%s", symbol)
+        except Exception:
+            logger.error(
+                "Watchlist 자율주행 AI 분석 실패: symbol=%s",
+                symbol,
+                exc_info=True,
+            )
+
+        if index < len(symbols) - 1:
+            await asyncio.sleep(AUTONOMOUS_AI_ANALYST_SYMBOL_DELAY_SECONDS)
 
 
 async def daily_ai_briefing(force_refresh_news: bool = False, provider: str = DEFAULT_PROVIDER) -> None:
