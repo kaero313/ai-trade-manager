@@ -8,7 +8,6 @@ interface AiInsightBriefingProps {
 }
 
 type DecisionTone = {
-  badgeClassName: string
   chipClassName: string
   panelClassName: string
   progressClassName: string
@@ -47,14 +46,12 @@ function formatUpdatedAt(value: string): string {
 function resolveDecisionTone(decision: LatestAiAnalysis['decision']): DecisionTone {
   if (decision === 'BUY') {
     return {
-      badgeClassName:
-        'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200',
       chipClassName:
-        'border border-emerald-200/80 bg-white/90 text-emerald-700 dark:border-emerald-500/30 dark:bg-gray-800/90 dark:text-emerald-200',
+        'border border-white/15 bg-white/10 text-white backdrop-blur',
       panelClassName:
-        'bg-gradient-to-br from-emerald-500 via-emerald-500 to-teal-500 text-white shadow-[0_18px_40px_rgba(16,185,129,0.28)]',
+        'bg-gradient-to-br from-emerald-700 via-emerald-600 to-teal-700 text-white shadow-[0_14px_30px_rgba(6,95,70,0.18)]',
       progressClassName: 'from-emerald-400 via-emerald-500 to-teal-500',
-      glowClassName: 'bg-emerald-300/30',
+      glowClassName: 'bg-emerald-200/10',
       label: '매수 우위',
       caption: '상승 여지가 더 크다고 판단했습니다.',
     }
@@ -62,28 +59,24 @@ function resolveDecisionTone(decision: LatestAiAnalysis['decision']): DecisionTo
 
   if (decision === 'SELL') {
     return {
-      badgeClassName:
-        'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200',
       chipClassName:
-        'border border-rose-200/80 bg-white/90 text-rose-700 dark:border-rose-500/30 dark:bg-gray-800/90 dark:text-rose-200',
+        'border border-white/15 bg-white/10 text-white backdrop-blur',
       panelClassName:
-        'bg-gradient-to-br from-rose-500 via-rose-500 to-red-500 text-white shadow-[0_18px_40px_rgba(244,63,94,0.28)]',
+        'bg-gradient-to-br from-rose-700 via-rose-600 to-red-700 text-white shadow-[0_14px_30px_rgba(159,18,57,0.18)]',
       progressClassName: 'from-rose-400 via-rose-500 to-red-500',
-      glowClassName: 'bg-rose-300/30',
+      glowClassName: 'bg-rose-200/10',
       label: '매도 우위',
       caption: '리스크 회피와 차익 실현을 우선했습니다.',
     }
   }
 
   return {
-    badgeClassName:
-      'border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200',
     chipClassName:
-      'border border-amber-200/80 bg-white/90 text-amber-700 dark:border-amber-500/30 dark:bg-gray-800/90 dark:text-amber-200',
+      'border border-white/15 bg-white/10 text-white backdrop-blur',
     panelClassName:
-      'bg-gradient-to-br from-amber-400 via-amber-500 to-slate-500 text-white shadow-[0_18px_40px_rgba(245,158,11,0.25)]',
+      'bg-gradient-to-br from-amber-700 via-amber-600 to-slate-700 text-white shadow-[0_14px_30px_rgba(146,64,14,0.18)]',
     progressClassName: 'from-amber-300 via-amber-400 to-slate-500',
-    glowClassName: 'bg-amber-300/30',
+    glowClassName: 'bg-amber-200/10',
     label: '관망 우위',
     caption: '방향성이 선명해질 때까지 보수적으로 접근합니다.',
   }
@@ -198,7 +191,7 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
     <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <div className="grid min-h-0 gap-5 p-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
         <div className={`relative overflow-hidden rounded-[24px] p-5 ${tone.panelClassName}`}>
-          <div className={`absolute -right-10 -top-10 h-36 w-36 rounded-full blur-3xl ${tone.glowClassName}`} />
+          <div className={`absolute -right-8 -top-8 h-28 w-28 rounded-full blur-2xl ${tone.glowClassName}`} />
           <div className="relative flex h-full min-h-0 flex-col gap-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -258,48 +251,16 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
         </div>
 
         <div className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-gray-200 bg-gray-50 p-5 dark:border-gray-700 dark:bg-gray-900/60">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">
-                Explainable AI
-              </p>
-              <h3 className="mt-2 text-xl font-semibold text-gray-900 dark:text-gray-100">
-                판단 근거 (XAI)
-              </h3>
-            </div>
-            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tone.badgeClassName}`}>
-              {tone.label}
-            </span>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">
+              Explainable AI
+            </p>
+            <h3 className="mt-2 text-xl font-semibold text-gray-900 dark:text-gray-100">
+              판단 근거 (XAI)
+            </h3>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                심볼
-              </p>
-              <p className="mt-2 break-words text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {analysis.symbol}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                스탠스
-              </p>
-              <p className="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {analysis.decision}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                최근 갱신
-              </p>
-              <p className="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
-                {formatUpdatedAt(analysis.created_at)}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-4 min-h-0 max-h-64 flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 pr-3 dark:border-gray-700 dark:bg-gray-800">
+          <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 pr-3 dark:border-gray-700 dark:bg-gray-800">
             <p className="whitespace-pre-wrap break-words text-sm leading-7 text-gray-700 dark:text-gray-300">
               {analysis.reasoning}
             </p>
