@@ -46,16 +46,27 @@ class PortfolioService:
             broker = BrokerFactory.get_broker("UPBIT")
             accounts = await broker.get_accounts()
 
+            all_markets = await broker.get_markets()
+            valid_market_symbols = {
+                str(m.get("market") or "").upper()
+                for m in all_markets
+                if isinstance(m, dict) and m.get("market")
+            }
+
             markets: list[str] = []
             for account in accounts:
                 currency = str(account.get("currency") or "").upper()
                 if not currency or currency == "KRW":
                     continue
                 market = f"KRW-{currency}"
-                if market not in markets:
+                if market not in markets and market in valid_market_symbols:
                     markets.append(market)
 
-            tickers = await broker.get_ticker(markets=markets) if markets else []
+            try:
+                tickers = await broker.get_ticker(markets=markets) if markets else []
+            except UpbitAPIError as exc:
+                logger.warning("Failed to fetch tickers for valid markets. Defaulting to empty tickers: %s", exc)
+                tickers = []
             ticker_map = {
                 str(ticker.get("market") or "").upper(): _to_float(ticker.get("trade_price"))
                 for ticker in tickers
