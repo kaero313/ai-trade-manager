@@ -8,7 +8,7 @@ docker-compose -f docker-compose-dev.yml up -d db opensearch opensearch-dashboar
 
 echo.
 echo [2] Starting Backend Server in new window...
-start "AI Trade Manager - Backend" cmd /k "uvicorn app.main:app --reload"
+start "AI Trade Manager - Backend" cmd /k "call venv\Scripts\activate && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
 echo.
 echo [3] Starting Frontend Server in new window...
