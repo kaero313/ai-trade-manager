@@ -173,42 +173,44 @@ function SentimentSkeleton() {
         </div>
 
         <div className="mt-5 flex min-w-0 flex-col gap-4">
-          <div className="min-w-0 rounded-xl bg-white/80 p-4 ring-1 ring-white/70 backdrop-blur dark:bg-gray-900/50 dark:ring-gray-700/80">
-            <div className="space-y-4">
-              <div className="flex min-w-0 items-end justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="h-3 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                  <div className="mt-3 h-9 w-20 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+          <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-stretch">
+            <div className="min-w-0 flex-1 rounded-xl bg-white/80 p-4 ring-1 ring-white/70 backdrop-blur dark:bg-gray-900/50 dark:ring-gray-700/80">
+              <div className="space-y-4">
+                <div className="flex min-w-0 items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="h-3 w-24 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                    <div className="mt-3 h-9 w-20 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                  </div>
+                  <div className="min-w-[96px] text-right">
+                    <div className="ml-auto h-3 w-20 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                    <div className="mt-3 ml-auto h-7 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                  </div>
                 </div>
-                <div className="min-w-[96px] text-right">
-                  <div className="ml-auto h-3 w-20 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                  <div className="mt-3 ml-auto h-7 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                </div>
-              </div>
 
-              <div className="space-y-3">
-                <div className="pt-4">
-                  <div className="h-3 w-full animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
+                <div className="space-y-3">
+                  <div className="pt-4">
+                    <div className="h-3 w-full animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="h-3 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                    <div className="h-3 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+                  </div>
+                  <div className="h-4 w-48 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="h-3 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                  <div className="h-3 w-16 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-                </div>
-                <div className="h-4 w-48 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
               </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <article className="min-w-0 rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-100 dark:bg-emerald-500/10 dark:ring-emerald-500/20">
-              <div className="h-3 w-20 animate-pulse rounded bg-emerald-100 dark:bg-emerald-500/20" />
-              <div className="mt-3 h-8 w-24 animate-pulse rounded bg-emerald-100 dark:bg-emerald-500/20" />
-            </article>
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row xl:w-[136px] xl:shrink-0 xl:flex-col">
+              <article className="min-w-0 flex-1 rounded-xl bg-emerald-50 p-3.5 ring-1 ring-emerald-100 dark:bg-emerald-500/10 dark:ring-emerald-500/20">
+                <div className="h-3 w-20 animate-pulse rounded bg-emerald-100 dark:bg-emerald-500/20" />
+                <div className="mt-3 h-8 w-24 animate-pulse rounded bg-emerald-100 dark:bg-emerald-500/20" />
+              </article>
 
-            <article className="min-w-0 rounded-xl bg-rose-50 p-4 ring-1 ring-rose-100 dark:bg-rose-500/10 dark:ring-rose-500/20">
-              <div className="h-3 w-20 animate-pulse rounded bg-rose-100 dark:bg-rose-500/20" />
-              <div className="mt-3 h-8 w-20 animate-pulse rounded bg-rose-100 dark:bg-rose-500/20" />
-            </article>
+              <article className="min-w-0 flex-1 rounded-xl bg-rose-50 p-3.5 ring-1 ring-rose-100 dark:bg-rose-500/10 dark:ring-rose-500/20">
+                <div className="h-3 w-20 animate-pulse rounded bg-rose-100 dark:bg-rose-500/20" />
+                <div className="mt-3 h-8 w-20 animate-pulse rounded bg-rose-100 dark:bg-rose-500/20" />
+              </article>
+            </div>
           </div>
 
           <div className="min-w-0 rounded-xl bg-gray-50 p-4 ring-1 ring-gray-200 dark:bg-gray-950 dark:ring-gray-800">
@@ -278,68 +280,70 @@ function AiMarketSentiment() {
         </div>
 
         <div className="mt-5 flex min-w-0 flex-col gap-4">
-          <div className="min-w-0 rounded-xl bg-white/80 p-4 ring-1 ring-white/70 backdrop-blur dark:bg-gray-900/50 dark:ring-gray-700/80">
-            <div className="space-y-4">
-              <div className="flex min-w-0 items-end justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
-                    Current Position
-                  </p>
-                  <p className="mt-2 text-3xl font-black tracking-tight text-gray-900 dark:text-gray-100">
-                    {sentimentScore}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
-                    Market Bias
-                  </p>
-                  <p className="mt-2 break-words text-lg font-bold text-gray-900 dark:text-gray-100">
-                    {sentimentTone.label}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="relative w-full pt-4">
-                  <div className="h-3 w-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-400 to-rose-400" />
-                  <div
-                    className="absolute top-0 -translate-x-1/2"
-                    style={{ left: `${sentimentScore}%` }}
-                  >
-                    <span className="block h-3 w-3 rounded-full border-2 border-white bg-gray-950 shadow-sm dark:border-gray-900 dark:bg-white" />
+          <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-stretch">
+            <div className="min-w-0 flex-1 rounded-xl bg-white/80 p-4 ring-1 ring-white/70 backdrop-blur dark:bg-gray-900/50 dark:ring-gray-700/80">
+              <div className="space-y-4">
+                <div className="flex min-w-0 items-end justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
+                      Current Position
+                    </p>
+                    <p className="mt-2 text-3xl font-black tracking-tight text-gray-900 dark:text-gray-100">
+                      {sentimentScore}
+                    </p>
+                  </div>
+                  <div className="min-w-0 text-right">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
+                      Market Bias
+                    </p>
+                    <p className="mt-2 break-words text-lg font-bold text-gray-900 dark:text-gray-100">
+                      {sentimentTone.label}
+                    </p>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-                  <span>0 Fear</span>
-                  <span>100 Greed</span>
-                </div>
+                <div className="space-y-3">
+                  <div className="relative w-full pt-4">
+                    <div className="h-3 w-full rounded-full bg-gradient-to-r from-sky-400 via-emerald-400 to-rose-400" />
+                    <div
+                      className="absolute top-0 -translate-x-1/2"
+                      style={{ left: `${sentimentScore}%` }}
+                    >
+                      <span className="block h-3 w-3 rounded-full border-2 border-white bg-gray-950 shadow-sm dark:border-gray-900 dark:bg-white" />
+                    </div>
+                  </div>
 
-                <p className="text-sm text-gray-600 dark:text-gray-300">
-                  공포에서 탐욕까지 현재 시장 심리 위치를 한 줄로 요약합니다.
-                </p>
+                  <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                    <span>0 Fear</span>
+                    <span>100 Greed</span>
+                  </div>
+
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    공포에서 탐욕까지 현재 시장 심리 위치를 한 줄로 요약합니다.
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <article className="min-w-0 rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-100 dark:bg-emerald-500/10 dark:ring-emerald-500/20">
-              <p className="break-words text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-300">
-                현재 트렌드 강도
-              </p>
-              <p className="mt-2 break-words text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {sentimentTone.trendStrength}
-              </p>
-            </article>
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row xl:w-[136px] xl:shrink-0 xl:flex-col">
+              <article className="min-w-0 flex-1 rounded-xl bg-emerald-50 p-3.5 ring-1 ring-emerald-100 dark:bg-emerald-500/10 dark:ring-emerald-500/20">
+                <p className="min-w-0 break-words text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-600 dark:text-emerald-300">
+                  현재 트렌드 강도
+                </p>
+                <p className="mt-2 break-words text-lg font-bold leading-tight text-gray-900 dark:text-gray-100 xl:text-base">
+                  {sentimentTone.trendStrength}
+                </p>
+              </article>
 
-            <article className="min-w-0 rounded-xl bg-rose-50 p-4 ring-1 ring-rose-100 dark:bg-rose-500/10 dark:ring-rose-500/20">
-              <p className="break-words text-xs font-semibold uppercase tracking-[0.2em] text-rose-600 dark:text-rose-300">
-                변동성 경고
-              </p>
-              <p className="mt-2 break-words text-2xl font-bold text-gray-900 dark:text-gray-100">
-                {sentimentTone.volatilityWarning}
-              </p>
-            </article>
+              <article className="min-w-0 flex-1 rounded-xl bg-rose-50 p-3.5 ring-1 ring-rose-100 dark:bg-rose-500/10 dark:ring-rose-500/20">
+                <p className="min-w-0 break-words text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-600 dark:text-rose-300">
+                  변동성 경고
+                </p>
+                <p className="mt-2 break-words text-lg font-bold leading-tight text-gray-900 dark:text-gray-100 xl:text-base">
+                  {sentimentTone.volatilityWarning}
+                </p>
+              </article>
+            </div>
           </div>
 
           <div className="min-w-0 overflow-hidden rounded-xl bg-gray-50 p-4 text-gray-900 ring-1 ring-gray-200 dark:bg-gray-950 dark:text-gray-100 dark:ring-gray-800">
