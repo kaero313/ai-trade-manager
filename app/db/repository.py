@@ -19,6 +19,7 @@ AUTONOMOUS_AI_INTERVAL_HOURS_KEY = "autonomous_ai_interval_hours"
 MARKET_SENTIMENT_SNAPSHOT_KEY = "market_sentiment_snapshot"
 AI_MIN_CONFIDENCE_TRADE_KEY = "ai_min_confidence_trade"
 AI_ANALYSIS_MAX_AGE_MINUTES_KEY = "ai_analysis_max_age_minutes"
+AI_CUSTOM_PERSONA_PROMPT_KEY = "ai_custom_persona_prompt"
 
 SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     {
@@ -50,6 +51,11 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
         "config_key": AI_ANALYSIS_MAX_AGE_MINUTES_KEY,
         "config_value": "90",
         "description": "AI 분석 로그 최대 유효 시간(분)",
+    },
+    {
+        "config_key": AI_CUSTOM_PERSONA_PROMPT_KEY,
+        "config_value": "",
+        "description": "AI 커스텀 매매 페르소나 프롬프트",
     },
 )
 
