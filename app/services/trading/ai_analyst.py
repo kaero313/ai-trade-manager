@@ -5,6 +5,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.repository import AI_CUSTOM_PERSONA_PROMPT_KEY
+from app.db.repository import get_system_config_value
 from app.models.domain import AIAnalysisLog
 from app.models.schemas import AIAnalysisResponse
 from app.schemas.portfolio import AssetItem
@@ -26,6 +28,27 @@ TECHNICAL_CANDLE_COUNT = 200
 NEWS_RESULT_LIMIT = 3
 NEWS_SUMMARY_MAX_CHARS = 180
 
+ANALYSIS_CORE_IDENTITY_PROMPT = """
+당신은 월스트리트 엘리트 코인 트레이더입니다.
+주어진 시장 데이터만 근거로 BUY, SELL, HOLD 중 하나를 결정하십시오.
+반드시 JSON 스키마에 맞는 값만 반환하십시오.
+""".strip()
+
+ANALYSIS_CORE_RULES_PROMPT = """
+규칙:
+- decision은 BUY, SELL, HOLD 중 하나만 허용됩니다.
+- confidence는 0~100 정수여야 합니다.
+- recommended_weight는 0~100 정수여야 합니다.
+- reasoning은 1~3문장으로 짧고 구체적으로 작성하십시오.
+- reasoning 필드 작성 시 자신이 참조한 4대 데이터(포트폴리오, 기술적 지표, 뉴스 RAG, 심리지수)의 수치나 출처를 반드시 대괄호 [ ] 안에 포함하여 인용하십시오.
+- reasoning에는 최소 2개 이상의 대괄호 인용이 반드시 들어가야 하며, 가능하면 4대 데이터 축을 모두 검토한 흔적을 남기십시오.
+- 인용은 실제로 제공된 컨텍스트만 사용하십시오. 예: [Alternative.me 심리지수: Extreme Fear 18], [RSI14: 24.5], [EMA50 대비: -3.2%], [Reuters 최신 뉴스 요약]
+- 출처나 수치가 없는 일반론, 감상, 추측성 문장은 금지합니다. reasoning에 대괄호 인용이 없으면 잘못된 응답입니다.
+- 데이터가 비어 있거나 누락된 경우에도 추측하지 말고 [뉴스 데이터 없음], [포트폴리오 미보유], [심리 지수 오류]처럼 결측 자체를 대괄호로 명시하십시오.
+- 제공되지 않은 정보는 추측하지 마십시오.
+- 데이터가 부족하거나 근거가 충돌하면 HOLD를 선택하고 confidence를 낮춰 주십시오.
+""".strip()
+
 ANALYSIS_SYSTEM_PROMPT = """
 당신은 월스트리트 엘리트 코인 트레이더입니다.
 주어진 시장 데이터만 근거로 BUY, SELL, HOLD 중 하나를 결정하십시오.
@@ -44,6 +67,29 @@ ANALYSIS_SYSTEM_PROMPT = """
 - 제공되지 않은 정보는 추측하지 마십시오.
 - 데이터가 부족하거나 근거가 충돌하면 HOLD를 선택하고 confidence를 낮게 유지하십시오.
 """.strip()
+
+
+def _build_persona_prefix(custom_persona: str) -> str:
+    normalized_persona = str(custom_persona or "").strip()
+    if not normalized_persona:
+        return ""
+
+    return (
+        "당신은 월스트리트 엘리트 트레이더입니다. 다음은 당신이 반드시 따라야 할 특별 매매 룰(페르소나)입니다:\n\n"
+        f"{normalized_persona}\n\n"
+        "---\n"
+    )
+
+
+def build_analysis_system_prompt(custom_persona: str) -> str:
+    persona_prefix = _build_persona_prefix(custom_persona)
+    prompt_sections = [
+        persona_prefix.rstrip() if persona_prefix else "",
+        ANALYSIS_CORE_IDENTITY_PROMPT,
+        ANALYSIS_CORE_RULES_PROMPT,
+    ]
+    return "\n\n".join(section for section in prompt_sections if section).strip()
+
 
 broker = BrokerFactory.get_broker("UPBIT")
 indicator_calculator = IndicatorCalculator()
@@ -554,11 +600,26 @@ async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisRespon
     normalized_symbol = _normalize_symbol(symbol)
     context = await gather_market_context(db, normalized_symbol)
     context_text = format_market_context_for_llm(context)
+    custom_persona_prompt = ""
+
+    try:
+        custom_persona_prompt = (
+            await get_system_config_value(db, AI_CUSTOM_PERSONA_PROMPT_KEY, "")
+        ) or ""
+    except Exception as exc:
+        logger.warning(
+            "AI 커스텀 페르소나 프롬프트 조회 실패: symbol=%s error=%s",
+            normalized_symbol,
+            exc,
+            exc_info=True,
+        )
+
+    system_prompt = build_analysis_system_prompt(custom_persona_prompt)
 
     try:
         analyzer = _get_gemini_analyzer()
         analysis = await analyzer.generate_structured_analysis(
-            system_prompt=ANALYSIS_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             user_prompt=_build_analysis_user_prompt(normalized_symbol, context_text),
             response_model=AIAnalysisResponse,
         )
