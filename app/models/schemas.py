@@ -53,15 +53,10 @@ class BotStatus(BaseModel):
 
 
 class AIAnalysisResponse(BaseModel):
-    decision: Literal["BUY", "SELL", "HOLD"] = Field(...)
-    confidence: int = Field(..., ge=0, le=100, strict=True)
-    recommended_weight: int = Field(..., ge=0, le=100, strict=True)
-    reasoning: str = Field(..., min_length=1)
-
-    model_config = ConfigDict(
-        extra="forbid",
-        str_strip_whitespace=True,
-    )
+    decision: Literal["BUY", "SELL", "HOLD"]
+    confidence: int = Field(..., ge=0, le=100)
+    recommended_weight: int = Field(..., ge=0, le=100)
+    reasoning: str
 
 
 class AIAnalysisLogItem(BaseModel):
