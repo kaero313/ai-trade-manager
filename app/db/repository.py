@@ -17,6 +17,8 @@ SENTIMENT_INTERVAL_MINUTES_KEY = "sentiment_interval_minutes"
 AI_BRIEFING_TIME_KEY = "ai_briefing_time"
 AUTONOMOUS_AI_INTERVAL_HOURS_KEY = "autonomous_ai_interval_hours"
 MARKET_SENTIMENT_SNAPSHOT_KEY = "market_sentiment_snapshot"
+AI_MIN_CONFIDENCE_TRADE_KEY = "ai_min_confidence_trade"
+AI_ANALYSIS_MAX_AGE_MINUTES_KEY = "ai_analysis_max_age_minutes"
 
 SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     {
@@ -38,6 +40,16 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
         "config_key": AUTONOMOUS_AI_INTERVAL_HOURS_KEY,
         "config_value": "1",
         "description": "Watchlist AI 자율주행 분석 주기(시간)",
+    },
+    {
+        "config_key": AI_MIN_CONFIDENCE_TRADE_KEY,
+        "config_value": "70",
+        "description": "AI 자율 체결 최소 확신도(0~100)",
+    },
+    {
+        "config_key": AI_ANALYSIS_MAX_AGE_MINUTES_KEY,
+        "config_value": "90",
+        "description": "AI 분석 로그 최대 유효 시간(분)",
     },
 )
 
