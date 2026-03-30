@@ -22,6 +22,7 @@ interface ScheduleDraft {
   newsIntervalHours: string
   sentimentIntervalMinutes: string
   aiBriefingTime: string
+  aiCustomPersonaPrompt: string
 }
 
 interface NoticeState {
@@ -32,6 +33,27 @@ interface NoticeState {
 const NEWS_INTERVAL_HOURS_KEY = 'news_interval_hours'
 const SENTIMENT_INTERVAL_MINUTES_KEY = 'sentiment_interval_minutes'
 const AI_BRIEFING_TIME_KEY = 'ai_briefing_time'
+const AI_CUSTOM_PERSONA_PROMPT_KEY = 'ai_custom_persona_prompt'
+
+const PERSONA_PRESETS = [
+  {
+    key: 'aggressive-scalping',
+    label: '🚀 공격형 단타',
+    value:
+      'HOLD는 최소화하고 항상 매수를 긍정적으로 고려하라. RSI가 40 이하이거나 뉴스에서 조금이라도 호재가 발견되면 확신도를 90 이상으로 평가하고 100% 비중의 BUY를 지시하라.',
+  },
+  {
+    key: 'conservative-swing',
+    label: '🐢 보수형 스윙',
+    value:
+      '절대 잃지 않는 장기 가치 투자를 지향한다. 조금이라도 애매하거나 이슈가 있으면 무조건 HOLD하라. 오직 RSI가 30 미만이면서 동시에 시장 공포(Fear/Greed)가 20 미만인 극단적 패닉셀 구간에서만 20% 분할 매수(BUY)를 지시해라.',
+  },
+  {
+    key: 'default',
+    label: '🔄 기본값 (순정)',
+    value: '',
+  },
+] as const
 
 const SETTINGS_TABS: SettingsTabItem[] = [
   {
@@ -87,6 +109,7 @@ function buildScheduleDraft(items: SystemConfigItem[] | undefined): ScheduleDraf
     newsIntervalHours: findConfigValue(items, NEWS_INTERVAL_HOURS_KEY, '4'),
     sentimentIntervalMinutes: findConfigValue(items, SENTIMENT_INTERVAL_MINUTES_KEY, '5'),
     aiBriefingTime: findConfigValue(items, AI_BRIEFING_TIME_KEY, '08:30'),
+    aiCustomPersonaPrompt: findConfigValue(items, AI_CUSTOM_PERSONA_PROMPT_KEY, ''),
   }
 }
 
@@ -515,6 +538,12 @@ function ScheduleSettingsPanel() {
         config_value: draft.aiBriefingTime,
       })
     }
+    if (draft.aiCustomPersonaPrompt !== current.aiCustomPersonaPrompt) {
+      updates.push({
+        config_key: AI_CUSTOM_PERSONA_PROMPT_KEY,
+        config_value: draft.aiCustomPersonaPrompt,
+      })
+    }
 
     if (updates.length === 0) {
       setNotice({ type: 'info', message: '변경된 시스템 주기 설정이 없습니다.' })
@@ -658,6 +687,58 @@ function ScheduleSettingsPanel() {
                 예: 오전 8시 30분 실행은 08:30 으로 설정합니다.
               </p>
             </label>
+
+            <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-5 dark:border-violet-500/20 dark:bg-violet-500/10">
+              <div className="flex flex-col gap-3 border-b border-violet-200 pb-4 dark:border-violet-500/20">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    AI 매매 철학 및 페르소나 주입 (God Mode)
+                  </h3>
+                  <InfoTooltip
+                    title="AI 매매 철학 및 페르소나 주입"
+                    content="여기에 입력한 텍스트는 SystemConfig의 ai_custom_persona_prompt로 저장되고, 백엔드 AI 분석 System Prompt의 맨 앞에 안전하게 덧붙여집니다. 코어 JSON 규칙은 그대로 유지되고, 사용자가 원하는 매매 철학만 추가 주입됩니다."
+                  />
+                </div>
+                <p className="text-sm leading-6 text-gray-600 dark:text-gray-300">
+                  AI가 어떤 성향으로 BUY, SELL, HOLD를 판단할지 자유롭게 적을 수 있는 전용 영역입니다. 아래 프리셋을 눌러 바로 채우거나,
+                  직접 문장을 수정해 저장할 수 있습니다.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {PERSONA_PRESETS.map((preset) => (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      onClick={() =>
+                        setDraft((current) => ({
+                          ...current,
+                          aiCustomPersonaPrompt: preset.value,
+                        }))
+                      }
+                      className="inline-flex items-center rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:border-violet-300 hover:bg-violet-100 dark:border-violet-400/20 dark:bg-gray-800 dark:text-violet-200 dark:hover:border-violet-300/40 dark:hover:bg-violet-500/10"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <textarea
+                  value={draft.aiCustomPersonaPrompt}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      aiCustomPersonaPrompt: event.target.value,
+                    }))
+                  }
+                  placeholder="예: 손실 회피를 최우선으로 삼고, 뉴스 리스크가 있으면 HOLD를 우선하라. RSI와 심리지수, 뉴스 출처를 모두 인용해 reasoning을 작성하라."
+                  className="min-h-[260px] w-full rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-300 dark:border-violet-400/20 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-violet-300 dark:focus:ring-violet-400/30"
+                />
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  저장 시 기존 주기 설정과 함께 한 번에 PUT 요청으로 반영됩니다.
+                </p>
+              </div>
+            </div>
 
             {notice && (
               <div
