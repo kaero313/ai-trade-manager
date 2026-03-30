@@ -39,14 +39,21 @@ ANALYSIS_CORE_RULES_PROMPT = """
 - decision은 BUY, SELL, HOLD 중 하나만 허용됩니다.
 - confidence는 0~100 정수여야 합니다.
 - recommended_weight는 0~100 정수여야 합니다.
-- reasoning은 1~3문장으로 짧고 구체적으로 작성하십시오.
-- reasoning 필드 작성 시 자신이 참조한 4대 데이터(포트폴리오, 기술적 지표, 뉴스 RAG, 심리지수)의 수치나 출처를 반드시 대괄호 [ ] 안에 포함하여 인용하십시오.
-- reasoning에는 최소 2개 이상의 대괄호 인용이 반드시 들어가야 하며, 가능하면 4대 데이터 축을 모두 검토한 흔적을 남기십시오.
-- 인용은 실제로 제공된 컨텍스트만 사용하십시오. 예: [Alternative.me 심리지수: Extreme Fear 18], [RSI14: 24.5], [EMA50 대비: -3.2%], [Reuters 최신 뉴스 요약]
-- 출처나 수치가 없는 일반론, 감상, 추측성 문장은 금지합니다. reasoning에 대괄호 인용이 없으면 잘못된 응답입니다.
-- 데이터가 비어 있거나 누락된 경우에도 추측하지 말고 [뉴스 데이터 없음], [포트폴리오 미보유], [심리 지수 오류]처럼 결측 자체를 대괄호로 명시하십시오.
+- reasoning 작성 시 아래 '출력 템플릿'을 반드시 따르십시오.
 - 제공되지 않은 정보는 추측하지 마십시오.
-- 데이터가 부족하거나 근거가 충돌하면 HOLD를 선택하고 confidence를 낮춰 주십시오.
+- 데이터가 부족하거나 근거가 충돌하면 HOLD를 선택하고 confidence를 낮게 유지하십시오.
+
+reasoning 출력 템플릿(반드시 이 형식을 지킬 것):
+📊 기술지표: (이동평균선·RSI·볼린저밴드 등 핵심 수치 1~2개를 자연어로 요약)
+🧠 시장심리: (Alternative.me 심리지수 수치와 해석을 한 줄로 요약)
+📰 뉴스: (참조한 뉴스 제목 또는 '뉴스 데이터 없음'을 한 줄로 요약)
+💡 종합판단: (위 3가지를 종합한 최종 판단 근거를 비전문가도 이해할 수 있는 쉬운 한국어 1~2문장으로 작성)
+
+예시:
+📊 기술지표: 20일 이동평균선 대비 +0.7% 상회 중, RSI 61로 과열 아님
+🧠 시장심리: 극도의 공포(8/100) → 역발상 매수 기회 구간
+📰 뉴스: "비트코인 6만5천달러 지지선이 분기점" → 하락세 진정 시사
+💡 종합판단: 기술적으로 안정적이고 시장이 과도하게 공포에 빠져있어, 단기 반등 가능성이 높다고 판단합니다.
 """.strip()
 
 ANALYSIS_SYSTEM_PROMPT = """
@@ -58,14 +65,15 @@ ANALYSIS_SYSTEM_PROMPT = """
 - decision은 BUY, SELL, HOLD 중 하나만 허용됩니다.
 - confidence는 0~100 정수여야 합니다.
 - recommended_weight는 0~100 정수여야 합니다.
-- reasoning은 1~3문장으로 짧고 구체적으로 작성하십시오.
-- reasoning 작성 시 자신이 참조한 4대 데이터(포트폴리오, 기술적 지표, 뉴스 RAG, 심리지수)의 수치나 출처를 반드시 대괄호 [ ] 안에 포함하여 인용하십시오.
-- reasoning에는 최소 2개 이상의 대괄호 인용을 반드시 넣고, 가능하면 4대 데이터 축을 모두 검토한 흔적을 남기십시오.
-- 인용은 실제로 제공된 컨텍스트만 사용하십시오. 예: [Alternative.me 심리지수: Extreme Fear 18], [RSI14: 24.5], [EMA50 대비: -3.2%], [Reuters 최신 뉴스 요약]
-- 출처나 수치가 없는 일반론, 감상, 추측성 문장은 금지합니다. reasoning에 대괄호 인용이 없으면 잘못된 응답입니다.
-- 데이터가 비어 있거나 누락된 경우에도 추측하지 말고 [뉴스 데이터 없음], [포트폴리오 미보유], [심리 지표 오류]처럼 결측 자체를 대괄호로 명시하십시오.
+- reasoning 작성 시 아래 '출력 템플릿'을 반드시 따르십시오.
 - 제공되지 않은 정보는 추측하지 마십시오.
 - 데이터가 부족하거나 근거가 충돌하면 HOLD를 선택하고 confidence를 낮게 유지하십시오.
+
+reasoning 출력 템플릿(반드시 이 형식을 지킬 것):
+📊 기술지표: (이동평균선·RSI·볼린저밴드 등 핵심 수치 1~2개를 자연어로 요약)
+🧠 시장심리: (Alternative.me 심리지수 수치와 해석을 한 줄로 요약)
+📰 뉴스: (참조한 뉴스 제목 또는 '뉴스 데이터 없음'을 한 줄로 요약)
+💡 종합판단: (위 3가지를 종합한 최종 판단 근거를 비전문가도 이해할 수 있는 쉬운 한국어 1~2문장으로 작성)
 """.strip()
 
 
@@ -237,40 +245,65 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
     terms = _extract_market_names(market_row, symbol)
     client = get_opensearch_client()
 
+    from app.services.news_scraper import fetch_crypto_news
+
     try:
-        response = await client.search(
-            index=INDEX_NAME,
-            body=_build_market_news_query(terms, NEWS_RESULT_LIMIT),
-        )
-        hits = response.get("hits", {}).get("hits", [])
-        if not isinstance(hits, list):
-            hits = []
-
-        normalized_hits = [
-            _normalize_news_hit(hit)
-            for hit in hits
-            if isinstance(hit, dict)
-        ]
-        if normalized_hits:
-            return {"items": normalized_hits[:NEWS_RESULT_LIMIT], "error": None}
-
-        fallback_response = await client.search(
-            index=INDEX_NAME,
-            body=_build_market_news_query([], NEWS_RESULT_LIMIT),
-        )
-        fallback_hits = fallback_response.get("hits", {}).get("hits", [])
-        if not isinstance(fallback_hits, list):
-            fallback_hits = []
-        return {
-            "items": [
+        try:
+            response = await client.search(
+                index=INDEX_NAME,
+                body=_build_market_news_query(terms, NEWS_RESULT_LIMIT),
+            )
+            hits = response.get("hits", {}).get("hits", [])
+            normalized_hits = [
                 _normalize_news_hit(hit)
-                for hit in fallback_hits
+                for hit in (hits if isinstance(hits, list) else [])
                 if isinstance(hit, dict)
-            ][:NEWS_RESULT_LIMIT],
-            "error": None,
-        }
+            ]
+            if normalized_hits:
+                return {"items": normalized_hits[:NEWS_RESULT_LIMIT], "error": None}
+
+            # 2차 검색 (폴백 쿼리)
+            fallback_response = await client.search(
+                index=INDEX_NAME,
+                body=_build_market_news_query([], NEWS_RESULT_LIMIT),
+            )
+            fallback_hits = fallback_response.get("hits", {}).get("hits", [])
+            normalized_fallback = [
+                _normalize_news_hit(hit)
+                for hit in (fallback_hits if isinstance(fallback_hits, list) else [])
+                if isinstance(hit, dict)
+            ]
+            if normalized_fallback:
+                return {"items": normalized_fallback[:NEWS_RESULT_LIMIT], "error": None}
+
+        except Exception as inner_exc:
+            logger.warning("AI 뉴스 인덱스 기반 검색 실패: %s. RSS 뉴스 폴백을 준비합니다.", inner_exc)
+
+        # OpenSearch 결과가 없거나 실패한 경우 -> RSS 실시간 뉴스 폴백
+        import asyncio
+        
+        # 동기 함수인 fetch_crypto_news를 이벤트 루프 블로킹 우회용 스레드로 실행 (Async-First 원칙 준수)
+        rss_payload = await asyncio.to_thread(fetch_crypto_news)
+        rss_items = rss_payload.get("items") or []
+
+        if rss_items:
+            logger.info("OpenSearch 가용 데이터 없음. %d건의 RSS 뉴스를 분석 컨텍스트로 사용합니다.", len(rss_items))
+            normalized_rss = [
+                {
+                    "title": item.get("title"),
+                    "content": item.get("summary") or item.get("title"),
+                    "source": "RSS_FEED",
+                    "published_at": rss_payload.get("analysis_completed_at"),
+                    "link": item.get("link"),
+                }
+                for item in rss_items
+            ]
+            return {"items": normalized_rss[:NEWS_RESULT_LIMIT], "error": "RSS_FALLBACK_USED"}
+
+        return {"items": [], "error": "NO_NEWS_DATA_AVAILABLE"}
+
     except Exception as exc:
-        logger.warning("AI 뉴스 컨텍스트 조회 실패: %s", exc, exc_info=True)
+        logger.warning("AI 뉴스 컨텍스트 조회 중 치명적 오류: %s", exc, exc_info=True)
         return {"items": [], "error": "NEWS_SEARCH_FAILED"}
 
 
