@@ -133,7 +133,7 @@ function DashboardPage() {
   return (
     <div className="grid h-full min-h-0 gap-6 lg:grid-cols-12 lg:overflow-hidden">
       <div className="flex flex-col gap-6 lg:col-span-3 lg:h-full lg:min-h-0 lg:overflow-hidden lg:pr-2">
-        <div className="flex shrink-0 flex-col gap-3">
+        <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-[5]">
           <div className="inline-flex rounded-xl bg-white p-1 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
             <button
               type="button"
@@ -159,7 +159,7 @@ function DashboardPage() {
             </button>
           </div>
 
-          <div className="flex h-[340px] min-h-[320px] max-h-[340px] flex-col overflow-hidden">
+          <div className="flex min-h-[460px] flex-1 flex-col overflow-hidden lg:min-h-0">
             {macroTab === 'sentiment' ? (
               <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto pr-1">
                 <AiMarketSentiment />
@@ -171,7 +171,7 @@ function DashboardPage() {
             )}
           </div>
         </div>
-        <div className="min-h-[320px] overflow-hidden lg:min-h-0 lg:flex-1 [&>aside]:flex [&>aside]:h-full [&>aside]:min-h-0 [&>aside]:flex-1">
+        <div className="min-h-[320px] overflow-hidden lg:min-h-0 lg:flex-[4] [&>aside]:flex [&>aside]:h-full [&>aside]:min-h-0 [&>aside]:flex-1">
           <WatchlistSidebar selectedSymbol={selectedSymbol} onSelectSymbol={setSelectedSymbol} />
         </div>
       </div>
