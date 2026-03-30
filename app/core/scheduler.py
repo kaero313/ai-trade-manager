@@ -21,6 +21,7 @@ from app.models.domain import Favorite
 from app.services.market.sentiment_fetcher import refresh_market_sentiment_cache
 from app.services.rag.ingestion import run_market_news_ingestion_job
 from app.services.trading.ai_analyst import execute_ai_analysis
+from app.services.trading.ai_executor import execute_ai_trade
 
 logger = logging.getLogger(__name__)
 
@@ -312,16 +313,29 @@ async def autonomous_ai_analyst_job() -> None:
     logger.info("Watchlist 자율주행 AI 분석 시작: symbol_count=%s", len(symbols))
 
     for index, symbol in enumerate(symbols):
-        try:
-            async with AsyncSessionLocal() as db:
+        async with AsyncSessionLocal() as db:
+            try:
                 await execute_ai_analysis(db, symbol)
-            logger.info("Watchlist 자율주행 AI 분석 완료: symbol=%s", symbol)
-        except Exception:
-            logger.error(
-                "Watchlist 자율주행 AI 분석 실패: symbol=%s",
-                symbol,
-                exc_info=True,
-            )
+                logger.info("Watchlist 자율주행 AI 분석 완료: symbol=%s", symbol)
+            except Exception:
+                logger.error(
+                    "Watchlist 자율주행 AI 분석 실패: symbol=%s",
+                    symbol,
+                    exc_info=True,
+                )
+                if index < len(symbols) - 1:
+                    await asyncio.sleep(AUTONOMOUS_AI_ANALYST_SYMBOL_DELAY_SECONDS)
+                continue
+
+            try:
+                await execute_ai_trade(db, symbol)
+                logger.info("Watchlist 자율주행 AI 집행 완료: symbol=%s", symbol)
+            except Exception:
+                logger.error(
+                    "Watchlist 자율주행 AI 집행 실패: symbol=%s",
+                    symbol,
+                    exc_info=True,
+                )
 
         if index < len(symbols) - 1:
             await asyncio.sleep(AUTONOMOUS_AI_ANALYST_SYMBOL_DELAY_SECONDS)
