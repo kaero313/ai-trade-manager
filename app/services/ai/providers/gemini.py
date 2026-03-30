@@ -21,7 +21,7 @@ class GeminiAnalyzer(BaseAIAnalyzer):
 
         try:
             response = await self.client.aio.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-2.0-flash",
                 contents=portfolio_str,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_PROMPT,
@@ -47,7 +47,7 @@ class GeminiAnalyzer(BaseAIAnalyzer):
             raise RuntimeError("Gemini API 키가 설정되지 않아 구조화 분석을 실행할 수 없습니다.")
 
         response = await self.client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             contents=user_prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_prompt,
