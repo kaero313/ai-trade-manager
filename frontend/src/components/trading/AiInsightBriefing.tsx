@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { getLatestAiAnalysis } from '../../services/api'
@@ -139,6 +140,7 @@ function EmptyInsightCard({
 
 function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
   const normalizedSymbol = normalizeSymbol(symbol)
+  const [isTooltipOpen, setIsTooltipOpen] = useState(false)
 
   const analysisQuery = useQuery({
     queryKey: ['latest-ai-analysis', normalizedSymbol],
@@ -255,9 +257,51 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">
               Explainable AI
             </p>
-            <h3 className="mt-2 text-xl font-semibold text-gray-900 dark:text-gray-100">
-              판단 근거 (XAI)
-            </h3>
+            <div
+              className="relative mt-2 inline-flex items-center gap-2"
+              onMouseEnter={() => setIsTooltipOpen(true)}
+              onMouseLeave={() => setIsTooltipOpen(false)}
+            >
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">판단 근거 (XAI)</h3>
+              <button
+                type="button"
+                aria-label="AI 판단 근거 데이터 출처"
+                className="inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full bg-gray-200 text-xs font-semibold text-gray-500 dark:bg-gray-600 dark:text-gray-300"
+              >
+                i
+              </button>
+
+              {isTooltipOpen && (
+                <div className="absolute left-0 top-full z-50 mt-2 min-w-[280px] rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800">
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">📊 기술적 지표</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        RSI, SMA20, EMA50, 볼린저밴드 등 1시간봉 기준 200개 캔들 데이터
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">🧠 시장 심리</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Alternative.me Fear &amp; Greed Index 실시간 수치
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">📰 글로벌 뉴스</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        CoinDesk Korea, TokenPost, 네이버 경제 등 RSS 실시간 피드
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">💼 포트폴리오</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        업비트 실시간 잔고 및 보유/미보유 상태
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-2xl border border-gray-200 bg-white p-4 pr-3 dark:border-gray-700 dark:bg-gray-800">
