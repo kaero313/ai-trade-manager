@@ -71,6 +71,30 @@ class AIAnalysisLogItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AITradeRecord(BaseModel):
+    symbol: str
+    side: Literal["BUY", "SELL"]
+    price: float = Field(..., gt=0)
+    qty: float = Field(..., gt=0)
+    confidence: int = Field(..., ge=0, le=100)
+    decision: Literal["BUY", "SELL", "HOLD"]
+    executed_at: datetime
+
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+
+class AIPerformanceSummary(BaseModel):
+    total_trades: int = Field(..., ge=0)
+    winning_trades: int = Field(..., ge=0)
+    losing_trades: int = Field(..., ge=0)
+    win_rate: float = Field(..., ge=0, le=100)
+    total_realized_pnl_krw: float
+    avg_confidence: float = Field(..., ge=0, le=100)
+    recent_trades: list[AITradeRecord] = Field(default_factory=list, max_length=20)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class MarketSentimentSnapshot(BaseModel):
     score: int = Field(..., ge=0, le=100)
     classification: str = Field(...)
