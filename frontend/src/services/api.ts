@@ -64,6 +64,26 @@ export interface LatestAiAnalysis {
   created_at: string
 }
 
+export interface AITradeRecord {
+  symbol: string
+  side: 'BUY' | 'SELL'
+  price: number
+  qty: number
+  confidence: number
+  decision: 'BUY' | 'SELL' | 'HOLD'
+  executed_at: string
+}
+
+export interface AIPerformanceSummary {
+  total_trades: number
+  winning_trades: number
+  losing_trades: number
+  win_rate: number
+  total_realized_pnl_krw: number
+  avg_confidence: number
+  recent_trades: AITradeRecord[]
+}
+
 export interface MarketSentimentSnapshot {
   score: number
   classification: string
@@ -120,6 +140,11 @@ export async function getLatestAiAnalysis(symbol: string): Promise<LatestAiAnaly
   const { data } = await apiClient.get<LatestAiAnalysis | null>('/ai/latest-analysis', {
     params: { symbol },
   })
+  return data
+}
+
+export async function fetchAIPerformance(): Promise<AIPerformanceSummary> {
+  const { data } = await apiClient.get<AIPerformanceSummary>('/ai/performance')
   return data
 }
 
