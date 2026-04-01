@@ -73,7 +73,7 @@ const DEFAULT_BOT_CONFIG: NormalizedBotConfig = {
     grid_order_krw: 10000,
     grid_sell_pct: 100,
     grid_cooldown_seconds: 60,
-    trade_mode: 'grid',
+    trade_mode: 'ai',
   },
 }
 
