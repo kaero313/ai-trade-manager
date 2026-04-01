@@ -42,7 +42,7 @@ class TradingEngine:
                             bot_config.config_json if bot_config else None
                         )
                         grid_config = self._extract_grid_config(config_json)
-                        trade_mode = str(grid_config.get("trade_mode", "grid")).lower().strip() or "grid"
+                        trade_mode = str(grid_config.get("trade_mode", "ai")).lower().strip() or "ai"
 
                         if not is_active:
                             logger.info("봇이 일시 정지 상태입니다.")
