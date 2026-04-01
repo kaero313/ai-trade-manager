@@ -37,6 +37,11 @@ class OrderHistory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     position_id: Mapped[int] = mapped_column(ForeignKey("positions.id"), nullable=False, index=True)
+    ai_analysis_log_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ai_analysis_logs.id"),
+        nullable=True,
+        index=True,
+    )
     side: Mapped[str] = mapped_column(String, nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     qty: Mapped[float] = mapped_column(Float, nullable=False)

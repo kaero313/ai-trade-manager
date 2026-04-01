@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.repository import AI_ANALYSIS_MAX_AGE_MINUTES_KEY
 from app.db.repository import AI_MIN_CONFIDENCE_TRADE_KEY
 from app.db.repository import get_system_config_value
-from app.models.domain import AIAnalysisLog
+from app.models.domain import AIAnalysisLog, Asset, OrderHistory, Position
 from app.schemas.portfolio import AssetItem, PortfolioSummary
 from app.services.bot_service import get_bot_status
 from app.services.brokers.factory import BrokerFactory
@@ -147,6 +147,113 @@ async def _resolve_current_price(symbol: str, portfolio_item: AssetItem | None) 
     return _to_float(tickers[0].get("trade_price"))
 
 
+def _parse_datetime(value: Any) -> datetime | None:
+    if not value:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return _normalize_datetime(parsed)
+
+
+def _resolve_order_price(order_result: dict[str, Any], fallback_price: float) -> float:
+    for key in ("price", "avg_price", "trade_price"):
+        price = _to_float(order_result.get(key))
+        if price > 0:
+            return price
+    return fallback_price
+
+
+def _resolve_order_qty(order_result: dict[str, Any], fallback_qty: float) -> float:
+    for key in ("executed_volume", "volume"):
+        qty = _to_float(order_result.get(key))
+        if qty > 0:
+            return qty
+    return fallback_qty
+
+
+async def _get_or_create_asset(db: AsyncSession, market: str) -> Asset:
+    result = await db.execute(select(Asset).where(Asset.symbol == market))
+    asset = result.scalar_one_or_none()
+    if asset is not None:
+        return asset
+
+    asset = Asset(
+        symbol=market,
+        asset_type="crypto",
+        base_currency=_extract_quote_currency(market),
+        is_active=True,
+    )
+    db.add(asset)
+    await db.flush()
+    return asset
+
+
+async def _get_or_create_position(db: AsyncSession, asset_id: int, fallback_price: float) -> Position:
+    result = await db.execute(
+        select(Position).where(Position.asset_id == asset_id).order_by(Position.id.asc())
+    )
+    position = result.scalars().first()
+    if position is not None:
+        return position
+
+    position = Position(
+        asset_id=asset_id,
+        avg_entry_price=max(fallback_price, 0.0),
+        quantity=0.0,
+        status="open",
+    )
+    db.add(position)
+    await db.flush()
+    return position
+
+
+async def _record_ai_order_history(
+    *,
+    db: AsyncSession,
+    symbol: str,
+    analysis: AIAnalysisLog,
+    side: str,
+    order_result: dict[str, Any],
+    fallback_price: float,
+    fallback_qty: float,
+) -> None:
+    resolved_price = _resolve_order_price(order_result, fallback_price)
+    resolved_qty = _resolve_order_qty(order_result, fallback_qty)
+    if resolved_price <= 0 or resolved_qty <= 0:
+        logger.warning(
+            "AI 주문 이력 기록 스킵: 체결 가격/수량을 확정할 수 없습니다. symbol=%s side=%s price=%s qty=%s",
+            symbol,
+            side,
+            resolved_price,
+            resolved_qty,
+        )
+        return
+
+    executed_at = _parse_datetime(order_result.get("created_at")) or datetime.now(UTC)
+
+    try:
+        asset = await _get_or_create_asset(db, symbol)
+        position = await _get_or_create_position(db, asset.id, resolved_price)
+        db.add(
+            OrderHistory(
+                position_id=position.id,
+                ai_analysis_log_id=analysis.id,
+                side=side,
+                price=resolved_price,
+                qty=resolved_qty,
+                broker="UPBIT",
+                executed_at=executed_at,
+            )
+        )
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        logger.warning("AI 주문 이력 기록 실패: symbol=%s side=%s error=%s", symbol, side, exc, exc_info=True)
+
+
 async def _send_trade_notification(
     *,
     symbol: str,
@@ -174,6 +281,7 @@ async def _send_trade_notification(
 
 async def _execute_buy_trade(
     *,
+    db: AsyncSession,
     symbol: str,
     analysis: AIAnalysisLog,
     portfolio: PortfolioSummary,
@@ -221,6 +329,23 @@ async def _execute_buy_trade(
         analysis.recommended_weight,
         order_result.get("uuid"),
     )
+    fallback_price = _resolve_order_price(order_result, 0.0)
+    if fallback_price <= 0:
+        try:
+            fallback_price = await _resolve_current_price(symbol, None)
+        except Exception as exc:
+            logger.warning("AI 매수 체결가 보정 실패: symbol=%s error=%s", symbol, exc, exc_info=True)
+            fallback_price = 0.0
+    fallback_qty = order_amount_krw / fallback_price if fallback_price > 0 else 0.0
+    await _record_ai_order_history(
+        db=db,
+        symbol=symbol,
+        analysis=analysis,
+        side="buy",
+        order_result=order_result,
+        fallback_price=fallback_price,
+        fallback_qty=fallback_qty,
+    )
     await _send_trade_notification(
         symbol=symbol,
         decision="BUY",
@@ -232,6 +357,7 @@ async def _execute_buy_trade(
 
 async def _execute_sell_trade(
     *,
+    db: AsyncSession,
     symbol: str,
     analysis: AIAnalysisLog,
     portfolio: PortfolioSummary,
@@ -292,6 +418,15 @@ async def _execute_sell_trade(
         analysis.confidence,
         analysis.recommended_weight,
         order_result.get("uuid"),
+    )
+    await _record_ai_order_history(
+        db=db,
+        symbol=symbol,
+        analysis=analysis,
+        side="sell",
+        order_result=order_result,
+        fallback_price=current_price,
+        fallback_qty=sell_volume,
     )
     await _send_trade_notification(
         symbol=symbol,
@@ -361,6 +496,7 @@ async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
 
     if latest_analysis.decision == "BUY":
         await _execute_buy_trade(
+            db=db,
             symbol=normalized_symbol,
             analysis=latest_analysis,
             portfolio=portfolio,
@@ -369,6 +505,7 @@ async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
 
     if latest_analysis.decision == "SELL":
         await _execute_sell_trade(
+            db=db,
             symbol=normalized_symbol,
             analysis=latest_analysis,
             portfolio=portfolio,
