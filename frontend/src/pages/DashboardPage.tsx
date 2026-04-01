@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom'
 import AiInsightBriefing from '../components/trading/AiInsightBriefing'
 import AiMarketSentiment from '../components/trading/AiMarketSentiment'
 import AiNewsBoard from '../components/trading/AiNewsBoard'
+import AiPerformanceWidget from '../components/trading/AiPerformanceWidget'
 import BotControlPanel from '../components/trading/BotControlPanel'
 import ControlPanel from '../components/trading/ControlPanel'
 import MarketChart from '../components/trading/MarketChart'
@@ -17,6 +18,7 @@ import type { AssetItem, OrderHistoryItem, PortfolioSummary } from '../services/
 function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [macroTab, setMacroTab] = useState<'sentiment' | 'news'>('sentiment')
+  const [rightPanelTab, setRightPanelTab] = useState<'portfolio' | 'performance'>('portfolio')
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
   const [portfolioErrorCode, setPortfolioErrorCode] = useState<string | null>(null)
   const [orders, setOrders] = useState<OrderHistoryItem[]>([])
@@ -191,8 +193,38 @@ function DashboardPage() {
           <ControlPanel />
           <BotControlPanel portfolioError={portfolioErrorCode} />
         </div>
-        <div className="min-h-[250px] shrink-0">
-          <PortfolioChart items={assets} isLoading={isLoading} />
+        <div className="flex min-h-[250px] shrink-0 flex-col gap-3">
+          <div className="inline-flex rounded-xl bg-white p-1 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+            <button
+              type="button"
+              onClick={() => setRightPanelTab('portfolio')}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                rightPanelTab === 'portfolio'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+              }`}
+            >
+              📊 포트폴리오
+            </button>
+            <button
+              type="button"
+              onClick={() => setRightPanelTab('performance')}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                rightPanelTab === 'performance'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+              }`}
+            >
+              📈 AI 성과
+            </button>
+          </div>
+          <div className="min-h-[250px]">
+            {rightPanelTab === 'portfolio' ? (
+              <PortfolioChart items={assets} isLoading={isLoading} />
+            ) : (
+              <AiPerformanceWidget />
+            )}
+          </div>
         </div>
         <div className="min-h-[200px] pr-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
           <RecentOrders orders={orders} isLoading={isOrdersLoading} errorMessage={ordersErrorMessage} />
