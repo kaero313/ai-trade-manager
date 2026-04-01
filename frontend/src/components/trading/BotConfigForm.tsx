@@ -7,11 +7,27 @@ import { useState } from 'react'
 import InfoTooltip from '../common/InfoTooltip'
 import { getBotConfig, updateBotConfig, type BotConfig } from '../../services/api'
 
-type NormalizedBotConfig = Required<BotConfig>
+type BotConfigInput = BotConfig & { trade_mode?: string }
+type StrategyConfig = NonNullable<BotConfig['strategy']>
+type RiskConfig = NonNullable<BotConfig['risk']>
+type ScheduleConfig = NonNullable<BotConfig['schedule']>
+type GridConfig = NonNullable<BotConfig['grid']>
+type NormalizedGridConfig = Omit<GridConfig, 'trade_mode'>
+
+interface NormalizedBotConfig {
+  symbols: string[]
+  allocation_pct_per_symbol: number[]
+  strategy: StrategyConfig
+  risk: RiskConfig
+  schedule: ScheduleConfig
+  grid: NormalizedGridConfig
+  trade_mode: string
+}
 
 interface BotConfigDraft {
   symbols: string
   allocationPctPerSymbol: string
+  tradeMode: string
   strategy: {
     emaFast: string
     emaSlow: string
@@ -38,7 +54,6 @@ interface BotConfigDraft {
     orderKrw: string
     sellPct: string
     cooldownSeconds: string
-    tradeMode: string
   }
 }
 
@@ -66,6 +81,7 @@ const DEFAULT_BOT_CONFIG: NormalizedBotConfig = {
     start_hour: null,
     end_hour: null,
   },
+  trade_mode: 'ai',
   grid: {
     target_coin: 'BTC',
     grid_upper_bound: 100000000,
@@ -73,11 +89,10 @@ const DEFAULT_BOT_CONFIG: NormalizedBotConfig = {
     grid_order_krw: 10000,
     grid_sell_pct: 100,
     grid_cooldown_seconds: 60,
-    trade_mode: 'ai',
   },
 }
 
-function normalizeBotConfig(config: BotConfig | undefined): NormalizedBotConfig {
+function normalizeBotConfig(config: BotConfigInput | undefined): NormalizedBotConfig {
   return {
     symbols:
       Array.isArray(config?.symbols) && config.symbols.length > 0
@@ -109,6 +124,8 @@ function normalizeBotConfig(config: BotConfig | undefined): NormalizedBotConfig 
       start_hour: config?.schedule?.start_hour ?? DEFAULT_BOT_CONFIG.schedule.start_hour,
       end_hour: config?.schedule?.end_hour ?? DEFAULT_BOT_CONFIG.schedule.end_hour,
     },
+    trade_mode:
+      config?.trade_mode ?? config?.grid?.trade_mode ?? DEFAULT_BOT_CONFIG.trade_mode,
     grid: {
       target_coin: config?.grid?.target_coin ?? DEFAULT_BOT_CONFIG.grid.target_coin,
       grid_upper_bound: config?.grid?.grid_upper_bound ?? DEFAULT_BOT_CONFIG.grid.grid_upper_bound,
@@ -117,7 +134,6 @@ function normalizeBotConfig(config: BotConfig | undefined): NormalizedBotConfig 
       grid_sell_pct: config?.grid?.grid_sell_pct ?? DEFAULT_BOT_CONFIG.grid.grid_sell_pct,
       grid_cooldown_seconds:
         config?.grid?.grid_cooldown_seconds ?? DEFAULT_BOT_CONFIG.grid.grid_cooldown_seconds,
-      trade_mode: config?.grid?.trade_mode ?? DEFAULT_BOT_CONFIG.grid.trade_mode,
     },
   }
 }
@@ -126,6 +142,7 @@ function createDraft(config: NormalizedBotConfig): BotConfigDraft {
   return {
     symbols: config.symbols.join(', '),
     allocationPctPerSymbol: config.allocation_pct_per_symbol.join(', '),
+    tradeMode: config.trade_mode,
     strategy: {
       emaFast: String(config.strategy.ema_fast),
       emaSlow: String(config.strategy.ema_slow),
@@ -152,7 +169,6 @@ function createDraft(config: NormalizedBotConfig): BotConfigDraft {
       orderKrw: String(config.grid.grid_order_krw),
       sellPct: String(config.grid.grid_sell_pct),
       cooldownSeconds: String(config.grid.grid_cooldown_seconds),
-      tradeMode: config.grid.trade_mode,
     },
   }
 }
@@ -326,7 +342,7 @@ function buildPayload(draft: BotConfigDraft): BotConfig {
         integer: true,
         min: 1,
       }),
-      trade_mode: draft.grid.tradeMode.trim().toLowerCase() || 'grid',
+      trade_mode: draft.tradeMode.trim().toLowerCase() || 'ai',
     },
   }
 }
@@ -505,11 +521,11 @@ function BotConfigEditor({ initialConfig }: { initialConfig: NormalizedBotConfig
               매매 모드
             </span>
             <select
-              value={draft.grid.tradeMode}
+              value={draft.tradeMode}
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
-                  grid: { ...current.grid, tradeMode: event.target.value },
+                  tradeMode: event.target.value,
                 }))
               }
               disabled={isSaving}
