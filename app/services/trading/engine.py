@@ -42,7 +42,7 @@ class TradingEngine:
                             bot_config.config_json if bot_config else None
                         )
                         grid_config = self._extract_grid_config(config_json)
-                        trade_mode = str(grid_config.get("trade_mode", "ai")).lower().strip() or "ai"
+                        trade_mode = str(config_json.get("trade_mode", "ai")).lower().strip() or "ai"
 
                         if not is_active:
                             logger.info("봇이 일시 정지 상태입니다.")
@@ -352,8 +352,6 @@ class TradingEngine:
         cooldown_seconds = int(self._to_float(merged.get("grid_cooldown_seconds")))
         merged["grid_cooldown_seconds"] = max(cooldown_seconds, 1)
 
-        trade_mode = str(merged.get("trade_mode") or default_grid["trade_mode"]).lower().strip()
-        merged["trade_mode"] = trade_mode or str(default_grid["trade_mode"])
         merged["grid_cooldown_until"] = raw_grid.get(
             "grid_cooldown_until",
             config_json.get("grid_cooldown_until"),
