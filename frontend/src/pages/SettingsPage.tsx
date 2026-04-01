@@ -22,6 +22,8 @@ interface ScheduleDraft {
   newsIntervalHours: string
   sentimentIntervalMinutes: string
   aiBriefingTime: string
+  aiMinConfidenceTrade: string
+  aiAnalysisMaxAgeMinutes: string
   aiCustomPersonaPrompt: string
 }
 
@@ -33,6 +35,8 @@ interface NoticeState {
 const NEWS_INTERVAL_HOURS_KEY = 'news_interval_hours'
 const SENTIMENT_INTERVAL_MINUTES_KEY = 'sentiment_interval_minutes'
 const AI_BRIEFING_TIME_KEY = 'ai_briefing_time'
+const AI_MIN_CONFIDENCE_TRADE_KEY = 'ai_min_confidence_trade'
+const AI_ANALYSIS_MAX_AGE_MINUTES_KEY = 'ai_analysis_max_age_minutes'
 const AI_CUSTOM_PERSONA_PROMPT_KEY = 'ai_custom_persona_prompt'
 
 const PERSONA_PRESETS = [
@@ -109,6 +113,8 @@ function buildScheduleDraft(items: SystemConfigItem[] | undefined): ScheduleDraf
     newsIntervalHours: findConfigValue(items, NEWS_INTERVAL_HOURS_KEY, '4'),
     sentimentIntervalMinutes: findConfigValue(items, SENTIMENT_INTERVAL_MINUTES_KEY, '5'),
     aiBriefingTime: findConfigValue(items, AI_BRIEFING_TIME_KEY, '08:30'),
+    aiMinConfidenceTrade: findConfigValue(items, AI_MIN_CONFIDENCE_TRADE_KEY, '70'),
+    aiAnalysisMaxAgeMinutes: findConfigValue(items, AI_ANALYSIS_MAX_AGE_MINUTES_KEY, '90'),
     aiCustomPersonaPrompt: findConfigValue(items, AI_CUSTOM_PERSONA_PROMPT_KEY, ''),
   }
 }
@@ -538,6 +544,18 @@ function ScheduleSettingsPanel() {
         config_value: draft.aiBriefingTime,
       })
     }
+    if (draft.aiMinConfidenceTrade !== current.aiMinConfidenceTrade) {
+      updates.push({
+        config_key: AI_MIN_CONFIDENCE_TRADE_KEY,
+        config_value: draft.aiMinConfidenceTrade,
+      })
+    }
+    if (draft.aiAnalysisMaxAgeMinutes !== current.aiAnalysisMaxAgeMinutes) {
+      updates.push({
+        config_key: AI_ANALYSIS_MAX_AGE_MINUTES_KEY,
+        config_value: draft.aiAnalysisMaxAgeMinutes,
+      })
+    }
     if (draft.aiCustomPersonaPrompt !== current.aiCustomPersonaPrompt) {
       updates.push({
         config_key: AI_CUSTOM_PERSONA_PROMPT_KEY,
@@ -663,6 +681,59 @@ function ScheduleSettingsPanel() {
                 </select>
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                   현재 추천값은 5분입니다.
+                </p>
+              </label>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
+                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <span>AI 자율 체결 최소 확신도</span>
+                  <InfoTooltip
+                    title="AI 자율 체결 최소 확신도"
+                    content="AI가 지시한 확신 점수(0~100)가 이 값보다 낮으면 실제 주문을 내지 않고 스킵합니다."
+                  />
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={draft.aiMinConfidenceTrade}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      aiMinConfidenceTrade: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                />
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  추천값: 70~80 (안전 지향시 높게 설정)
+                </p>
+              </label>
+
+              <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
+                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <span>AI 분석 로그 유효 기간 (분)</span>
+                  <InfoTooltip
+                    title="AI 분석 로그 유효 기간 (분)"
+                    content="스케줄러가 분석한 리포트가 생성된 지 몇 분 이내여야 주문을 실행할지 결정합니다."
+                  />
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  value={draft.aiAnalysisMaxAgeMinutes}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      aiAnalysisMaxAgeMinutes: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                />
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  추천값: 90분 (시장 급변 시 짧게 설정)
                 </p>
               </label>
             </div>
