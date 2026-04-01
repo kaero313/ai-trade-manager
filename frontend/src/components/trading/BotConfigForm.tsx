@@ -500,7 +500,28 @@ function BotConfigEditor({ initialConfig }: { initialConfig: NormalizedBotConfig
           <TextInput label="1회 주문당 투자 금액 (KRW)" value={draft.grid.orderKrw} onChange={(nextValue) => setDraft((current) => ({ ...current, grid: { ...current.grid, orderKrw: nextValue } }))} disabled={isSaving} type="number" placeholder="예: 10000" hint="예: 10,000" />
           <TextInput label="목표 익절 수익률 (%)" value={draft.grid.sellPct} onChange={(nextValue) => setDraft((current) => ({ ...current, grid: { ...current.grid, sellPct: nextValue } }))} disabled={isSaving} type="number" placeholder="예: 1.5" hint="예: 1.5" />
           <TextInput label="재주문 대기 시간 (Cool-down 초)" value={draft.grid.cooldownSeconds} onChange={(nextValue) => setDraft((current) => ({ ...current, grid: { ...current.grid, cooldownSeconds: nextValue } }))} disabled={isSaving} type="number" placeholder="예: 60" hint="예: 60" />
-          <TextInput label="매매 모드" value={draft.grid.tradeMode} onChange={(nextValue) => setDraft((current) => ({ ...current, grid: { ...current.grid, tradeMode: nextValue } }))} disabled={isSaving} placeholder="예: grid" hint="일반적으로 grid 값을 사용합니다." />
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+              매매 모드
+            </span>
+            <select
+              value={draft.grid.tradeMode}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  grid: { ...current.grid, tradeMode: event.target.value },
+                }))
+              }
+              disabled={isSaving}
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400 dark:disabled:bg-gray-600 dark:disabled:text-gray-400"
+            >
+              <option value="grid">그리드 매매 (grid)</option>
+              <option value="ai">AI 자율 주행 (ai)</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              일반적으로 grid 또는 ai 값을 사용합니다.
+            </p>
+          </label>
         </div>
       </section>
 
