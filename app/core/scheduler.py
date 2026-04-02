@@ -1,11 +1,10 @@
 import asyncio
 import logging
-import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import desc, select
 
@@ -39,7 +38,8 @@ DEFAULT_AI_BRIEFING_MINUTE = 30
 DEFAULT_AUTONOMOUS_AI_INTERVAL_HOURS = 1
 AUTONOMOUS_AI_ANALYST_SYMBOL_DELAY_SECONDS = 2
 
-scheduler = BackgroundScheduler(timezone=SCHEDULER_TIMEZONE)
+scheduler = AsyncIOScheduler(timezone=SCHEDULER_TIMEZONE)
+_scheduler_loop: asyncio.AbstractEventLoop | None = None
 
 
 @dataclass(slots=True)
@@ -217,25 +217,30 @@ async def reload_scheduler_jobs() -> SchedulerRuntimeConfig:
 
 
 async def start_scheduler() -> None:
+    global _scheduler_loop
     if scheduler.running:
         return
 
+    _scheduler_loop = asyncio.get_running_loop()
     await reload_scheduler_jobs()
     scheduler.start()
     logger.info("APScheduler started: timezone=%s", SCHEDULER_TIMEZONE)
 
 
 def stop_scheduler() -> None:
+    global _scheduler_loop
     if not scheduler.running:
+        _scheduler_loop = None
         return
 
     scheduler.shutdown(wait=False)
+    _scheduler_loop = None
     logger.info("APScheduler 종료")
 
 
-def run_market_sentiment_refresh_scheduler_job() -> None:
+async def run_market_sentiment_refresh_scheduler_job() -> None:
     try:
-        asyncio.run(refresh_market_sentiment_cache_job())
+        await refresh_market_sentiment_cache_job()
     except Exception:
         logger.error(
             "시장 심리 갱신 스케줄 작업이 실패했습니다. 서버는 계속 실행합니다.",
@@ -243,9 +248,9 @@ def run_market_sentiment_refresh_scheduler_job() -> None:
         )
 
 
-def run_market_news_ingestion_scheduler_job() -> None:
+async def run_market_news_ingestion_scheduler_job() -> None:
     try:
-        asyncio.run(run_market_news_ingestion_job())
+        await run_market_news_ingestion_job()
     except Exception:
         logger.error(
             "시장 뉴스 적재 스케줄 작업이 실패했습니다. 서버는 계속 실행합니다.",
@@ -253,9 +258,9 @@ def run_market_news_ingestion_scheduler_job() -> None:
         )
 
 
-def run_daily_ai_briefing_job() -> None:
+async def run_daily_ai_briefing_job() -> None:
     try:
-        asyncio.run(daily_ai_briefing(force_refresh_news=False, provider=DEFAULT_PROVIDER))
+        await daily_ai_briefing(force_refresh_news=False, provider=DEFAULT_PROVIDER)
     except Exception:
         logger.error(
             "daily_ai_briefing 스케줄 작업이 실패했습니다. 서버는 계속 실행합니다.",
@@ -263,9 +268,9 @@ def run_daily_ai_briefing_job() -> None:
         )
 
 
-def run_autonomous_ai_analyst_job() -> None:
+async def run_autonomous_ai_analyst_job() -> None:
     try:
-        asyncio.run(autonomous_ai_analyst_job())
+        await autonomous_ai_analyst_job()
     except Exception:
         logger.error(
             "Watchlist 자율주행 AI 분석 작업이 실패했습니다. 서버는 계속 실행합니다.",
@@ -274,20 +279,24 @@ def run_autonomous_ai_analyst_job() -> None:
 
 
 def trigger_daily_ai_briefing_now() -> None:
-    def _runner() -> None:
-        try:
-            asyncio.run(daily_ai_briefing(force_refresh_news=True, provider=DEFAULT_PROVIDER))
-        except Exception:
-            logger.error(
-                "daily_ai_briefing 수동 실행이 실패했습니다. 서버는 계속 실행합니다.",
-                exc_info=True,
-            )
+    if _scheduler_loop is None or _scheduler_loop.is_closed():
+        logger.warning("daily_ai_briefing 수동 실행을 위한 이벤트 루프를 찾을 수 없습니다.")
+        return
 
-    threading.Thread(
-        target=_runner,
-        name="daily-ai-briefing-manual",
-        daemon=True,
-    ).start()
+    def _schedule_manual_job() -> None:
+        asyncio.create_task(_run_manual_daily_ai_briefing_job())
+
+    _scheduler_loop.call_soon_threadsafe(_schedule_manual_job)
+
+
+async def _run_manual_daily_ai_briefing_job() -> None:
+    try:
+        await daily_ai_briefing(force_refresh_news=True, provider=DEFAULT_PROVIDER)
+    except Exception:
+        logger.error(
+            "daily_ai_briefing 수동 실행이 실패했습니다. 서버는 계속 실행합니다.",
+            exc_info=True,
+        )
 
 
 async def refresh_market_sentiment_cache_job() -> None:
