@@ -277,7 +277,7 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
                 return {"items": normalized_fallback[:NEWS_RESULT_LIMIT], "error": None}
 
         except Exception as inner_exc:
-            logger.warning("AI 뉴스 인덱스 기반 검색 실패: %s. RSS 뉴스 폴백을 준비합니다.", inner_exc)
+            logger.debug("RAG 뉴스 인덱스 미존재. RSS 뉴스 폴백으로 전환합니다: %s", inner_exc)
 
         # OpenSearch 결과가 없거나 실패한 경우 -> RSS 실시간 뉴스 폴백
         import asyncio
