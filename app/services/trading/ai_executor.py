@@ -309,6 +309,12 @@ async def _execute_buy_trade(
         return
 
     broker = BrokerFactory.get_broker("UPBIT")
+    logger.info(
+        "AI 매수 시도: symbol=%s total_avail=%s order_amount=%s",
+        symbol,
+        available_krw,
+        order_amount_krw,
+    )
     try:
         raw_order = await broker.create_order(
             market=symbol,
