@@ -148,12 +148,14 @@ def _upsert_scheduler_job(
     job_id: str,
     func,
     trigger: CronTrigger,
+    kwargs: dict[str, Any] | None = None,
 ) -> None:
     existing_job = scheduler.get_job(job_id)
     if existing_job is None:
         scheduler.add_job(
             func,
             trigger=trigger,
+            kwargs=kwargs,
             id=job_id,
             replace_existing=True,
             coalesce=True,
@@ -172,6 +174,7 @@ def register_daily_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
         DAILY_BRIEFING_JOB_ID,
         daily_ai_briefing,
         _build_daily_briefing_trigger(runtime_config),
+        kwargs={"force_refresh_news": False, "provider": DEFAULT_PROVIDER},
     )
 
 
