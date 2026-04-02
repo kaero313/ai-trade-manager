@@ -53,7 +53,7 @@ class TradingEngine:
                         if trade_mode == "grid" and bot_config is not None:
                             await self._check_and_execute_grid(db, bot_config)
                         else:
-                            logger.info("지원되지 않는 거래 모드입니다: mode=%s", trade_mode)
+                            logger.debug("AI 모드 패스 중. 스케줄러 전담: mode=%s", trade_mode)
                 except Exception:
                     logger.error(
                         "TradingEngine 루프 처리 중 예외가 발생했습니다. 다음 주기에서 계속 실행합니다.",
