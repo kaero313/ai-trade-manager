@@ -8,6 +8,7 @@ from app.models.schemas import AIAnalysisLogItem, AIPerformanceSummary, AITradeR
 from app.services.ai.analyzer import AIAnalyzerFactory
 from app.services.ai.formatter import format_portfolio_for_llm
 from app.services.portfolio.aggregator import PortfolioService
+from app.services.trading.ai_analyst import execute_ai_analysis
 
 router = APIRouter()
 
@@ -172,3 +173,22 @@ async def get_ai_performance_summary(
         avg_confidence=avg_confidence,
         recent_trades=recent_trades,
     )
+
+
+@router.get("/test-analysis")
+async def trigger_ai_analysis_now(
+    symbol: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str | int]:
+    normalized_symbol = symbol.upper().strip()
+    try:
+        result = await execute_ai_analysis(db, normalized_symbol)
+        return {
+            "symbol": normalized_symbol,
+            "decision": result.decision,
+            "confidence": result.confidence,
+            "recommended_weight": result.recommended_weight,
+            "reasoning": result.reasoning,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
