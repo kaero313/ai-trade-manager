@@ -294,9 +294,11 @@ async def _execute_buy_trade(
         logger.info("AI 매수 스킵: 사용 가능한 %s 잔고가 없습니다. symbol=%s", quote_currency, symbol)
         return
 
+    fee_buffer = 0.995  # 0.5% 여유분 (업비트 수수료 0.05% 대비 충분한 버퍼)
+    safe_available_krw = available_krw * fee_buffer
     order_amount_krw = min(
-        _resolve_weighted_amount(available_krw, analysis.recommended_weight),
-        available_krw,
+        _resolve_weighted_amount(safe_available_krw, analysis.recommended_weight),
+        safe_available_krw,
     )
     if order_amount_krw < MIN_ORDER_KRW:
         logger.info(
