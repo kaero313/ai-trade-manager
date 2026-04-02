@@ -170,7 +170,7 @@ def _upsert_scheduler_job(
 def register_daily_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
     _upsert_scheduler_job(
         DAILY_BRIEFING_JOB_ID,
-        run_daily_ai_briefing_job,
+        daily_ai_briefing,
         _build_daily_briefing_trigger(runtime_config),
     )
 
@@ -178,7 +178,7 @@ def register_daily_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
 def register_market_news_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
     _upsert_scheduler_job(
         MARKET_NEWS_INGESTION_JOB_ID,
-        run_market_news_ingestion_scheduler_job,
+        run_market_news_ingestion_job,
         _build_market_news_trigger(runtime_config),
     )
 
@@ -186,7 +186,7 @@ def register_market_news_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
 def register_market_sentiment_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
     _upsert_scheduler_job(
         MARKET_SENTIMENT_REFRESH_JOB_ID,
-        run_market_sentiment_refresh_scheduler_job,
+        refresh_market_sentiment_cache_job,
         _build_market_sentiment_trigger(runtime_config),
     )
 
@@ -194,7 +194,7 @@ def register_market_sentiment_jobs(runtime_config: SchedulerRuntimeConfig) -> No
 def register_autonomous_ai_analyst_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
     _upsert_scheduler_job(
         AUTONOMOUS_AI_ANALYST_JOB_ID,
-        run_autonomous_ai_analyst_job,
+        autonomous_ai_analyst_job,
         _build_autonomous_ai_analyst_trigger(runtime_config),
     )
 
@@ -238,46 +238,6 @@ def stop_scheduler() -> None:
     logger.info("APScheduler 종료")
 
 
-async def run_market_sentiment_refresh_scheduler_job() -> None:
-    try:
-        await refresh_market_sentiment_cache_job()
-    except Exception:
-        logger.error(
-            "시장 심리 갱신 스케줄 작업이 실패했습니다. 서버는 계속 실행합니다.",
-            exc_info=True,
-        )
-
-
-async def run_market_news_ingestion_scheduler_job() -> None:
-    try:
-        await run_market_news_ingestion_job()
-    except Exception:
-        logger.error(
-            "시장 뉴스 적재 스케줄 작업이 실패했습니다. 서버는 계속 실행합니다.",
-            exc_info=True,
-        )
-
-
-async def run_daily_ai_briefing_job() -> None:
-    try:
-        await daily_ai_briefing(force_refresh_news=False, provider=DEFAULT_PROVIDER)
-    except Exception:
-        logger.error(
-            "daily_ai_briefing 스케줄 작업이 실패했습니다. 서버는 계속 실행합니다.",
-            exc_info=True,
-        )
-
-
-async def run_autonomous_ai_analyst_job() -> None:
-    try:
-        await autonomous_ai_analyst_job()
-    except Exception:
-        logger.error(
-            "Watchlist 자율주행 AI 분석 작업이 실패했습니다. 서버는 계속 실행합니다.",
-            exc_info=True,
-        )
-
-
 def trigger_daily_ai_briefing_now() -> None:
     if _scheduler_loop is None or _scheduler_loop.is_closed():
         logger.warning("daily_ai_briefing 수동 실행을 위한 이벤트 루프를 찾을 수 없습니다.")
@@ -300,54 +260,66 @@ async def _run_manual_daily_ai_briefing_job() -> None:
 
 
 async def refresh_market_sentiment_cache_job() -> None:
-    async with AsyncSessionLocal() as db:
-        await refresh_market_sentiment_cache(db)
+    try:
+        async with AsyncSessionLocal() as db:
+            await refresh_market_sentiment_cache(db)
+    except Exception:
+        logger.error(
+            "시장 심리 갱신 스케줄 작업이 실패했습니다. 서버는 계속 실행합니다.",
+            exc_info=True,
+        )
 
 
 async def autonomous_ai_analyst_job() -> None:
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(
-            select(Favorite.symbol).order_by(desc(Favorite.created_at), desc(Favorite.id))
-        )
-        symbols = [
-            str(symbol).strip().upper()
-            for symbol in result.scalars().all()
-            if str(symbol).strip()
-        ]
-
-    if not symbols:
-        logger.info("Watchlist 자율주행 AI 분석 대상이 없습니다.")
-        return
-
-    logger.info("Watchlist 자율주행 AI 분석 시작: symbol_count=%s", len(symbols))
-
-    for index, symbol in enumerate(symbols):
+    try:
         async with AsyncSessionLocal() as db:
-            try:
-                await execute_ai_analysis(db, symbol)
-                logger.info("Watchlist 자율주행 AI 분석 완료: symbol=%s", symbol)
-            except Exception:
-                logger.error(
-                    "Watchlist 자율주행 AI 분석 실패: symbol=%s",
-                    symbol,
-                    exc_info=True,
-                )
-                if index < len(symbols) - 1:
-                    await asyncio.sleep(AUTONOMOUS_AI_ANALYST_SYMBOL_DELAY_SECONDS)
-                continue
+            result = await db.execute(
+                select(Favorite.symbol).order_by(desc(Favorite.created_at), desc(Favorite.id))
+            )
+            symbols = [
+                str(symbol).strip().upper()
+                for symbol in result.scalars().all()
+                if str(symbol).strip()
+            ]
 
-            try:
-                await execute_ai_trade(db, symbol)
-                logger.info("Watchlist 자율주행 AI 집행 완료: symbol=%s", symbol)
-            except Exception:
-                logger.error(
-                    "Watchlist 자율주행 AI 집행 실패: symbol=%s",
-                    symbol,
-                    exc_info=True,
-                )
+        if not symbols:
+            logger.info("Watchlist 자율주행 AI 분석 대상이 없습니다.")
+            return
 
-        if index < len(symbols) - 1:
-            await asyncio.sleep(AUTONOMOUS_AI_ANALYST_SYMBOL_DELAY_SECONDS)
+        logger.info("Watchlist 자율주행 AI 분석 시작: symbol_count=%s", len(symbols))
+
+        for index, symbol in enumerate(symbols):
+            async with AsyncSessionLocal() as db:
+                try:
+                    await execute_ai_analysis(db, symbol)
+                    logger.info("Watchlist 자율주행 AI 분석 완료: symbol=%s", symbol)
+                except Exception:
+                    logger.error(
+                        "Watchlist 자율주행 AI 분석 실패: symbol=%s",
+                        symbol,
+                        exc_info=True,
+                    )
+                    if index < len(symbols) - 1:
+                        await asyncio.sleep(AUTONOMOUS_AI_ANALYST_SYMBOL_DELAY_SECONDS)
+                    continue
+
+                try:
+                    await execute_ai_trade(db, symbol)
+                    logger.info("Watchlist 자율주행 AI 집행 완료: symbol=%s", symbol)
+                except Exception:
+                    logger.error(
+                        "Watchlist 자율주행 AI 집행 실패: symbol=%s",
+                        symbol,
+                        exc_info=True,
+                    )
+
+            if index < len(symbols) - 1:
+                await asyncio.sleep(AUTONOMOUS_AI_ANALYST_SYMBOL_DELAY_SECONDS)
+    except Exception:
+        logger.error(
+            "Watchlist 자율주행 AI 분석 작업이 실패했습니다. 서버는 계속 실행합니다.",
+            exc_info=True,
+        )
 
 
 async def daily_ai_briefing(force_refresh_news: bool = False, provider: str = DEFAULT_PROVIDER) -> None:
