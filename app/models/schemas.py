@@ -88,6 +88,8 @@ class AIAnalysisLogItem(BaseModel):
     confidence: int
     recommended_weight: int
     reasoning: str
+    accuracy_label: str | None = None
+    actual_price_diff_pct: float | None = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -110,6 +112,7 @@ class AIPerformanceSummary(BaseModel):
     winning_trades: int = Field(..., ge=0)
     losing_trades: int = Field(..., ge=0)
     win_rate: float = Field(..., ge=0, le=100)
+    accuracy_rate: float = Field(..., ge=0, le=100)
     total_realized_pnl_krw: float
     avg_confidence: float = Field(..., ge=0, le=100)
     recent_trades: list[AITradeRecord] = Field(default_factory=list, max_length=20)

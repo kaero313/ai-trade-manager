@@ -61,6 +61,8 @@ export interface LatestAiAnalysis {
   confidence: number
   recommended_weight: number
   reasoning: string
+  accuracy_label?: string | null
+  actual_price_diff_pct?: number | null
   created_at: string
 }
 
@@ -79,6 +81,7 @@ export interface AIPerformanceSummary {
   winning_trades: number
   losing_trades: number
   win_rate: number
+  accuracy_rate: number
   total_realized_pnl_krw: number
   avg_confidence: number
   recent_trades: AITradeRecord[]
