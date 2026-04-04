@@ -84,6 +84,9 @@ class AIAnalysisLog(Base):
         nullable=False,
         server_default=func.now(),
     )
+    accuracy_label: Mapped[str | None] = mapped_column(String, nullable=True)
+    actual_price_diff_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    accuracy_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Favorite(Base):
