@@ -16,6 +16,10 @@ NEWS_INTERVAL_HOURS_KEY = "news_interval_hours"
 SENTIMENT_INTERVAL_MINUTES_KEY = "sentiment_interval_minutes"
 AI_BRIEFING_TIME_KEY = "ai_briefing_time"
 AUTONOMOUS_AI_INTERVAL_HOURS_KEY = "autonomous_ai_interval_hours"
+AUTONOMOUS_AI_INTERVAL_MINUTES_KEY = "autonomous_ai_interval_minutes"
+MAX_ALLOCATION_PCT_KEY = "max_allocation_pct"
+HARD_TAKE_PROFIT_PCT_KEY = "hard_take_profit_pct"
+HARD_STOP_LOSS_PCT_KEY = "hard_stop_loss_pct"
 MARKET_SENTIMENT_SNAPSHOT_KEY = "market_sentiment_snapshot"
 AI_MIN_CONFIDENCE_TRADE_KEY = "ai_min_confidence_trade"
 AI_ANALYSIS_MAX_AGE_MINUTES_KEY = "ai_analysis_max_age_minutes"
@@ -41,6 +45,26 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
         "config_key": AUTONOMOUS_AI_INTERVAL_HOURS_KEY,
         "config_value": "1",
         "description": "Watchlist AI 자율주행 분석 주기(시간)",
+    },
+    {
+        "config_key": AUTONOMOUS_AI_INTERVAL_MINUTES_KEY,
+        "config_value": "15",
+        "description": "AI 단타 자율주행 분석 주기 단위(분)",
+    },
+    {
+        "config_key": MAX_ALLOCATION_PCT_KEY,
+        "config_value": "10",
+        "description": "종목당 베팅 최대 한도: 총 KRW 자산 대비 %",
+    },
+    {
+        "config_key": HARD_TAKE_PROFIT_PCT_KEY,
+        "config_value": "5.0",
+        "description": "강제 익절율 %, 0이면 무시",
+    },
+    {
+        "config_key": HARD_STOP_LOSS_PCT_KEY,
+        "config_value": "-3.0",
+        "description": "강제 손절율 %, 0이면 무시",
     },
     {
         "config_key": AI_MIN_CONFIDENCE_TRADE_KEY,
