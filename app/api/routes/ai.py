@@ -160,8 +160,18 @@ async def get_ai_performance_summary(
         if trade_record is not None:
             recent_trades.append(trade_record)
 
+    accuracy_stmt = select(AIAnalysisLog.accuracy_label).where(
+        AIAnalysisLog.decision.in_(("BUY", "SELL")),
+        AIAnalysisLog.accuracy_label.in_(("SUCCESS", "FAIL")),
+    )
+    accuracy_result = await db.execute(accuracy_stmt)
+    accuracy_labels = list(accuracy_result.scalars().all())
+    checked_count = len(accuracy_labels)
+    success_count = sum(1 for label in accuracy_labels if label == "SUCCESS")
+
     total_trades = winning_trades + losing_trades
     win_rate = (winning_trades / total_trades) * 100.0 if total_trades > 0 else 0.0
+    accuracy_rate = (success_count / checked_count) * 100.0 if checked_count > 0 else 0.0
     avg_confidence = (total_confidence / confidence_count) if confidence_count > 0 else 0.0
 
     return AIPerformanceSummary(
@@ -169,6 +179,7 @@ async def get_ai_performance_summary(
         winning_trades=winning_trades,
         losing_trades=losing_trades,
         win_rate=win_rate,
+        accuracy_rate=accuracy_rate,
         total_realized_pnl_krw=total_realized_pnl_krw,
         avg_confidence=avg_confidence,
         recent_trades=recent_trades,

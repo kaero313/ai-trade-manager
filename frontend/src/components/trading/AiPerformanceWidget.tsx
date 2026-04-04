@@ -54,6 +54,13 @@ function resolveWinRateTone(winRate: number): string {
   return 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'
 }
 
+function resolveAccuracyRateTone(accuracyRate: number): string {
+  if (accuracyRate >= 50) {
+    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+  }
+  return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+}
+
 function resolvePnlTone(totalRealizedPnlKrw: number): string {
   if (totalRealizedPnlKrw > 0) {
     return 'text-emerald-600 dark:text-emerald-300'
@@ -160,6 +167,7 @@ function AiPerformanceWidget() {
     winning_trades: 0,
     losing_trades: 0,
     win_rate: 0,
+    accuracy_rate: 0,
     total_realized_pnl_krw: 0,
     avg_confidence: 0,
     recent_trades: [],
@@ -179,7 +187,7 @@ function AiPerformanceWidget() {
           </div>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <KpiCard title="총 거래 건수" value={formatCount(summary.total_trades)} hint="AI 체결 완료 건수" />
           <KpiCard
             title="승률"
@@ -191,15 +199,24 @@ function AiPerformanceWidget() {
             }}
           />
           <KpiCard
+            title="분석 적중률"
+            value={formatPercentage(summary.accuracy_rate)}
+            hint="검증 완료된 BUY/SELL 분석 중 적중 비율"
+            badge={{
+              label: summary.accuracy_rate >= 50 ? '우수' : '낮음',
+              className: resolveAccuracyRateTone(summary.accuracy_rate),
+            }}
+          />
+          <KpiCard
             title="총 실현 손익"
             value={formatSignedKrw(summary.total_realized_pnl_krw)}
-            hint="닫힌 포지션 기준 누적 손익"
+            hint="포지션 종료 기준 누적 손익"
             valueClassName={resolvePnlTone(summary.total_realized_pnl_krw)}
           />
           <KpiCard
             title="평균 확신도"
             value={formatPercentage(summary.avg_confidence)}
-            hint="AI 지시 confidence 평균"
+            hint="AI 분석 confidence 평균"
           />
         </div>
 
@@ -250,7 +267,7 @@ function AiPerformanceWidget() {
                       </td>
                       <td className="px-4 py-3">{formatQty(trade.qty)}</td>
                       <td className="px-4 py-3">{formatPercentage(trade.confidence)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{formatExecutedAt(trade.executed_at)}</td>
+                      <td className="whitespace-nowrap px-4 py-3">{formatExecutedAt(trade.executed_at)}</td>
                     </tr>
                   )
                 })}
