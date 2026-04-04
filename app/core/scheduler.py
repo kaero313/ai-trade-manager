@@ -19,6 +19,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.domain import Favorite
 from app.services.market.sentiment_fetcher import refresh_market_sentiment_cache
 from app.services.rag.ingestion import run_market_news_ingestion_job
+from app.services.trading.accuracy_worker import update_ai_analysis_accuracy
 from app.services.trading.ai_analyst import execute_ai_analysis
 from app.services.trading.ai_executor import execute_ai_trade
 
@@ -29,6 +30,7 @@ DAILY_BRIEFING_JOB_ID = "daily_ai_briefing"
 MARKET_NEWS_INGESTION_JOB_ID = "market_news_ingestion_hourly"
 MARKET_SENTIMENT_REFRESH_JOB_ID = "market_sentiment_refresh"
 AUTONOMOUS_AI_ANALYST_JOB_ID = "autonomous_ai_analyst_watchlist"
+AI_ACCURACY_CHECK_JOB_ID = "ai_accuracy_check"
 DEFAULT_PROVIDER = "openai"
 
 DEFAULT_NEWS_INTERVAL_HOURS = 4
@@ -144,6 +146,13 @@ def _build_autonomous_ai_analyst_trigger(runtime_config: SchedulerRuntimeConfig)
     )
 
 
+def _build_ai_accuracy_check_trigger() -> CronTrigger:
+    return CronTrigger(
+        minute="*/30",
+        timezone=SCHEDULER_TIMEZONE,
+    )
+
+
 def _upsert_scheduler_job(
     job_id: str,
     func,
@@ -202,12 +211,21 @@ def register_autonomous_ai_analyst_jobs(runtime_config: SchedulerRuntimeConfig) 
     )
 
 
+def register_ai_accuracy_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
+    _upsert_scheduler_job(
+        AI_ACCURACY_CHECK_JOB_ID,
+        ai_accuracy_check_job,
+        _build_ai_accuracy_check_trigger(),
+    )
+
+
 async def reload_scheduler_jobs() -> SchedulerRuntimeConfig:
     runtime_config = await load_scheduler_runtime_config()
     register_daily_jobs(runtime_config)
     register_market_news_jobs(runtime_config)
     register_market_sentiment_jobs(runtime_config)
     register_autonomous_ai_analyst_jobs(runtime_config)
+    register_ai_accuracy_jobs(runtime_config)
     logger.info(
         "Scheduler jobs reloaded: news_interval_hours=%s sentiment_interval_minutes=%s ai_briefing_time=%02d:%02d autonomous_ai_interval_hours=%s",
         runtime_config.news_interval_hours,
@@ -269,6 +287,18 @@ async def refresh_market_sentiment_cache_job() -> None:
     except Exception:
         logger.error(
             "시장 심리 갱신 스케줄 작업이 실패했습니다. 서버는 계속 실행합니다.",
+            exc_info=True,
+        )
+
+
+async def ai_accuracy_check_job() -> None:
+    try:
+        async with AsyncSessionLocal() as db:
+            updated_count = await update_ai_analysis_accuracy(db)
+        logger.info("AI 분석 정확도 체크 완료: updated_count=%s", updated_count)
+    except Exception:
+        logger.error(
+            "AI 분석 정확도 체크 작업이 실패했습니다. 서버는 계속 실행합니다.",
             exc_info=True,
         )
 
