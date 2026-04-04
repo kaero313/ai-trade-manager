@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repository import AI_CUSTOM_PERSONA_PROMPT_KEY
@@ -89,12 +90,27 @@ def _build_persona_prefix(custom_persona: str) -> str:
     )
 
 
-def build_analysis_system_prompt(custom_persona: str) -> str:
+def _build_self_correction_feedback_section(feedback_text: str) -> str:
+    normalized_feedback = str(feedback_text or "").strip()
+    if not normalized_feedback:
+        return ""
+
+    return (
+        "[Self-Correction Feedback]\n"
+        "다음은 과거의 잘못된 분석 사례입니다. 이를 반성하고 이번 분석에서는 더 객관적인 근거를 찾으십시오.\n"
+        "과거 실패 근거를 그대로 반복하지 말고, 현재 데이터의 수치와 출처를 더 엄격하게 검토하십시오.\n\n"
+        f"{normalized_feedback}"
+    )
+
+
+def build_analysis_system_prompt(custom_persona: str, self_correction_feedback: str = "") -> str:
     persona_prefix = _build_persona_prefix(custom_persona)
+    feedback_section = _build_self_correction_feedback_section(self_correction_feedback)
     prompt_sections = [
         persona_prefix.rstrip() if persona_prefix else "",
         ANALYSIS_CORE_IDENTITY_PROMPT,
         ANALYSIS_CORE_RULES_PROMPT,
+        feedback_section.rstrip() if feedback_section else "",
     ]
     return "\n\n".join(section for section in prompt_sections if section).strip()
 
@@ -629,11 +645,40 @@ async def _persist_ai_analysis_log(
         logger.error("AI 분석 로그 저장 실패: %s", exc, exc_info=True)
 
 
+async def _load_recent_failure_feedback(db: AsyncSession, symbol: str) -> str:
+    result = await db.execute(
+        select(AIAnalysisLog)
+        .where(AIAnalysisLog.symbol == _normalize_symbol(symbol))
+        .where(AIAnalysisLog.accuracy_label == "FAIL")
+        .order_by(
+            desc(AIAnalysisLog.accuracy_checked_at),
+            desc(AIAnalysisLog.created_at),
+            desc(AIAnalysisLog.id),
+        )
+        .limit(2)
+    )
+    failed_logs = result.scalars().all()
+    if not failed_logs:
+        return ""
+
+    feedback_lines: list[str] = []
+    for index, failed_log in enumerate(failed_logs, start=1):
+        analysis_time = _format_datetime(failed_log.created_at) or "-"
+        actual_result = _format_percentage(failed_log.actual_price_diff_pct)
+        reasoning = _truncate_text(failed_log.reasoning, max_chars=220)
+        feedback_lines.append(
+            f"{index}. 시점={analysis_time} | 판단={failed_log.decision} | 실제 결과={actual_result} / {failed_log.accuracy_label or 'UNKNOWN'} | 당시 이유={reasoning}"
+        )
+
+    return "\n".join(feedback_lines)
+
+
 async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisResponse:
     normalized_symbol = _normalize_symbol(symbol)
     context = await gather_market_context(db, normalized_symbol)
     context_text = format_market_context_for_llm(context)
     custom_persona_prompt = ""
+    self_correction_feedback = ""
 
     try:
         custom_persona_prompt = (
@@ -647,7 +692,17 @@ async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisRespon
             exc_info=True,
         )
 
-    system_prompt = build_analysis_system_prompt(custom_persona_prompt)
+    try:
+        self_correction_feedback = await _load_recent_failure_feedback(db, normalized_symbol)
+    except Exception as exc:
+        logger.warning(
+            "AI 실패 사례 피드백 조회 실패: symbol=%s error=%s",
+            normalized_symbol,
+            exc,
+            exc_info=True,
+        )
+
+    system_prompt = build_analysis_system_prompt(custom_persona_prompt, self_correction_feedback)
 
     try:
         analyzer = _get_gemini_analyzer()
