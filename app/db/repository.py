@@ -20,6 +20,8 @@ AUTONOMOUS_AI_INTERVAL_MINUTES_KEY = "autonomous_ai_interval_minutes"
 MAX_ALLOCATION_PCT_KEY = "max_allocation_pct"
 HARD_TAKE_PROFIT_PCT_KEY = "hard_take_profit_pct"
 HARD_STOP_LOSS_PCT_KEY = "hard_stop_loss_pct"
+TRADING_MODE_KEY = "trading_mode"
+PAPER_TRADING_KRW_BALANCE_KEY = "paper_trading_krw_balance"
 MARKET_SENTIMENT_SNAPSHOT_KEY = "market_sentiment_snapshot"
 AI_MIN_CONFIDENCE_TRADE_KEY = "ai_min_confidence_trade"
 AI_ANALYSIS_MAX_AGE_MINUTES_KEY = "ai_analysis_max_age_minutes"
@@ -65,6 +67,16 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
         "config_key": HARD_STOP_LOSS_PCT_KEY,
         "config_value": "-3.0",
         "description": "강제 손절율 %, 0이면 무시",
+    },
+    {
+        "config_key": TRADING_MODE_KEY,
+        "config_value": "live",
+        "description": "거래 실행 모드(live/paper)",
+    },
+    {
+        "config_key": PAPER_TRADING_KRW_BALANCE_KEY,
+        "config_value": "10000000",
+        "description": "모의투자용 가상 KRW 자본금",
     },
     {
         "config_key": AI_MIN_CONFIDENCE_TRADE_KEY,
