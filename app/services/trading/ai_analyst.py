@@ -7,6 +7,8 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repository import AI_CUSTOM_PERSONA_PROMPT_KEY
+from app.db.repository import AUTONOMOUS_AI_INTERVAL_HOURS_KEY
+from app.db.repository import AUTONOMOUS_AI_INTERVAL_MINUTES_KEY
 from app.db.repository import get_system_config_value
 from app.models.domain import AIAnalysisLog
 from app.models.schemas import AIAnalysisResponse
@@ -24,10 +26,13 @@ from app.services.rag.opensearch_client import get_opensearch_client
 
 logger = logging.getLogger(__name__)
 
-TECHNICAL_TIMEFRAME = "60m"
 TECHNICAL_CANDLE_COUNT = 200
 NEWS_RESULT_LIMIT = 3
 NEWS_SUMMARY_MAX_CHARS = 180
+DEFAULT_AUTONOMOUS_AI_INTERVAL_MINUTES = 60
+SCALPING_TIMEFRAME_THRESHOLD_MINUTES = 30
+FAST_TECHNICAL_TIMEFRAME = "15m"
+DEFAULT_TECHNICAL_TIMEFRAME = "60m"
 
 ANALYSIS_CORE_IDENTITY_PROMPT = """
 당신은 월스트리트 엘리트 코인 트레이더입니다.
@@ -177,6 +182,17 @@ def _format_percentage(value: Any) -> str:
     return f"{number:+.2f}%"
 
 
+def _parse_positive_int(raw_value: str | None) -> int | None:
+    try:
+        value = int(str(raw_value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+    if value <= 0:
+        return None
+    return value
+
+
 def _extract_market_names(market_row: dict[str, Any] | None, symbol: str) -> list[str]:
     currency = _extract_currency(symbol)
     candidates = [
@@ -323,6 +339,27 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
         return {"items": [], "error": "NEWS_SEARCH_FAILED"}
 
 
+async def _resolve_technical_timeframe(db: AsyncSession) -> str:
+    try:
+        interval_minutes = _parse_positive_int(
+            await get_system_config_value(db, AUTONOMOUS_AI_INTERVAL_MINUTES_KEY)
+        )
+        if interval_minutes is None:
+            interval_hours = _parse_positive_int(
+                await get_system_config_value(db, AUTONOMOUS_AI_INTERVAL_HOURS_KEY)
+            )
+            if interval_hours is not None:
+                interval_minutes = interval_hours * 60
+    except Exception as exc:
+        logger.warning("AI 기술 지표 타임프레임 설정 조회 실패: %s", exc, exc_info=True)
+        interval_minutes = None
+
+    resolved_minutes = interval_minutes or DEFAULT_AUTONOMOUS_AI_INTERVAL_MINUTES
+    if resolved_minutes <= SCALPING_TIMEFRAME_THRESHOLD_MINUTES:
+        return FAST_TECHNICAL_TIMEFRAME
+    return DEFAULT_TECHNICAL_TIMEFRAME
+
+
 def _find_portfolio_item(portfolio: PortfolioSummary, symbol: str) -> AssetItem | None:
     currency = _extract_currency(symbol)
     for item in portfolio.items:
@@ -399,10 +436,13 @@ def _calculate_gap_percentage(close: Any, indicator_value: Any) -> float | None:
     return ((close_price - indicator_price) / indicator_price) * 100
 
 
-def _compress_technical_snapshot(enriched_candles: list[dict[str, Any]]) -> dict[str, Any]:
+def _compress_technical_snapshot(
+    enriched_candles: list[dict[str, Any]],
+    timeframe: str,
+) -> dict[str, Any]:
     if not enriched_candles:
         return {
-            "timeframe": TECHNICAL_TIMEFRAME,
+            "timeframe": timeframe,
             "latest_candle_at": None,
             "close": None,
             "volume": None,
@@ -423,7 +463,7 @@ def _compress_technical_snapshot(enriched_candles: list[dict[str, Any]]) -> dict
     ema_50 = _to_float(latest.get("ema_50"))
 
     return {
-        "timeframe": TECHNICAL_TIMEFRAME,
+        "timeframe": timeframe,
         "latest_candle_at": _format_datetime(latest.get("timestamp")),
         "close": close_price,
         "volume": _to_float(latest.get("volume")),
@@ -452,7 +492,7 @@ async def _build_sentiment_context(db: AsyncSession) -> dict[str, Any]:
     }
 
 
-def _build_empty_context(symbol: str) -> dict[str, Any]:
+def _build_empty_context(symbol: str, timeframe: str) -> dict[str, Any]:
     normalized_symbol = _normalize_symbol(symbol)
     return {
         "symbol": normalized_symbol,
@@ -468,7 +508,7 @@ def _build_empty_context(symbol: str) -> dict[str, Any]:
             "portfolio_error": "NOT_LOADED",
         },
         "technical": {
-            **_compress_technical_snapshot([]),
+            **_compress_technical_snapshot([], timeframe),
             "error": "NOT_LOADED",
         },
         "news": {
@@ -486,7 +526,8 @@ def _build_empty_context(symbol: str) -> dict[str, Any]:
 
 async def gather_market_context(db: AsyncSession, symbol: str) -> dict[str, Any]:
     normalized_symbol = _normalize_symbol(symbol)
-    context = _build_empty_context(normalized_symbol)
+    technical_timeframe = await _resolve_technical_timeframe(db)
+    context = _build_empty_context(normalized_symbol, technical_timeframe)
     market_row: dict[str, Any] | None = None
 
     try:
@@ -504,19 +545,19 @@ async def gather_market_context(db: AsyncSession, symbol: str) -> dict[str, Any]
     try:
         raw_candles = await broker.get_candles(
             market=normalized_symbol,
-            timeframe=TECHNICAL_TIMEFRAME,
+            timeframe=technical_timeframe,
             count=TECHNICAL_CANDLE_COUNT,
         )
         normalized_candles = _normalize_candles(raw_candles)
         enriched_candles = indicator_calculator.calculate_from_candles(normalized_candles)
         context["technical"] = {
-            **_compress_technical_snapshot(enriched_candles),
+            **_compress_technical_snapshot(enriched_candles, technical_timeframe),
             "error": None,
         }
     except Exception as exc:
         logger.warning("AI 기술 지표 컨텍스트 생성 실패: %s", exc, exc_info=True)
         context["technical"] = {
-            **_compress_technical_snapshot([]),
+            **_compress_technical_snapshot([], technical_timeframe),
             "error": "TECHNICAL_CONTEXT_FAILED",
         }
 
