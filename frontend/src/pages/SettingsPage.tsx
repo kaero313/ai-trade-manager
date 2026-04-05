@@ -21,6 +21,10 @@ interface SettingsTabItem {
 interface ScheduleDraft {
   newsIntervalHours: string
   sentimentIntervalMinutes: string
+  autonomousAiIntervalMinutes: string
+  maxAllocationPct: string
+  hardTakeProfitPct: string
+  hardStopLossPct: string
   aiBriefingTime: string
   aiMinConfidenceTrade: string
   aiAnalysisMaxAgeMinutes: string
@@ -34,6 +38,10 @@ interface NoticeState {
 
 const NEWS_INTERVAL_HOURS_KEY = 'news_interval_hours'
 const SENTIMENT_INTERVAL_MINUTES_KEY = 'sentiment_interval_minutes'
+const AUTONOMOUS_AI_INTERVAL_MINUTES_KEY = 'autonomous_ai_interval_minutes'
+const MAX_ALLOCATION_PCT_KEY = 'max_allocation_pct'
+const HARD_TAKE_PROFIT_PCT_KEY = 'hard_take_profit_pct'
+const HARD_STOP_LOSS_PCT_KEY = 'hard_stop_loss_pct'
 const AI_BRIEFING_TIME_KEY = 'ai_briefing_time'
 const AI_MIN_CONFIDENCE_TRADE_KEY = 'ai_min_confidence_trade'
 const AI_ANALYSIS_MAX_AGE_MINUTES_KEY = 'ai_analysis_max_age_minutes'
@@ -112,6 +120,10 @@ function buildScheduleDraft(items: SystemConfigItem[] | undefined): ScheduleDraf
   return {
     newsIntervalHours: findConfigValue(items, NEWS_INTERVAL_HOURS_KEY, '4'),
     sentimentIntervalMinutes: findConfigValue(items, SENTIMENT_INTERVAL_MINUTES_KEY, '5'),
+    autonomousAiIntervalMinutes: findConfigValue(items, AUTONOMOUS_AI_INTERVAL_MINUTES_KEY, '15'),
+    maxAllocationPct: findConfigValue(items, MAX_ALLOCATION_PCT_KEY, '10'),
+    hardTakeProfitPct: findConfigValue(items, HARD_TAKE_PROFIT_PCT_KEY, '5.0'),
+    hardStopLossPct: findConfigValue(items, HARD_STOP_LOSS_PCT_KEY, '-3.0'),
     aiBriefingTime: findConfigValue(items, AI_BRIEFING_TIME_KEY, '08:30'),
     aiMinConfidenceTrade: findConfigValue(items, AI_MIN_CONFIDENCE_TRADE_KEY, '70'),
     aiAnalysisMaxAgeMinutes: findConfigValue(items, AI_ANALYSIS_MAX_AGE_MINUTES_KEY, '90'),
@@ -538,6 +550,30 @@ function ScheduleSettingsPanel() {
         config_value: draft.sentimentIntervalMinutes,
       })
     }
+    if (draft.autonomousAiIntervalMinutes !== current.autonomousAiIntervalMinutes) {
+      updates.push({
+        config_key: AUTONOMOUS_AI_INTERVAL_MINUTES_KEY,
+        config_value: draft.autonomousAiIntervalMinutes,
+      })
+    }
+    if (draft.maxAllocationPct !== current.maxAllocationPct) {
+      updates.push({
+        config_key: MAX_ALLOCATION_PCT_KEY,
+        config_value: draft.maxAllocationPct,
+      })
+    }
+    if (draft.hardTakeProfitPct !== current.hardTakeProfitPct) {
+      updates.push({
+        config_key: HARD_TAKE_PROFIT_PCT_KEY,
+        config_value: draft.hardTakeProfitPct,
+      })
+    }
+    if (draft.hardStopLossPct !== current.hardStopLossPct) {
+      updates.push({
+        config_key: HARD_STOP_LOSS_PCT_KEY,
+        config_value: draft.hardStopLossPct,
+      })
+    }
     if (draft.aiBriefingTime !== current.aiBriefingTime) {
       updates.push({
         config_key: AI_BRIEFING_TIME_KEY,
@@ -564,7 +600,7 @@ function ScheduleSettingsPanel() {
     }
 
     if (updates.length === 0) {
-      setNotice({ type: 'info', message: '변경된 시스템 주기 설정이 없습니다.' })
+      setNotice({ type: 'info', message: '변경된 시스템 설정이 없습니다.' })
       return
     }
 
@@ -572,12 +608,12 @@ function ScheduleSettingsPanel() {
       await updateSystemConfigsMutation.mutateAsync(updates)
       setNotice({
         type: 'success',
-        message: '시스템 주기가 저장되었고 백그라운드 워커에 즉시 반영되었습니다.',
+        message: '시스템 설정이 저장되었고 백그라운드 워커에 즉시 반영되었습니다.',
       })
     } catch (error) {
       setNotice({
         type: 'error',
-        message: resolveErrorMessage(error, '시스템 주기 설정을 저장하지 못했습니다.'),
+        message: resolveErrorMessage(error, '시스템 설정을 저장하지 못했습니다.'),
       })
     }
   }
@@ -598,8 +634,8 @@ function ScheduleSettingsPanel() {
           />
         </div>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
-          시황 뉴스 수집 주기, 심리지수 캐싱 주기, 일일 AI 브리핑 시각을 운영 중에도 조정할 수 있는
-          런타임 제어 구역입니다.
+          시황 뉴스 수집 주기, 심리지수 캐싱 주기, AI 자율 분석 빈도, 포지션 한도, 하드 TP/SL 기준을
+          운영 중에도 조정할 수 있는 런타임 제어 구역입니다.
         </p>
       </header>
 
@@ -607,13 +643,13 @@ function ScheduleSettingsPanel() {
         {systemConfigsQuery.isLoading && (
           <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-gray-500 dark:text-gray-300">
             <Loader2 className="h-5 w-5 animate-spin" />
-            시스템 주기 설정을 불러오는 중입니다.
+            시스템 설정을 불러오는 중입니다.
           </div>
         )}
 
         {systemConfigsQuery.isError && (
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
-            시스템 주기 설정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
+            시스템 설정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
           </div>
         )}
 
@@ -681,6 +717,114 @@ function ScheduleSettingsPanel() {
                 </select>
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                   현재 추천값은 5분입니다.
+                </p>
+              </label>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
+                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <span>AI 자율 분석 주기 (분)</span>
+                  <InfoTooltip
+                    title="AI 자율 분석 주기 (분)"
+                    content="AI 자율 분석과 실전 집행 루프가 몇 분마다 한 번씩 동작할지 정합니다. 값이 짧을수록 시장 반응은 빨라지지만 외부 API 호출량이 늘어납니다."
+                  />
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  value={draft.autonomousAiIntervalMinutes}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      autonomousAiIntervalMinutes: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                />
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  추천값: 15분 (짧을수록 반응은 빠르지만 API 호출량 증가)
+                </p>
+              </label>
+
+              <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
+                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <span>종목당 최대 배팅 비중 (%)</span>
+                  <InfoTooltip
+                    title="종목당 최대 배팅 비중 (%)"
+                    content="AI 매수 예산을 계산할 때 총 순자산 대비 종목별 최대 노출 상한으로 쓰입니다. 값이 높을수록 한 종목에 더 큰 비중을 허용합니다."
+                  />
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={draft.maxAllocationPct}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      maxAllocationPct: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                />
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  추천값: 10% (총 순자산 대비 종목당 최대 노출)
+                </p>
+              </label>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
+                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <span>하드 익절 기준 (%)</span>
+                  <InfoTooltip
+                    title="하드 익절 기준 (%)"
+                    content="이 값 이상 수익이 난 포지션은 AI 판단을 기다리지 않고 즉시 전량 시장가 매도로 정리합니다. 0이면 기능이 비활성화됩니다."
+                  />
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={draft.hardTakeProfitPct}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      hardTakeProfitPct: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                />
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  0이면 비활성화, 예: 5.0
+                </p>
+              </label>
+
+              <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
+                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  <span>하드 손절 기준 (%)</span>
+                  <InfoTooltip
+                    title="하드 손절 기준 (%)"
+                    content="Flash Crash 방어용 즉시 청산 기준입니다. 손실률이 이 값 이하로 내려가면 AI 판단을 기다리지 않고 전량 시장가 매도합니다. 0이면 기능이 비활성화됩니다."
+                  />
+                </span>
+                <input
+                  type="number"
+                  max="0"
+                  step="0.1"
+                  value={draft.hardStopLossPct}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      hardStopLossPct: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                />
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  0이면 비활성화, 예: -3.0
                 </p>
               </label>
             </div>
@@ -836,7 +980,7 @@ function ScheduleSettingsPanel() {
                 className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {updateSystemConfigsMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                <span>{updateSystemConfigsMutation.isPending ? '저장 중...' : '주기 설정 저장'}</span>
+                <span>{updateSystemConfigsMutation.isPending ? '저장 중...' : '시스템 설정 저장'}</span>
               </button>
             </div>
           </>
