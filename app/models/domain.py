@@ -24,6 +24,7 @@ class Position(Base):
     avg_entry_price: Mapped[float] = mapped_column(Float, nullable=False)
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
+    is_paper: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -44,6 +45,7 @@ class OrderHistory(Base):
     )
     side: Mapped[str] = mapped_column(String, nullable=False)
     order_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_paper: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     qty: Mapped[float] = mapped_column(Float, nullable=False)
     broker: Mapped[str] = mapped_column(String, nullable=False)
