@@ -92,6 +92,7 @@ const SETTINGS_TABS: SettingsTabItem[] = [
 
 const NEWS_INTERVAL_OPTIONS = ['1', '2', '4', '6', '8', '12']
 const SENTIMENT_INTERVAL_OPTIONS = ['1', '5', '10', '15', '30']
+const AUTONOMOUS_AI_INTERVAL_OPTIONS = ['15', '30', '60', '120', '240']
 
 function resolveErrorMessage(error: unknown, fallback: string): string {
   if (isAxiosError(error)) {
@@ -730,9 +731,7 @@ function ScheduleSettingsPanel() {
                     content="AI 자율 분석과 실전 집행 루프가 몇 분마다 한 번씩 동작할지 정합니다. 값이 짧을수록 시장 반응은 빨라지지만 외부 API 호출량이 늘어납니다."
                   />
                 </span>
-                <input
-                  type="number"
-                  min="1"
+                <select
                   value={draft.autonomousAiIntervalMinutes}
                   onChange={(event) =>
                     setDraft((current) => ({
@@ -741,7 +740,13 @@ function ScheduleSettingsPanel() {
                     }))
                   }
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
-                />
+                >
+                  {AUTONOMOUS_AI_INTERVAL_OPTIONS.map((value) => (
+                    <option key={value} value={value}>
+                      {value}분마다
+                    </option>
+                  ))}
+                </select>
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                   추천값: 15분 (짧을수록 반응은 빠르지만 API 호출량 증가)
                 </p>
