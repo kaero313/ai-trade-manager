@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.scheduler import reload_scheduler_jobs
 from app.db.repository import AI_BRIEFING_TIME_KEY
 from app.db.repository import AUTONOMOUS_AI_INTERVAL_HOURS_KEY
+from app.db.repository import AUTONOMOUS_AI_INTERVAL_MINUTES_KEY
 from app.db.repository import NEWS_INTERVAL_HOURS_KEY
 from app.db.repository import SENTIMENT_INTERVAL_MINUTES_KEY
 from app.db.repository import bulk_upsert_system_configs
@@ -22,6 +23,7 @@ SCHEDULER_CONFIG_KEYS = {
     SENTIMENT_INTERVAL_MINUTES_KEY,
     AI_BRIEFING_TIME_KEY,
     AUTONOMOUS_AI_INTERVAL_HOURS_KEY,
+    AUTONOMOUS_AI_INTERVAL_MINUTES_KEY,
 }
 
 

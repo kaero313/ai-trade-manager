@@ -5,13 +5,16 @@ from datetime import datetime, timezone
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.base import BaseTrigger
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import desc, select
 
 from app.api.routes.ai import analyze_portfolio
 from app.api.routes.news import get_news_sentiment
 from app.db.repository import AI_BRIEFING_TIME_KEY
 from app.db.repository import AUTONOMOUS_AI_INTERVAL_HOURS_KEY
+from app.db.repository import AUTONOMOUS_AI_INTERVAL_MINUTES_KEY
 from app.db.repository import NEWS_INTERVAL_HOURS_KEY
 from app.db.repository import SENTIMENT_INTERVAL_MINUTES_KEY
 from app.db.repository import get_system_config_value
@@ -38,6 +41,7 @@ DEFAULT_SENTIMENT_INTERVAL_MINUTES = 5
 DEFAULT_AI_BRIEFING_HOUR = 8
 DEFAULT_AI_BRIEFING_MINUTE = 30
 DEFAULT_AUTONOMOUS_AI_INTERVAL_HOURS = 1
+DEFAULT_AUTONOMOUS_AI_INTERVAL_MINUTES = DEFAULT_AUTONOMOUS_AI_INTERVAL_HOURS * 60
 AUTONOMOUS_AI_ANALYST_SYMBOL_DELAY_SECONDS = 2
 
 scheduler = AsyncIOScheduler(timezone=SCHEDULER_TIMEZONE)
@@ -50,17 +54,20 @@ class SchedulerRuntimeConfig:
     sentiment_interval_minutes: int = DEFAULT_SENTIMENT_INTERVAL_MINUTES
     ai_briefing_hour: int = DEFAULT_AI_BRIEFING_HOUR
     ai_briefing_minute: int = DEFAULT_AI_BRIEFING_MINUTE
-    autonomous_ai_interval_hours: int = DEFAULT_AUTONOMOUS_AI_INTERVAL_HOURS
+    autonomous_ai_interval_minutes: int = DEFAULT_AUTONOMOUS_AI_INTERVAL_MINUTES
 
 
-def _parse_interval_hours(raw_value: str | None) -> int:
+def _parse_interval_hours(
+    raw_value: str | None,
+    default: int = DEFAULT_NEWS_INTERVAL_HOURS,
+) -> int:
     try:
         value = int(str(raw_value).strip())
     except (TypeError, ValueError, AttributeError):
-        return DEFAULT_NEWS_INTERVAL_HOURS
+        return default
 
     if value <= 0 or value >= 24:
-        return DEFAULT_NEWS_INTERVAL_HOURS
+        return default
     return value
 
 
@@ -72,6 +79,17 @@ def _parse_interval_minutes(raw_value: str | None) -> int:
 
     if value <= 0 or value >= 60:
         return DEFAULT_SENTIMENT_INTERVAL_MINUTES
+    return value
+
+
+def _parse_autonomous_ai_interval_minutes(raw_value: str | None) -> int | None:
+    try:
+        value = int(str(raw_value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+    if value <= 0:
+        return None
     return value
 
 
@@ -102,16 +120,22 @@ async def load_scheduler_runtime_config() -> SchedulerRuntimeConfig:
         ai_briefing_hour, ai_briefing_minute = _parse_ai_briefing_time(
             await get_system_config_value(db, AI_BRIEFING_TIME_KEY)
         )
-        autonomous_ai_interval_hours = _parse_interval_hours(
-            await get_system_config_value(db, AUTONOMOUS_AI_INTERVAL_HOURS_KEY)
+        autonomous_ai_interval_minutes = _parse_autonomous_ai_interval_minutes(
+            await get_system_config_value(db, AUTONOMOUS_AI_INTERVAL_MINUTES_KEY)
         )
+        if autonomous_ai_interval_minutes is None:
+            autonomous_ai_interval_hours = _parse_interval_hours(
+                await get_system_config_value(db, AUTONOMOUS_AI_INTERVAL_HOURS_KEY),
+                default=DEFAULT_AUTONOMOUS_AI_INTERVAL_HOURS,
+            )
+            autonomous_ai_interval_minutes = autonomous_ai_interval_hours * 60
 
     return SchedulerRuntimeConfig(
         news_interval_hours=news_interval_hours,
         sentiment_interval_minutes=sentiment_interval_minutes,
         ai_briefing_hour=ai_briefing_hour,
         ai_briefing_minute=ai_briefing_minute,
-        autonomous_ai_interval_hours=autonomous_ai_interval_hours,
+        autonomous_ai_interval_minutes=autonomous_ai_interval_minutes,
     )
 
 
@@ -138,10 +162,9 @@ def _build_market_sentiment_trigger(runtime_config: SchedulerRuntimeConfig) -> C
     )
 
 
-def _build_autonomous_ai_analyst_trigger(runtime_config: SchedulerRuntimeConfig) -> CronTrigger:
-    return CronTrigger(
-        hour=f"*/{runtime_config.autonomous_ai_interval_hours}",
-        minute=0,
+def _build_autonomous_ai_analyst_trigger(runtime_config: SchedulerRuntimeConfig) -> IntervalTrigger:
+    return IntervalTrigger(
+        minutes=runtime_config.autonomous_ai_interval_minutes,
         timezone=SCHEDULER_TIMEZONE,
     )
 
@@ -156,7 +179,7 @@ def _build_ai_accuracy_check_trigger() -> CronTrigger:
 def _upsert_scheduler_job(
     job_id: str,
     func,
-    trigger: CronTrigger,
+    trigger: BaseTrigger,
     kwargs: dict[str, Any] | None = None,
 ) -> None:
     existing_job = scheduler.get_job(job_id)
@@ -227,12 +250,12 @@ async def reload_scheduler_jobs() -> SchedulerRuntimeConfig:
     register_autonomous_ai_analyst_jobs(runtime_config)
     register_ai_accuracy_jobs(runtime_config)
     logger.info(
-        "Scheduler jobs reloaded: news_interval_hours=%s sentiment_interval_minutes=%s ai_briefing_time=%02d:%02d autonomous_ai_interval_hours=%s",
+        "Scheduler jobs reloaded: news_interval_hours=%s sentiment_interval_minutes=%s ai_briefing_time=%02d:%02d autonomous_ai_interval_minutes=%s",
         runtime_config.news_interval_hours,
         runtime_config.sentiment_interval_minutes,
         runtime_config.ai_briefing_hour,
         runtime_config.ai_briefing_minute,
-        runtime_config.autonomous_ai_interval_hours,
+        runtime_config.autonomous_ai_interval_minutes,
     )
     return runtime_config
 
