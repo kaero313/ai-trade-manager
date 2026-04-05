@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repository import AI_ANALYSIS_MAX_AGE_MINUTES_KEY
 from app.db.repository import AI_MIN_CONFIDENCE_TRADE_KEY
+from app.db.repository import MAX_ALLOCATION_PCT_KEY
 from app.db.repository import get_system_config_value
 from app.models.domain import AIAnalysisLog, Asset, OrderHistory, Position
 from app.schemas.portfolio import AssetItem, PortfolioSummary
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_AI_MIN_CONFIDENCE_TRADE = 70
 DEFAULT_AI_ANALYSIS_MAX_AGE_MINUTES = 90
+DEFAULT_MAX_ALLOCATION_PCT = 10.0
 MIN_ORDER_KRW = 5000.0
 
 
@@ -75,6 +77,23 @@ def _parse_int_config(
     return parsed
 
 
+def _parse_float_config(
+    raw_value: str | None,
+    *,
+    default: float,
+    minimum: float,
+    maximum: float,
+) -> float:
+    try:
+        parsed = float(str(raw_value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return default
+
+    if parsed < minimum or parsed > maximum:
+        return default
+    return parsed
+
+
 def _find_portfolio_item(portfolio: PortfolioSummary, currency: str) -> AssetItem | None:
     normalized_currency = str(currency or "").strip().upper()
     for item in portfolio.items:
@@ -119,6 +138,20 @@ async def _load_executor_thresholds(db: AsyncSession) -> tuple[int, int]:
         maximum=24 * 60,
     )
     return min_confidence, max_age_minutes
+
+
+async def _load_max_allocation_pct(db: AsyncSession) -> float:
+    raw_value = await get_system_config_value(
+        db,
+        MAX_ALLOCATION_PCT_KEY,
+        default=str(DEFAULT_MAX_ALLOCATION_PCT),
+    )
+    return _parse_float_config(
+        raw_value,
+        default=DEFAULT_MAX_ALLOCATION_PCT,
+        minimum=0.0,
+        maximum=100.0,
+    )
 
 
 async def _load_latest_analysis(db: AsyncSession, symbol: str) -> AIAnalysisLog | None:
@@ -287,31 +320,66 @@ async def _execute_buy_trade(
     portfolio: PortfolioSummary,
 ) -> None:
     quote_currency = _extract_quote_currency(symbol)
+    target_currency = _extract_target_currency(symbol)
     cash_item = _find_portfolio_item(portfolio, quote_currency)
+    target_item = _find_portfolio_item(portfolio, target_currency)
     available_krw = _available_amount(cash_item)
 
     if available_krw <= 0:
         logger.info("AI 매수 스킵: 사용 가능한 %s 잔고가 없습니다. symbol=%s", quote_currency, symbol)
         return
 
-    fee_buffer = 0.995  # 0.5% 여유분 (업비트 수수료 0.05% 대비 충분한 버퍼)
-    safe_available_krw = available_krw * fee_buffer
-    order_amount_krw = min(
-        _resolve_weighted_amount(safe_available_krw, analysis.recommended_weight),
-        safe_available_krw,
-    )
-    if order_amount_krw < MIN_ORDER_KRW:
+    total_krw = max(_to_float(portfolio.total_net_worth), 0.0)
+    max_allocation_pct = await _load_max_allocation_pct(db)
+    max_budget = total_krw * (max_allocation_pct / 100.0)
+    current_position_value = max(_to_float(target_item.total_value) if target_item is not None else 0.0, 0.0)
+    remaining_budget = max(max_budget - current_position_value, 0.0)
+
+    if remaining_budget <= 0:
         logger.info(
-            "AI 매수 스킵: 최소 주문 금액 미만입니다. symbol=%s amount=%s",
+            "AI 매수 스킵: 종목당 최대 비중 한도에 도달했습니다. symbol=%s total_krw=%s max_budget=%s current_position_value=%s",
             symbol,
+            total_krw,
+            max_budget,
+            current_position_value,
+        )
+        return
+
+    target_budget = _resolve_weighted_amount(remaining_budget, analysis.recommended_weight)
+    if target_budget <= 0:
+        logger.info(
+            "AI 매수 스킵: 계산된 목표 예산이 0 이하입니다. symbol=%s target_budget=%s remaining_budget=%s",
+            symbol,
+            target_budget,
+            remaining_budget,
+        )
+        return
+
+    fee_buffer = 0.995  # 0.5% 여유분 (업비트 수수료 0.05% 대비 충분한 버퍼)
+    order_amount_krw = target_budget * fee_buffer
+    if order_amount_krw < MIN_ORDER_KRW:
+        order_amount_krw = MIN_ORDER_KRW
+
+    if order_amount_krw > available_krw:
+        logger.info(
+            "AI 매수 스킵: 가용 KRW보다 주문 금액이 큽니다. symbol=%s available_krw=%s order_amount=%s target_budget=%s",
+            symbol,
+            available_krw,
             order_amount_krw,
+            target_budget,
         )
         return
 
     broker = BrokerFactory.get_broker("UPBIT")
     logger.info(
-        "AI 매수 시도: symbol=%s total_avail=%s order_amount=%s",
+        "AI 매수 시도: symbol=%s total_krw=%s max_allocation_pct=%s max_budget=%s current_position_value=%s remaining_budget=%s target_budget=%s total_avail=%s order_amount=%s",
         symbol,
+        total_krw,
+        max_allocation_pct,
+        max_budget,
+        current_position_value,
+        remaining_budget,
+        target_budget,
         available_krw,
         order_amount_krw,
     )
