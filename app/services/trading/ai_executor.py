@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repository import AI_ANALYSIS_MAX_AGE_MINUTES_KEY
 from app.db.repository import AI_MIN_CONFIDENCE_TRADE_KEY
+from app.db.repository import HARD_STOP_LOSS_PCT_KEY
+from app.db.repository import HARD_TAKE_PROFIT_PCT_KEY
 from app.db.repository import MAX_ALLOCATION_PCT_KEY
 from app.db.repository import get_system_config_value
 from app.models.domain import AIAnalysisLog, Asset, OrderHistory, Position
@@ -22,7 +24,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_AI_MIN_CONFIDENCE_TRADE = 70
 DEFAULT_AI_ANALYSIS_MAX_AGE_MINUTES = 90
 DEFAULT_MAX_ALLOCATION_PCT = 10.0
+DEFAULT_HARD_TAKE_PROFIT_PCT = 0.0
+DEFAULT_HARD_STOP_LOSS_PCT = 0.0
 MIN_ORDER_KRW = 5000.0
+ORDER_REASON_TP_SELL = "TP_SELL"
+ORDER_REASON_SL_SELL = "SL_SELL"
 
 
 def _normalize_symbol(symbol: str) -> str:
@@ -154,6 +160,33 @@ async def _load_max_allocation_pct(db: AsyncSession) -> float:
     )
 
 
+async def _load_hard_tp_sl_thresholds(db: AsyncSession) -> tuple[float, float]:
+    take_profit_raw = await get_system_config_value(
+        db,
+        HARD_TAKE_PROFIT_PCT_KEY,
+        default=str(DEFAULT_HARD_TAKE_PROFIT_PCT),
+    )
+    stop_loss_raw = await get_system_config_value(
+        db,
+        HARD_STOP_LOSS_PCT_KEY,
+        default=str(DEFAULT_HARD_STOP_LOSS_PCT),
+    )
+
+    hard_take_profit_pct = _parse_float_config(
+        take_profit_raw,
+        default=DEFAULT_HARD_TAKE_PROFIT_PCT,
+        minimum=0.0,
+        maximum=1000.0,
+    )
+    hard_stop_loss_pct = _parse_float_config(
+        stop_loss_raw,
+        default=DEFAULT_HARD_STOP_LOSS_PCT,
+        minimum=-1000.0,
+        maximum=0.0,
+    )
+    return hard_take_profit_pct, hard_stop_loss_pct
+
+
 async def _load_latest_analysis(db: AsyncSession, symbol: str) -> AIAnalysisLog | None:
     result = await db.execute(
         select(AIAnalysisLog)
@@ -243,15 +276,16 @@ async def _get_or_create_position(db: AsyncSession, asset_id: int, fallback_pric
     return position
 
 
-async def _record_ai_order_history(
+async def _record_order_history(
     *,
     db: AsyncSession,
     symbol: str,
-    analysis: AIAnalysisLog,
+    analysis: AIAnalysisLog | None,
     side: str,
     order_result: dict[str, Any],
     fallback_price: float,
     fallback_qty: float,
+    order_reason: str | None = None,
 ) -> None:
     resolved_price = _resolve_order_price(order_result, fallback_price)
     resolved_qty = _resolve_order_qty(order_result, fallback_qty)
@@ -273,8 +307,9 @@ async def _record_ai_order_history(
         db.add(
             OrderHistory(
                 position_id=position.id,
-                ai_analysis_log_id=analysis.id,
+                ai_analysis_log_id=analysis.id if analysis is not None else None,
                 side=side,
+                order_reason=order_reason,
                 price=resolved_price,
                 qty=resolved_qty,
                 broker="UPBIT",
@@ -310,6 +345,122 @@ async def _send_trade_notification(
         )
     except Exception as exc:
         logger.warning("Slack 자율 체결 알림 전송 실패: %s", exc, exc_info=True)
+
+
+async def execute_hard_tp_sl_check(db: AsyncSession) -> set[str]:
+    hard_take_profit_pct, hard_stop_loss_pct = await _load_hard_tp_sl_thresholds(db)
+    tp_enabled = hard_take_profit_pct > 0
+    sl_enabled = hard_stop_loss_pct < 0
+
+    if not tp_enabled and not sl_enabled:
+        logger.info("하드 TP/SL 체크 우회: TP/SL 임계값이 모두 비활성화되었습니다.")
+        return set()
+
+    portfolio = await PortfolioService(db).get_aggregated_portfolio()
+    if portfolio.error is not None:
+        logger.warning("하드 TP/SL 체크 스킵: 포트폴리오 조회 실패 error=%s", portfolio.error)
+        return set()
+
+    broker = BrokerFactory.get_broker("UPBIT")
+    liquidated_symbols: set[str] = set()
+
+    for item in portfolio.items:
+        currency = str(item.currency or "").strip().upper()
+        if not currency or currency == "KRW":
+            continue
+
+        available_qty = _available_amount(item)
+        if available_qty <= 0:
+            continue
+
+        pnl_percentage = _to_float(item.pnl_percentage)
+        trigger_reason: str | None = None
+        if tp_enabled and pnl_percentage >= hard_take_profit_pct:
+            trigger_reason = ORDER_REASON_TP_SELL
+        elif sl_enabled and pnl_percentage <= hard_stop_loss_pct:
+            trigger_reason = ORDER_REASON_SL_SELL
+
+        if trigger_reason is None:
+            continue
+
+        symbol = _normalize_symbol(f"KRW-{currency}")
+        try:
+            current_price = await _resolve_current_price(symbol, item)
+        except (ValueError, UpbitAPIError) as exc:
+            logger.warning(
+                "하드 TP/SL 현재가 조회 실패: symbol=%s error=%s",
+                symbol,
+                exc,
+                exc_info=True,
+            )
+            continue
+        except Exception as exc:
+            logger.error(
+                "하드 TP/SL 현재가 조회 중 예기치 못한 오류: symbol=%s error=%s",
+                symbol,
+                exc,
+                exc_info=True,
+            )
+            continue
+
+        estimated_order_value = available_qty * current_price
+        if estimated_order_value < MIN_ORDER_KRW:
+            logger.info(
+                "하드 TP/SL 스킵: 최소 주문 금액 미만입니다. symbol=%s reason=%s estimated_value=%s",
+                symbol,
+                trigger_reason,
+                estimated_order_value,
+            )
+            continue
+
+        try:
+            raw_order = await broker.create_order(
+                market=symbol,
+                side="ask",
+                ord_type="market",
+                volume=_fmt_number(available_qty),
+            )
+        except (ValueError, UpbitAPIError) as exc:
+            logger.warning(
+                "하드 TP/SL 시장가 매도 실패: symbol=%s reason=%s error=%s",
+                symbol,
+                trigger_reason,
+                exc,
+                exc_info=True,
+            )
+            continue
+        except Exception as exc:
+            logger.error(
+                "하드 TP/SL 시장가 매도 중 예기치 못한 오류: symbol=%s reason=%s error=%s",
+                symbol,
+                trigger_reason,
+                exc,
+                exc_info=True,
+            )
+            continue
+
+        order_result = raw_order if isinstance(raw_order, dict) else {}
+        liquidated_symbols.add(symbol)
+        logger.info(
+            "하드 TP/SL 시장가 매도 성공: symbol=%s reason=%s pnl_percentage=%s qty=%s uuid=%s",
+            symbol,
+            trigger_reason,
+            pnl_percentage,
+            available_qty,
+            order_result.get("uuid"),
+        )
+        await _record_order_history(
+            db=db,
+            symbol=symbol,
+            analysis=None,
+            side="sell",
+            order_result=order_result,
+            fallback_price=current_price,
+            fallback_qty=available_qty,
+            order_reason=trigger_reason,
+        )
+
+    return liquidated_symbols
 
 
 async def _execute_buy_trade(
@@ -413,7 +564,7 @@ async def _execute_buy_trade(
             logger.warning("AI 매수 체결가 보정 실패: symbol=%s error=%s", symbol, exc, exc_info=True)
             fallback_price = 0.0
     fallback_qty = order_amount_krw / fallback_price if fallback_price > 0 else 0.0
-    await _record_ai_order_history(
+    await _record_order_history(
         db=db,
         symbol=symbol,
         analysis=analysis,
@@ -495,7 +646,7 @@ async def _execute_sell_trade(
         analysis.recommended_weight,
         order_result.get("uuid"),
     )
-    await _record_ai_order_history(
+    await _record_order_history(
         db=db,
         symbol=symbol,
         analysis=analysis,

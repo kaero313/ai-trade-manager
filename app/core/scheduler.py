@@ -24,6 +24,7 @@ from app.services.market.sentiment_fetcher import refresh_market_sentiment_cache
 from app.services.rag.ingestion import run_market_news_ingestion_job
 from app.services.trading.accuracy_worker import update_ai_analysis_accuracy
 from app.services.trading.ai_analyst import execute_ai_analysis
+from app.services.trading.ai_executor import execute_hard_tp_sl_check
 from app.services.trading.ai_executor import execute_ai_trade
 
 logger = logging.getLogger(__name__)
@@ -328,7 +329,21 @@ async def ai_accuracy_check_job() -> None:
 
 async def autonomous_ai_analyst_job() -> None:
     try:
+        liquidated_symbols: set[str] = set()
         async with AsyncSessionLocal() as db:
+            try:
+                liquidated_symbols = await execute_hard_tp_sl_check(db)
+                if liquidated_symbols:
+                    logger.info(
+                        "하드 TP/SL 선제 청산 완료: liquidated_symbols=%s",
+                        sorted(liquidated_symbols),
+                    )
+            except Exception:
+                logger.error(
+                    "하드 TP/SL 선제 청산 작업이 실패했습니다. 기존 AI 분석 루프는 계속 진행합니다.",
+                    exc_info=True,
+                )
+
             result = await db.execute(
                 select(Favorite.symbol).order_by(desc(Favorite.created_at), desc(Favorite.id))
             )
@@ -337,6 +352,12 @@ async def autonomous_ai_analyst_job() -> None:
                 for symbol in result.scalars().all()
                 if str(symbol).strip()
             ]
+            if liquidated_symbols:
+                symbols = [
+                    symbol
+                    for symbol in symbols
+                    if symbol not in liquidated_symbols
+                ]
 
         if not symbols:
             logger.info("Watchlist 자율주행 AI 분석 대상이 없습니다.")

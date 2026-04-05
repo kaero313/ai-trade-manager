@@ -43,6 +43,7 @@ class OrderHistory(Base):
         index=True,
     )
     side: Mapped[str] = mapped_column(String, nullable=False)
+    order_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     price: Mapped[float] = mapped_column(Float, nullable=False)
     qty: Mapped[float] = mapped_column(Float, nullable=False)
     broker: Mapped[str] = mapped_column(String, nullable=False)
