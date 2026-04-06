@@ -10,14 +10,18 @@ from app.db.repository import AI_MIN_CONFIDENCE_TRADE_KEY
 from app.db.repository import HARD_STOP_LOSS_PCT_KEY
 from app.db.repository import HARD_TAKE_PROFIT_PCT_KEY
 from app.db.repository import MAX_ALLOCATION_PCT_KEY
+from app.db.repository import PAPER_TRADING_KRW_BALANCE_KEY
 from app.db.repository import get_system_config_value
-from app.models.domain import AIAnalysisLog, Asset, OrderHistory, Position
+from app.models.domain import AIAnalysisLog, Asset, OrderHistory, Position, SystemConfig
 from app.schemas.portfolio import AssetItem, PortfolioSummary
 from app.services.bot_service import get_bot_status
 from app.services.brokers.factory import BrokerFactory
 from app.services.brokers.upbit import UpbitAPIError
 from app.services.portfolio.aggregator import PortfolioService
 from app.services.slack import slack_client
+from app.services.trading.paper import DEFAULT_PAPER_KRW_BALANCE
+from app.services.trading.paper import PAPER_BALANCE_DESCRIPTION
+from app.services.trading.paper import PAPER_BROKER_NAME
 from app.services.trading.paper import apply_paper_fill
 from app.services.trading.paper import build_paper_order_result
 from app.services.trading.paper import get_trading_mode
@@ -288,6 +292,24 @@ async def _get_or_create_position(
     return position
 
 
+async def _get_or_create_paper_cash_config(db: AsyncSession) -> SystemConfig:
+    result = await db.execute(
+        select(SystemConfig).where(SystemConfig.config_key == PAPER_TRADING_KRW_BALANCE_KEY)
+    )
+    config = result.scalar_one_or_none()
+    if config is not None:
+        return config
+
+    config = SystemConfig(
+        config_key=PAPER_TRADING_KRW_BALANCE_KEY,
+        config_value=_fmt_number(DEFAULT_PAPER_KRW_BALANCE),
+        description=PAPER_BALANCE_DESCRIPTION,
+    )
+    db.add(config)
+    await db.flush()
+    return config
+
+
 async def _record_order_history(
     *,
     db: AsyncSession,
@@ -299,7 +321,8 @@ async def _record_order_history(
     fallback_qty: float,
     order_reason: str | None = None,
     is_paper: bool = False,
-) -> None:
+    broker_name: str = "UPBIT",
+) -> bool:
     resolved_price = _resolve_order_price(order_result, fallback_price)
     resolved_qty = _resolve_order_qty(order_result, fallback_qty)
     if resolved_price <= 0 or resolved_qty <= 0:
@@ -310,7 +333,7 @@ async def _record_order_history(
             resolved_price,
             resolved_qty,
         )
-        return
+        return False
 
     executed_at = _parse_datetime(order_result.get("created_at")) or datetime.now(UTC)
 
@@ -326,14 +349,16 @@ async def _record_order_history(
                 is_paper=is_paper,
                 price=resolved_price,
                 qty=resolved_qty,
-                broker="UPBIT",
+                broker=broker_name,
                 executed_at=executed_at,
             )
         )
         await db.commit()
+        return True
     except Exception as exc:
         await db.rollback()
         logger.warning("AI 주문 이력 기록 실패: symbol=%s side=%s error=%s", symbol, side, exc, exc_info=True)
+        return False
 
 
 async def _send_trade_notification(
@@ -496,7 +521,7 @@ async def execute_hard_tp_sl_check(db: AsyncSession) -> set[str]:
                 continue
 
             order_result = raw_order if isinstance(raw_order, dict) else {}
-            await _record_order_history(
+            history_recorded = await _record_order_history(
                 db=db,
                 symbol=symbol,
                 analysis=None,
@@ -507,6 +532,8 @@ async def execute_hard_tp_sl_check(db: AsyncSession) -> set[str]:
                 order_reason=trigger_reason,
                 is_paper=False,
             )
+            if not history_recorded:
+                continue
 
         liquidated_symbols.add(symbol)
         logger.info(
@@ -595,8 +622,9 @@ async def _execute_buy_trade(
         trading_mode,
     )
     if trading_mode == "paper":
+        broker = BrokerFactory.get_broker("UPBIT")
         try:
-            executed_price = await _resolve_current_price(symbol, target_item)
+            tickers = await broker.get_ticker([symbol])
         except (ValueError, UpbitAPIError) as exc:
             logger.warning("AI paper 매수 스킵: 현재가 조회 실패 symbol=%s error=%s", symbol, exc, exc_info=True)
             return
@@ -604,11 +632,16 @@ async def _execute_buy_trade(
             logger.error("AI paper 매수 현재가 조회 중 예기치 못한 오류: symbol=%s error=%s", symbol, exc, exc_info=True)
             return
 
+        executed_price = _to_float(tickers[0].get("trade_price")) if tickers else 0.0
         if executed_price <= 0:
             logger.info("AI paper 매수 스킵: 현재가가 유효하지 않습니다. symbol=%s", symbol)
             return
 
-        executed_qty = order_amount_krw / executed_price
+        executed_qty = (order_amount_krw / executed_price) * 0.9995
+        if executed_qty <= 0:
+            logger.info("AI paper 매수 스킵: 계산된 체결 수량이 0 이하입니다. symbol=%s", symbol)
+            return
+
         executed_at = datetime.now(UTC)
         order_result = build_paper_order_result(
             market=symbol,
@@ -619,20 +652,50 @@ async def _execute_buy_trade(
             executed_at=executed_at,
         )
         try:
-            await apply_paper_fill(
+            cash_config = await _get_or_create_paper_cash_config(db)
+            current_paper_balance = _to_float(cash_config.config_value)
+            if current_paper_balance < 0:
+                current_paper_balance = DEFAULT_PAPER_KRW_BALANCE
+
+            if order_amount_krw > current_paper_balance:
+                logger.info(
+                    "AI paper 매수 스킵: 가상 KRW 잔고보다 주문 금액이 큽니다. symbol=%s paper_balance=%s order_amount=%s",
+                    symbol,
+                    current_paper_balance,
+                    order_amount_krw,
+                )
+                return
+
+            asset = await _get_or_create_asset(db, symbol)
+            position = await _get_or_create_position(
+                db,
+                asset.id,
+                executed_price,
+                is_paper=True,
+            )
+            previous_qty = max(_to_float(position.quantity), 0.0)
+            previous_cost = previous_qty * max(_to_float(position.avg_entry_price), 0.0)
+            new_qty = previous_qty + executed_qty
+            total_cost = previous_cost + order_amount_krw
+
+            position.avg_entry_price = total_cost / new_qty if new_qty > 0 else executed_price
+            position.quantity = new_qty
+            position.status = "open"
+            cash_config.config_value = _fmt_number(max(current_paper_balance - order_amount_krw, 0.0))
+
+            history_recorded = await _record_order_history(
                 db=db,
                 symbol=symbol,
+                analysis=analysis,
                 side="buy",
-                executed_price=executed_price,
-                executed_qty=executed_qty,
-                executed_at=executed_at,
-                ai_analysis_log_id=analysis.id,
+                order_result=order_result,
+                fallback_price=executed_price,
+                fallback_qty=executed_qty,
+                is_paper=True,
+                broker_name=PAPER_BROKER_NAME,
             )
-            await db.commit()
-        except ValueError as exc:
-            await db.rollback()
-            logger.info("AI paper 매수 스킵: symbol=%s error=%s", symbol, exc)
-            return
+            if not history_recorded:
+                return
         except Exception as exc:
             await db.rollback()
             logger.error("AI paper 매수 적용 중 예기치 못한 오류: symbol=%s error=%s", symbol, exc, exc_info=True)
@@ -662,7 +725,7 @@ async def _execute_buy_trade(
                 logger.warning("AI 매수 체결가 보정 실패: symbol=%s error=%s", symbol, exc, exc_info=True)
                 fallback_price = 0.0
         fallback_qty = order_amount_krw / fallback_price if fallback_price > 0 else 0.0
-        await _record_order_history(
+        history_recorded = await _record_order_history(
             db=db,
             symbol=symbol,
             analysis=analysis,
@@ -672,6 +735,8 @@ async def _execute_buy_trade(
             fallback_qty=fallback_qty,
             is_paper=False,
         )
+        if not history_recorded:
+            return
 
     logger.info(
         "AI 시장가 매수 성공: symbol=%s confidence=%s weight=%s uuid=%s mode=%s",
@@ -778,7 +843,7 @@ async def _execute_sell_trade(
             return
 
         order_result = raw_order if isinstance(raw_order, dict) else {}
-        await _record_order_history(
+        history_recorded = await _record_order_history(
             db=db,
             symbol=symbol,
             analysis=analysis,
@@ -788,6 +853,8 @@ async def _execute_sell_trade(
             fallback_qty=sell_volume,
             is_paper=False,
         )
+        if not history_recorded:
+            return
 
     logger.info(
         "AI 시장가 매도 성공: symbol=%s confidence=%s weight=%s uuid=%s mode=%s",
