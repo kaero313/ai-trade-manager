@@ -382,7 +382,11 @@ async def _send_trade_notification(
     confidence: int,
     recommended_weight: int,
     order_result: dict[str, Any],
+    trading_mode: str,
 ) -> None:
+    if trading_mode == "paper":
+        return
+
     order_uuid = str(order_result.get("uuid") or "").strip()
     lines = [
         f"[AI 자율 체결 알림] {symbol} 시장가 {decision} (확신도: {confidence}%, 추천 비중: {recommended_weight}%)",
@@ -792,6 +796,7 @@ async def _execute_buy_trade(
         confidence=analysis.confidence,
         recommended_weight=analysis.recommended_weight,
         order_result=order_result,
+        trading_mode=trading_mode,
     )
 
 
@@ -932,6 +937,7 @@ async def _execute_sell_trade(
         confidence=analysis.confidence,
         recommended_weight=analysis.recommended_weight,
         order_result=order_result,
+        trading_mode=trading_mode,
     )
 
 
