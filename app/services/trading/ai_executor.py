@@ -21,8 +21,8 @@ from app.services.portfolio.aggregator import PortfolioService
 from app.services.slack import slack_client
 from app.services.trading.paper import DEFAULT_PAPER_KRW_BALANCE
 from app.services.trading.paper import PAPER_BALANCE_DESCRIPTION
+from app.services.trading.paper import PAPER_BALANCE_EPSILON
 from app.services.trading.paper import PAPER_BROKER_NAME
-from app.services.trading.paper import apply_paper_fill
 from app.services.trading.paper import build_paper_order_result
 from app.services.trading.paper import get_trading_mode
 
@@ -292,6 +292,20 @@ async def _get_or_create_position(
     return position
 
 
+async def _get_existing_position(
+    db: AsyncSession,
+    asset_id: int,
+    *,
+    is_paper: bool,
+) -> Position | None:
+    result = await db.execute(
+        select(Position)
+        .where(Position.asset_id == asset_id, Position.is_paper.is_(is_paper))
+        .order_by(Position.id.asc())
+    )
+    return result.scalars().first()
+
+
 async def _get_or_create_paper_cash_config(db: AsyncSession) -> SystemConfig:
     result = await db.execute(
         select(SystemConfig).where(SystemConfig.config_key == PAPER_TRADING_KRW_BALANCE_KEY)
@@ -454,35 +468,61 @@ async def execute_hard_tp_sl_check(db: AsyncSession) -> set[str]:
             continue
 
         if trading_mode == "paper":
-            executed_at = datetime.now(UTC)
-            order_result = build_paper_order_result(
-                market=symbol,
-                side="ask",
-                ord_type="market",
-                executed_price=current_price,
-                executed_qty=available_qty,
-                executed_at=executed_at,
-            )
             try:
-                await apply_paper_fill(
+                cash_config = await _get_or_create_paper_cash_config(db)
+                current_paper_balance = _to_float(cash_config.config_value)
+                if current_paper_balance < 0:
+                    current_paper_balance = DEFAULT_PAPER_KRW_BALANCE
+
+                asset = await _get_or_create_asset(db, symbol)
+                position = await _get_existing_position(db, asset.id, is_paper=True)
+                position_qty = max(_to_float(position.quantity) if position is not None else 0.0, 0.0)
+                if position is None or position_qty <= 0:
+                    logger.info(
+                        "하드 TP/SL paper 매도 스킵: paper 포지션이 없습니다. symbol=%s reason=%s",
+                        symbol,
+                        trigger_reason,
+                    )
+                    continue
+
+                realized_sell_qty = position_qty
+                if realized_sell_qty <= 0:
+                    logger.info(
+                        "하드 TP/SL paper 매도 스킵: 청산 수량이 0 이하입니다. symbol=%s reason=%s",
+                        symbol,
+                        trigger_reason,
+                    )
+                    continue
+
+                recovered_krw = realized_sell_qty * current_price * 0.9995
+                remaining_qty = max(position_qty - realized_sell_qty, 0.0)
+                position.quantity = 0.0 if remaining_qty <= PAPER_BALANCE_EPSILON else remaining_qty
+                position.status = "closed"
+                cash_config.config_value = _fmt_number(current_paper_balance + recovered_krw)
+                executed_at = datetime.now(UTC)
+                order_result = build_paper_order_result(
+                    market=symbol,
+                    side="ask",
+                    ord_type="market",
+                    executed_price=current_price,
+                    executed_qty=realized_sell_qty,
+                    executed_at=executed_at,
+                )
+
+                history_recorded = await _record_order_history(
                     db=db,
                     symbol=symbol,
+                    analysis=None,
                     side="sell",
-                    executed_price=current_price,
-                    executed_qty=available_qty,
-                    executed_at=executed_at,
+                    order_result=order_result,
+                    fallback_price=current_price,
+                    fallback_qty=realized_sell_qty,
                     order_reason=trigger_reason,
+                    is_paper=True,
+                    broker_name=PAPER_BROKER_NAME,
                 )
-                await db.commit()
-            except ValueError as exc:
-                await db.rollback()
-                logger.info(
-                    "하드 TP/SL paper 매도 스킵: symbol=%s reason=%s error=%s",
-                    symbol,
-                    trigger_reason,
-                    exc,
-                )
-                continue
+                if not history_recorded:
+                    continue
             except Exception as exc:
                 await db.rollback()
                 logger.error(
@@ -798,30 +838,52 @@ async def _execute_sell_trade(
         return
 
     if trading_mode == "paper":
-        executed_at = datetime.now(UTC)
-        order_result = build_paper_order_result(
-            market=symbol,
-            side="ask",
-            ord_type="market",
-            executed_price=current_price,
-            executed_qty=sell_volume,
-            executed_at=executed_at,
-        )
         try:
-            await apply_paper_fill(
+            cash_config = await _get_or_create_paper_cash_config(db)
+            current_paper_balance = _to_float(cash_config.config_value)
+            if current_paper_balance < 0:
+                current_paper_balance = DEFAULT_PAPER_KRW_BALANCE
+
+            asset = await _get_or_create_asset(db, symbol)
+            position = await _get_existing_position(db, asset.id, is_paper=True)
+            position_qty = max(_to_float(position.quantity) if position is not None else 0.0, 0.0)
+            if position is None or position_qty <= 0:
+                logger.info("AI paper 매도 스킵: paper 포지션이 없습니다. symbol=%s", symbol)
+                return
+
+            realized_sell_qty = min(sell_volume, position_qty)
+            if realized_sell_qty <= 0:
+                logger.info("AI paper 매도 스킵: 계산된 실매도 수량이 0 이하입니다. symbol=%s", symbol)
+                return
+
+            recovered_krw = realized_sell_qty * current_price * 0.9995
+            remaining_qty = max(position_qty - realized_sell_qty, 0.0)
+            position.quantity = 0.0 if remaining_qty <= PAPER_BALANCE_EPSILON else remaining_qty
+            position.status = "closed" if position.quantity <= PAPER_BALANCE_EPSILON else "open"
+            cash_config.config_value = _fmt_number(current_paper_balance + recovered_krw)
+            executed_at = datetime.now(UTC)
+            order_result = build_paper_order_result(
+                market=symbol,
+                side="ask",
+                ord_type="market",
+                executed_price=current_price,
+                executed_qty=realized_sell_qty,
+                executed_at=executed_at,
+            )
+
+            history_recorded = await _record_order_history(
                 db=db,
                 symbol=symbol,
+                analysis=analysis,
                 side="sell",
-                executed_price=current_price,
-                executed_qty=sell_volume,
-                executed_at=executed_at,
-                ai_analysis_log_id=analysis.id,
+                order_result=order_result,
+                fallback_price=current_price,
+                fallback_qty=realized_sell_qty,
+                is_paper=True,
+                broker_name=PAPER_BROKER_NAME,
             )
-            await db.commit()
-        except ValueError as exc:
-            await db.rollback()
-            logger.info("AI paper 매도 스킵: symbol=%s error=%s", symbol, exc)
-            return
+            if not history_recorded:
+                return
         except Exception as exc:
             await db.rollback()
             logger.error("AI paper 매도 적용 중 예기치 못한 오류: symbol=%s error=%s", symbol, exc, exc_info=True)
