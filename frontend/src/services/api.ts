@@ -87,6 +87,8 @@ export interface AIPerformanceSummary {
   recent_trades: AITradeRecord[]
 }
 
+export type TradingMode = 'live' | 'paper'
+
 export interface MarketSentimentSnapshot {
   score: number
   classification: string
@@ -103,6 +105,13 @@ export interface SystemConfigItem {
 export interface SystemConfigUpdateItem {
   config_key: string
   config_value: string
+}
+
+export interface PaperTradingResetResponse {
+  message: string
+  deleted_order_history_count: number
+  deleted_position_count: number
+  paper_trading_krw_balance: string
 }
 
 export async function getBotStatus(): Promise<BotStatus> {
@@ -160,5 +169,10 @@ export async function updateSystemConfigs(
   items: SystemConfigUpdateItem[],
 ): Promise<SystemConfigItem[]> {
   const { data } = await apiClient.put<SystemConfigItem[]>('/system/configs', items)
+  return data
+}
+
+export async function resetPaperTradingState(): Promise<PaperTradingResetResponse> {
+  const { data } = await apiClient.post<PaperTradingResetResponse>('/system/paper/reset')
   return data
 }
