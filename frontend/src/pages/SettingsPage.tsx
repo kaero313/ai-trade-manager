@@ -7,8 +7,13 @@ import { Link } from 'react-router-dom'
 import { fetchFavorites, fetchTickers, removeFavorite, type FavoriteItem, type TickerItem } from '../api/markets'
 import InfoTooltip from '../components/common/InfoTooltip'
 import BotConfigForm from '../components/trading/BotConfigForm'
-import { useSystemConfigs, useUpdateSystemConfigs } from '../hooks/useSystemConfigs'
-import type { SystemConfigItem, SystemConfigUpdateItem } from '../services/api'
+import { SYSTEM_CONFIGS_QUERY_KEY, useSystemConfigs, useUpdateSystemConfigs } from '../hooks/useSystemConfigs'
+import {
+  resetPaperTradingState,
+  type SystemConfigItem,
+  type SystemConfigUpdateItem,
+  type TradingMode,
+} from '../services/api'
 
 type SettingsTabKey = 'bot' | 'schedule' | 'watchlist' | 'admin'
 
@@ -42,10 +47,13 @@ const AUTONOMOUS_AI_INTERVAL_MINUTES_KEY = 'autonomous_ai_interval_minutes'
 const MAX_ALLOCATION_PCT_KEY = 'max_allocation_pct'
 const HARD_TAKE_PROFIT_PCT_KEY = 'hard_take_profit_pct'
 const HARD_STOP_LOSS_PCT_KEY = 'hard_stop_loss_pct'
+const TRADING_MODE_KEY = 'trading_mode'
+const PAPER_TRADING_KRW_BALANCE_KEY = 'paper_trading_krw_balance'
 const AI_BRIEFING_TIME_KEY = 'ai_briefing_time'
 const AI_MIN_CONFIDENCE_TRADE_KEY = 'ai_min_confidence_trade'
 const AI_ANALYSIS_MAX_AGE_MINUTES_KEY = 'ai_analysis_max_age_minutes'
 const AI_CUSTOM_PERSONA_PROMPT_KEY = 'ai_custom_persona_prompt'
+const DEFAULT_PAPER_TRADING_KRW_BALANCE = '10000000'
 
 const PERSONA_PRESETS = [
   {
@@ -461,6 +469,78 @@ function BulkWatchlistPanel() {
 }
 
 function DangerZonePanel() {
+  const queryClient = useQueryClient()
+  const systemConfigsQuery = useSystemConfigs()
+  const updateSystemConfigsMutation = useUpdateSystemConfigs()
+  const [notice, setNotice] = useState<NoticeState | null>(null)
+
+  const tradingModeValue = findConfigValue(systemConfigsQuery.data, TRADING_MODE_KEY, 'live').trim().toLowerCase()
+  const tradingMode: TradingMode = tradingModeValue === 'paper' ? 'paper' : 'live'
+  const paperTradingBalance = findConfigValue(
+    systemConfigsQuery.data,
+    PAPER_TRADING_KRW_BALANCE_KEY,
+    DEFAULT_PAPER_TRADING_KRW_BALANCE,
+  )
+  const parsedPaperTradingBalance = Number(paperTradingBalance)
+  const paperTradingBalanceLabel = Number.isFinite(parsedPaperTradingBalance)
+    ? formatPrice(parsedPaperTradingBalance)
+    : `${paperTradingBalance} KRW`
+
+  const resetPaperTradingMutation = useMutation({
+    mutationFn: resetPaperTradingState,
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: SYSTEM_CONFIGS_QUERY_KEY })
+      setNotice({
+        type: 'success',
+        message: `${result.message} 포지션 ${result.deleted_position_count}건, 주문 이력 ${result.deleted_order_history_count}건을 정리했습니다.`,
+      })
+    },
+    onError: (error) => {
+      setNotice({
+        type: 'error',
+        message: resolveErrorMessage(error, '모의투자 상태를 초기화하지 못했습니다.'),
+      })
+    },
+  })
+
+  const handleTradingModeChange = async (nextMode: TradingMode) => {
+    if (nextMode === tradingMode) {
+      return
+    }
+
+    try {
+      await updateSystemConfigsMutation.mutateAsync([
+        {
+          config_key: TRADING_MODE_KEY,
+          config_value: nextMode,
+        },
+      ])
+      setNotice({
+        type: 'success',
+        message:
+          nextMode === 'paper'
+            ? '모의투자 모드로 전환했습니다. 이후 주문은 가상 잔고 기준으로 시뮬레이션됩니다.'
+            : '실전투자 모드로 전환했습니다. 이후 주문은 실 계좌 기준으로 집행됩니다.',
+      })
+    } catch (error) {
+      setNotice({
+        type: 'error',
+        message: resolveErrorMessage(error, '거래 모드를 저장하지 못했습니다.'),
+      })
+    }
+  }
+
+  const handleResetPaperAccount = async () => {
+    const confirmed = window.confirm(
+      '모의투자 포지션과 주문 이력을 모두 삭제하고 가상 KRW 잔고를 10,000,000원으로 복구합니다. 계속할까요?',
+    )
+    if (!confirmed) {
+      return
+    }
+
+    await resetPaperTradingMutation.mutateAsync()
+  }
+
   return (
     <section className="rounded-2xl border border-rose-200 bg-rose-50/80 p-6 shadow-sm ring-1 ring-rose-100 dark:border-rose-500/20 dark:bg-rose-500/10 dark:ring-rose-500/10">
       <header className="border-b border-rose-200 pb-5 dark:border-rose-500/20">
@@ -478,12 +558,97 @@ function DangerZonePanel() {
           </div>
         </div>
         <p className="mt-4 max-w-3xl text-sm leading-6 text-rose-800 dark:text-rose-100/90">
-          시스템 장애나 백테스트 찌꺼기 누적 상황에 대비한 관리자용 정리 구역입니다. 현재는 UI 뼈대만
-          선점해 두고, 실제 삭제 API는 후속 작업에서 연결됩니다.
+          실전/모의투자 운용 모드 전환과 모의 계좌 초기화 같은 고위험 관리자 작업을 한곳에서 제어하는
+          운영 패널입니다.
         </p>
       </header>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+      <div className="mt-6 rounded-2xl border border-rose-200 bg-white/85 p-5 shadow-sm dark:border-rose-500/20 dark:bg-gray-900/20">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-rose-900 dark:text-rose-100">실전/모의투자 실행 모드</h3>
+              <InfoTooltip
+                title="실전/모의투자 실행 모드"
+                content="Live는 실제 거래소 계좌를 사용하고, Paper는 가상 KRW 자본금과 paper 포지션만 사용하는 안전한 시뮬레이션 모드입니다."
+              />
+            </div>
+            <p className="mt-2 text-sm leading-6 text-rose-800/90 dark:text-rose-100/80">
+              거래 모드를 바꾸면 SystemConfig에 즉시 저장됩니다. Paper 모드에서는 실주문과 Slack 체결
+              알림이 우회되고, 가상 지갑만 갱신됩니다.
+            </p>
+          </div>
+
+          <div className="inline-flex rounded-xl bg-white p-1 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+            <button
+              type="button"
+              onClick={() => void handleTradingModeChange('live')}
+              disabled={systemConfigsQuery.isLoading || updateSystemConfigsMutation.isPending}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                tradingMode === 'live'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+              } disabled:cursor-not-allowed disabled:opacity-70`}
+            >
+              Live (실전)
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleTradingModeChange('paper')}
+              disabled={systemConfigsQuery.isLoading || updateSystemConfigsMutation.isPending}
+              className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+                tradingMode === 'paper'
+                  ? 'bg-emerald-500 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+              } disabled:cursor-not-allowed disabled:opacity-70`}
+            >
+              Paper (모의투자)
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 dark:border-rose-500/20 dark:bg-rose-500/10">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-500 dark:text-rose-300">
+              Current Mode
+            </div>
+            <div className="mt-2 text-lg font-semibold text-rose-900 dark:text-rose-100">
+              {tradingMode === 'paper' ? 'Paper (모의투자)' : 'Live (실전)'}
+            </div>
+            <p className="mt-2 text-xs leading-5 text-rose-700/90 dark:text-rose-100/80">
+              현재 저장값: <span className="font-semibold">{tradingMode}</span>
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 dark:border-rose-500/20 dark:bg-rose-500/10">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-rose-500 dark:text-rose-300">
+              Paper Wallet
+            </div>
+            <div className="mt-2 text-lg font-semibold text-rose-900 dark:text-rose-100">
+              {paperTradingBalanceLabel}
+            </div>
+            <p className="mt-2 text-xs leading-5 text-rose-700/90 dark:text-rose-100/80">
+              가상 KRW 잔고는 모의 계좌 전면 초기화 시 10,000,000 KRW로 복구됩니다.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {notice && (
+        <div
+          className={`mt-5 rounded-xl px-4 py-3 text-sm ${
+            notice.type === 'success'
+              ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+              : notice.type === 'info'
+                ? 'border border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-600 dark:bg-gray-700/40 dark:text-gray-200'
+                : 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200'
+          }`}
+        >
+          {notice.message}
+        </div>
+      )}
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-3">
         {[
           {
             title: '백테스트 캐시 정리',
@@ -520,6 +685,27 @@ function DangerZonePanel() {
       <div className="mt-5 rounded-xl border border-rose-200 bg-white/70 px-4 py-3 text-sm text-rose-800 dark:border-rose-500/20 dark:bg-gray-900/20 dark:text-rose-100/90">
         실제 정리 버튼이 연결되면 복구가 어려운 데이터 삭제가 포함될 수 있으므로, 운영 환경에서는 권한과
         확인 절차를 함께 묶어야 합니다.
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-rose-300 bg-white/85 p-5 shadow-sm dark:border-rose-500/20 dark:bg-gray-900/20">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="max-w-2xl">
+            <h3 className="text-lg font-semibold text-rose-900 dark:text-rose-100">모의 계좌 전면 초기화</h3>
+            <p className="mt-2 text-sm leading-6 text-rose-800/90 dark:text-rose-100/80">
+              paper 포지션과 paper 주문 이력을 모두 삭제하고, 가상 KRW 잔고를 초기값 10,000,000원으로
+              되돌립니다. 실전투자 데이터는 건드리지 않습니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleResetPaperAccount()}
+            disabled={resetPaperTradingMutation.isPending || systemConfigsQuery.isLoading}
+            className="inline-flex min-w-[220px] items-center justify-center gap-2 rounded-lg border border-rose-300 bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-70 dark:border-rose-400/20"
+          >
+            {resetPaperTradingMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            <span>{resetPaperTradingMutation.isPending ? '초기화 중...' : '모의 계좌 전면 초기화'}</span>
+          </button>
+        </div>
       </div>
     </section>
   )
