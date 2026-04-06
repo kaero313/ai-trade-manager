@@ -16,6 +16,9 @@ from app.services.brokers.upbit import (
     is_critical_upbit_error,
 )
 from app.services.slack_bot import slack_bot
+from app.services.trading.paper import PaperBroker
+from app.services.trading.paper import apply_paper_fill
+from app.services.trading.paper import get_trading_mode
 from app.services.trading.strategies.grid_strategy import GridStrategy
 
 logger = logging.getLogger(__name__)
@@ -67,6 +70,7 @@ class TradingEngine:
     async def _check_and_execute_grid(self, db: AsyncSession, config: BotConfig) -> None:
         config_json = self._normalize_config_json(config.config_json)
         grid_config = self._extract_grid_config(config_json)
+        trading_mode = await get_trading_mode(db)
 
         target_coin = str(grid_config.get("target_coin") or "").upper()
         grid_upper_bound = self._to_float(grid_config.get("grid_upper_bound"))
@@ -88,8 +92,9 @@ class TradingEngine:
             return
 
         market = f"KRW-{target_coin}"
-        broker = BrokerFactory.get_broker("UPBIT")
-        current_price = await self._fetch_current_price(broker, market)
+        live_broker = BrokerFactory.get_broker("UPBIT")
+        strategy_broker = PaperBroker(db, live_broker=live_broker) if trading_mode == "paper" else live_broker
+        current_price = await self._fetch_current_price(live_broker, market)
         if current_price is None:
             return
         logger.info("그리드 현재가 조회 성공: market=%s current_price=%s", market, current_price)
@@ -110,7 +115,7 @@ class TradingEngine:
         try:
             strategy_result = await strategy.execute(
                 current_price=current_price,
-                broker=broker,
+                broker=strategy_broker,
                 current_time=now_utc,
             )
         except UpbitAPIError as exc:
@@ -179,19 +184,34 @@ class TradingEngine:
         )
 
         try:
-            asset = await self._get_or_create_asset(db, market)
-            position = await self._get_or_create_position(db, asset.id, current_price)
             executed_at = self._resolve_executed_at(order_result)
-
-            history = OrderHistory(
-                position_id=position.id,
-                side=signal_side,
-                price=executed_price,
-                qty=executed_qty,
-                broker="UPBIT",
-                executed_at=executed_at,
-            )
-            db.add(history)
+            if trading_mode == "paper":
+                await apply_paper_fill(
+                    db=db,
+                    symbol=market,
+                    side=signal_side,
+                    executed_price=executed_price,
+                    executed_qty=executed_qty,
+                    executed_at=executed_at,
+                )
+            else:
+                asset = await self._get_or_create_asset(db, market)
+                position = await self._get_or_create_position(
+                    db,
+                    asset.id,
+                    current_price,
+                    is_paper=False,
+                )
+                history = OrderHistory(
+                    position_id=position.id,
+                    side=signal_side,
+                    is_paper=False,
+                    price=executed_price,
+                    qty=executed_qty,
+                    broker="UPBIT",
+                    executed_at=executed_at,
+                )
+                db.add(history)
 
             updated_config = self._normalize_config_json(config_json)
             updated_grid = self._extract_grid_config(updated_config)
@@ -206,6 +226,9 @@ class TradingEngine:
                 qty=executed_qty,
                 price=executed_price,
             )
+        except ValueError as exc:
+            await db.rollback()
+            logger.info("그리드 paper 주문 스킵: market=%s side=%s error=%s", market, signal_side, exc)
         except Exception:
             await db.rollback()
             logger.exception("주문 성공 후 DB 기록 중 예외가 발생했습니다: market=%s side=%s", market, signal_side)
@@ -231,9 +254,13 @@ class TradingEngine:
         db: AsyncSession,
         asset_id: int,
         current_price: float,
+        *,
+        is_paper: bool,
     ) -> Position:
         result = await db.execute(
-            select(Position).where(Position.asset_id == asset_id).order_by(Position.id.asc())
+            select(Position)
+            .where(Position.asset_id == asset_id, Position.is_paper.is_(is_paper))
+            .order_by(Position.id.asc())
         )
         position = result.scalars().first()
         if position is not None:
@@ -244,6 +271,7 @@ class TradingEngine:
             avg_entry_price=current_price,
             quantity=0.0,
             status="open",
+            is_paper=is_paper,
         )
         db.add(position)
         await db.flush()

@@ -2,11 +2,16 @@ import logging
 from typing import Any
 
 from jwt.exceptions import DecodeError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.domain import Asset
+from app.models.domain import Position
 from app.schemas.portfolio import AssetItem, PortfolioSummary
 from app.services.brokers.factory import BrokerFactory
 from app.services.brokers.upbit import UpbitAPIError
+from app.services.trading.paper import get_trading_mode
+from app.services.trading.paper import load_paper_cash_balance
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +47,15 @@ class PortfolioService:
         self.db = db
 
     async def get_aggregated_portfolio(self) -> PortfolioSummary:
+        try:
+            trading_mode = await get_trading_mode(self.db)
+        except Exception as exc:
+            logger.error("Portfolio trading_mode 조회 실패: %s", exc, exc_info=True)
+            return _empty_portfolio(error=PORTFOLIO_AGGREGATION_FAILED_ERROR)
+
+        if trading_mode == "paper":
+            return await self._get_paper_portfolio()
+
         try:
             broker = BrokerFactory.get_broker("UPBIT")
             accounts = await broker.get_accounts()
@@ -153,3 +167,103 @@ class PortfolioService:
         except Exception as exc:
             logger.error("Portfolio aggregation failed due to unexpected error: %s", exc, exc_info=True)
             return _empty_portfolio(error=PORTFOLIO_AGGREGATION_FAILED_ERROR)
+
+    async def _get_paper_portfolio(self) -> PortfolioSummary:
+        try:
+            broker = BrokerFactory.get_broker("UPBIT")
+            paper_cash_balance = await load_paper_cash_balance(self.db)
+            result = await self.db.execute(
+                select(Position, Asset)
+                .join(Asset, Position.asset_id == Asset.id)
+                .where(
+                    Position.is_paper.is_(True),
+                    Position.status == "open",
+                    Position.quantity > 0,
+                )
+                .order_by(Position.id.asc())
+            )
+            position_rows = result.all()
+
+            markets = [
+                asset.symbol
+                for _, asset in position_rows
+                if isinstance(asset.symbol, str) and asset.symbol.strip()
+            ]
+            try:
+                tickers = await broker.get_ticker(markets=markets) if markets else []
+            except UpbitAPIError as exc:
+                logger.warning("Paper 포트폴리오 현재가 조회 실패. 빈 ticker로 대체합니다: %s", exc)
+                tickers = []
+
+            ticker_map = {
+                str(ticker.get("market") or "").upper(): _to_float(ticker.get("trade_price"))
+                for ticker in tickers
+                if isinstance(ticker, dict) and ticker.get("market")
+            }
+
+            items: list[AssetItem] = [
+                AssetItem(
+                    broker="PAPER",
+                    currency="KRW",
+                    balance=paper_cash_balance,
+                    locked=0.0,
+                    avg_buy_price=1.0,
+                    current_price=1.0,
+                    total_value=paper_cash_balance,
+                    pnl_percentage=0.0,
+                )
+            ]
+            total_net_worth = paper_cash_balance
+            total_pnl = 0.0
+
+            for position, asset in position_rows:
+                qty = max(_to_float(position.quantity), 0.0)
+                if qty <= 0:
+                    continue
+
+                market = str(asset.symbol or "").upper()
+                current_price = ticker_map.get(market, 0.0)
+                avg_buy_price = max(_to_float(position.avg_entry_price), 0.0)
+                invested = qty * avg_buy_price * BUY_FEE_MULTIPLIER
+                total_value = qty * current_price * SELL_FEE_MULTIPLIER
+                pnl_amount = total_value - invested
+
+                try:
+                    pnl_percentage = (pnl_amount / invested) * 100.0 if invested > 0 else 0.0
+                except ZeroDivisionError:
+                    pnl_percentage = 0.0
+
+                items.append(
+                    AssetItem(
+                        broker="PAPER",
+                        currency=_extract_target_currency(market),
+                        balance=qty,
+                        locked=0.0,
+                        avg_buy_price=avg_buy_price,
+                        current_price=current_price,
+                        total_value=total_value,
+                        pnl_percentage=pnl_percentage,
+                    )
+                )
+                total_net_worth += total_value
+                total_pnl += pnl_amount
+
+            return PortfolioSummary(
+                total_net_worth=total_net_worth,
+                total_pnl=total_pnl,
+                items=items,
+                error=None,
+            )
+        except UpbitAPIError as exc:
+            logger.error("Paper 포트폴리오 집계 실패(UpbitAPIError): %s", exc, exc_info=True)
+            return _empty_portfolio(error=UPBIT_API_ERROR_CODE)
+        except Exception as exc:
+            logger.error("Paper 포트폴리오 집계 실패: %s", exc, exc_info=True)
+            return _empty_portfolio(error=PORTFOLIO_AGGREGATION_FAILED_ERROR)
+
+
+def _extract_target_currency(symbol: str) -> str:
+    normalized_symbol = str(symbol or "").strip().upper()
+    if "-" not in normalized_symbol:
+        return normalized_symbol
+    return normalized_symbol.split("-", 1)[1]

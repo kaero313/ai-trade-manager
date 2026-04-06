@@ -18,6 +18,9 @@ from app.services.brokers.factory import BrokerFactory
 from app.services.brokers.upbit import UpbitAPIError
 from app.services.portfolio.aggregator import PortfolioService
 from app.services.slack import slack_client
+from app.services.trading.paper import apply_paper_fill
+from app.services.trading.paper import build_paper_order_result
+from app.services.trading.paper import get_trading_mode
 
 logger = logging.getLogger(__name__)
 
@@ -257,9 +260,17 @@ async def _get_or_create_asset(db: AsyncSession, market: str) -> Asset:
     return asset
 
 
-async def _get_or_create_position(db: AsyncSession, asset_id: int, fallback_price: float) -> Position:
+async def _get_or_create_position(
+    db: AsyncSession,
+    asset_id: int,
+    fallback_price: float,
+    *,
+    is_paper: bool,
+) -> Position:
     result = await db.execute(
-        select(Position).where(Position.asset_id == asset_id).order_by(Position.id.asc())
+        select(Position)
+        .where(Position.asset_id == asset_id, Position.is_paper.is_(is_paper))
+        .order_by(Position.id.asc())
     )
     position = result.scalars().first()
     if position is not None:
@@ -270,6 +281,7 @@ async def _get_or_create_position(db: AsyncSession, asset_id: int, fallback_pric
         avg_entry_price=max(fallback_price, 0.0),
         quantity=0.0,
         status="open",
+        is_paper=is_paper,
     )
     db.add(position)
     await db.flush()
@@ -286,6 +298,7 @@ async def _record_order_history(
     fallback_price: float,
     fallback_qty: float,
     order_reason: str | None = None,
+    is_paper: bool = False,
 ) -> None:
     resolved_price = _resolve_order_price(order_result, fallback_price)
     resolved_qty = _resolve_order_qty(order_result, fallback_qty)
@@ -303,13 +316,14 @@ async def _record_order_history(
 
     try:
         asset = await _get_or_create_asset(db, symbol)
-        position = await _get_or_create_position(db, asset.id, resolved_price)
+        position = await _get_or_create_position(db, asset.id, resolved_price, is_paper=is_paper)
         db.add(
             OrderHistory(
                 position_id=position.id,
                 ai_analysis_log_id=analysis.id if analysis is not None else None,
                 side=side,
                 order_reason=order_reason,
+                is_paper=is_paper,
                 price=resolved_price,
                 qty=resolved_qty,
                 broker="UPBIT",
@@ -361,7 +375,8 @@ async def execute_hard_tp_sl_check(db: AsyncSession) -> set[str]:
         logger.warning("하드 TP/SL 체크 스킵: 포트폴리오 조회 실패 error=%s", portfolio.error)
         return set()
 
-    broker = BrokerFactory.get_broker("UPBIT")
+    trading_mode = await get_trading_mode(db)
+    broker = BrokerFactory.get_broker("UPBIT") if trading_mode == "live" else None
     liquidated_symbols: set[str] = set()
 
     for item in portfolio.items:
@@ -413,51 +428,95 @@ async def execute_hard_tp_sl_check(db: AsyncSession) -> set[str]:
             )
             continue
 
-        try:
-            raw_order = await broker.create_order(
+        if trading_mode == "paper":
+            executed_at = datetime.now(UTC)
+            order_result = build_paper_order_result(
                 market=symbol,
                 side="ask",
                 ord_type="market",
-                volume=_fmt_number(available_qty),
+                executed_price=current_price,
+                executed_qty=available_qty,
+                executed_at=executed_at,
             )
-        except (ValueError, UpbitAPIError) as exc:
-            logger.warning(
-                "하드 TP/SL 시장가 매도 실패: symbol=%s reason=%s error=%s",
-                symbol,
-                trigger_reason,
-                exc,
-                exc_info=True,
-            )
-            continue
-        except Exception as exc:
-            logger.error(
-                "하드 TP/SL 시장가 매도 중 예기치 못한 오류: symbol=%s reason=%s error=%s",
-                symbol,
-                trigger_reason,
-                exc,
-                exc_info=True,
-            )
-            continue
+            try:
+                await apply_paper_fill(
+                    db=db,
+                    symbol=symbol,
+                    side="sell",
+                    executed_price=current_price,
+                    executed_qty=available_qty,
+                    executed_at=executed_at,
+                    order_reason=trigger_reason,
+                )
+                await db.commit()
+            except ValueError as exc:
+                await db.rollback()
+                logger.info(
+                    "하드 TP/SL paper 매도 스킵: symbol=%s reason=%s error=%s",
+                    symbol,
+                    trigger_reason,
+                    exc,
+                )
+                continue
+            except Exception as exc:
+                await db.rollback()
+                logger.error(
+                    "하드 TP/SL paper 매도 중 예기치 못한 오류: symbol=%s reason=%s error=%s",
+                    symbol,
+                    trigger_reason,
+                    exc,
+                    exc_info=True,
+                )
+                continue
+        else:
+            try:
+                raw_order = await broker.create_order(
+                    market=symbol,
+                    side="ask",
+                    ord_type="market",
+                    volume=_fmt_number(available_qty),
+                )
+            except (ValueError, UpbitAPIError) as exc:
+                logger.warning(
+                    "하드 TP/SL 시장가 매도 실패: symbol=%s reason=%s error=%s",
+                    symbol,
+                    trigger_reason,
+                    exc,
+                    exc_info=True,
+                )
+                continue
+            except Exception as exc:
+                logger.error(
+                    "하드 TP/SL 시장가 매도 중 예기치 못한 오류: symbol=%s reason=%s error=%s",
+                    symbol,
+                    trigger_reason,
+                    exc,
+                    exc_info=True,
+                )
+                continue
 
-        order_result = raw_order if isinstance(raw_order, dict) else {}
+            order_result = raw_order if isinstance(raw_order, dict) else {}
+            await _record_order_history(
+                db=db,
+                symbol=symbol,
+                analysis=None,
+                side="sell",
+                order_result=order_result,
+                fallback_price=current_price,
+                fallback_qty=available_qty,
+                order_reason=trigger_reason,
+                is_paper=False,
+            )
+
         liquidated_symbols.add(symbol)
         logger.info(
-            "하드 TP/SL 시장가 매도 성공: symbol=%s reason=%s pnl_percentage=%s qty=%s uuid=%s",
+            "하드 TP/SL 시장가 매도 성공: symbol=%s reason=%s pnl_percentage=%s qty=%s uuid=%s mode=%s",
             symbol,
             trigger_reason,
             pnl_percentage,
             available_qty,
             order_result.get("uuid"),
-        )
-        await _record_order_history(
-            db=db,
-            symbol=symbol,
-            analysis=None,
-            side="sell",
-            order_result=order_result,
-            fallback_price=current_price,
-            fallback_qty=available_qty,
-            order_reason=trigger_reason,
+            trading_mode,
         )
 
     return liquidated_symbols
@@ -469,6 +528,7 @@ async def _execute_buy_trade(
     symbol: str,
     analysis: AIAnalysisLog,
     portfolio: PortfolioSummary,
+    trading_mode: str,
 ) -> None:
     quote_currency = _extract_quote_currency(symbol)
     target_currency = _extract_target_currency(symbol)
@@ -521,9 +581,8 @@ async def _execute_buy_trade(
         )
         return
 
-    broker = BrokerFactory.get_broker("UPBIT")
     logger.info(
-        "AI 매수 시도: symbol=%s total_krw=%s max_allocation_pct=%s max_budget=%s current_position_value=%s remaining_budget=%s target_budget=%s total_avail=%s order_amount=%s",
+        "AI 매수 시도: symbol=%s total_krw=%s max_allocation_pct=%s max_budget=%s current_position_value=%s remaining_budget=%s target_budget=%s total_avail=%s order_amount=%s mode=%s",
         symbol,
         total_krw,
         max_allocation_pct,
@@ -533,45 +592,94 @@ async def _execute_buy_trade(
         target_budget,
         available_krw,
         order_amount_krw,
+        trading_mode,
     )
-    try:
-        raw_order = await broker.create_order(
+    if trading_mode == "paper":
+        try:
+            executed_price = await _resolve_current_price(symbol, target_item)
+        except (ValueError, UpbitAPIError) as exc:
+            logger.warning("AI paper 매수 스킵: 현재가 조회 실패 symbol=%s error=%s", symbol, exc, exc_info=True)
+            return
+        except Exception as exc:
+            logger.error("AI paper 매수 현재가 조회 중 예기치 못한 오류: symbol=%s error=%s", symbol, exc, exc_info=True)
+            return
+
+        if executed_price <= 0:
+            logger.info("AI paper 매수 스킵: 현재가가 유효하지 않습니다. symbol=%s", symbol)
+            return
+
+        executed_qty = order_amount_krw / executed_price
+        executed_at = datetime.now(UTC)
+        order_result = build_paper_order_result(
             market=symbol,
             side="bid",
             ord_type="price",
-            price=_fmt_number(order_amount_krw),
+            executed_price=executed_price,
+            executed_qty=executed_qty,
+            executed_at=executed_at,
         )
-    except (ValueError, UpbitAPIError) as exc:
-        logger.warning("AI 시장가 매수 실패: symbol=%s error=%s", symbol, exc, exc_info=True)
-        return
-    except Exception as exc:
-        logger.error("AI 시장가 매수 중 예기치 못한 오류: symbol=%s error=%s", symbol, exc, exc_info=True)
-        return
+        try:
+            await apply_paper_fill(
+                db=db,
+                symbol=symbol,
+                side="buy",
+                executed_price=executed_price,
+                executed_qty=executed_qty,
+                executed_at=executed_at,
+                ai_analysis_log_id=analysis.id,
+            )
+            await db.commit()
+        except ValueError as exc:
+            await db.rollback()
+            logger.info("AI paper 매수 스킵: symbol=%s error=%s", symbol, exc)
+            return
+        except Exception as exc:
+            await db.rollback()
+            logger.error("AI paper 매수 적용 중 예기치 못한 오류: symbol=%s error=%s", symbol, exc, exc_info=True)
+            return
+    else:
+        broker = BrokerFactory.get_broker("UPBIT")
+        try:
+            raw_order = await broker.create_order(
+                market=symbol,
+                side="bid",
+                ord_type="price",
+                price=_fmt_number(order_amount_krw),
+            )
+        except (ValueError, UpbitAPIError) as exc:
+            logger.warning("AI 시장가 매수 실패: symbol=%s error=%s", symbol, exc, exc_info=True)
+            return
+        except Exception as exc:
+            logger.error("AI 시장가 매수 중 예기치 못한 오류: symbol=%s error=%s", symbol, exc, exc_info=True)
+            return
 
-    order_result = raw_order if isinstance(raw_order, dict) else {}
+        order_result = raw_order if isinstance(raw_order, dict) else {}
+        fallback_price = _resolve_order_price(order_result, 0.0)
+        if fallback_price <= 0:
+            try:
+                fallback_price = await _resolve_current_price(symbol, None)
+            except Exception as exc:
+                logger.warning("AI 매수 체결가 보정 실패: symbol=%s error=%s", symbol, exc, exc_info=True)
+                fallback_price = 0.0
+        fallback_qty = order_amount_krw / fallback_price if fallback_price > 0 else 0.0
+        await _record_order_history(
+            db=db,
+            symbol=symbol,
+            analysis=analysis,
+            side="buy",
+            order_result=order_result,
+            fallback_price=fallback_price,
+            fallback_qty=fallback_qty,
+            is_paper=False,
+        )
+
     logger.info(
-        "AI 시장가 매수 성공: symbol=%s confidence=%s weight=%s uuid=%s",
+        "AI 시장가 매수 성공: symbol=%s confidence=%s weight=%s uuid=%s mode=%s",
         symbol,
         analysis.confidence,
         analysis.recommended_weight,
         order_result.get("uuid"),
-    )
-    fallback_price = _resolve_order_price(order_result, 0.0)
-    if fallback_price <= 0:
-        try:
-            fallback_price = await _resolve_current_price(symbol, None)
-        except Exception as exc:
-            logger.warning("AI 매수 체결가 보정 실패: symbol=%s error=%s", symbol, exc, exc_info=True)
-            fallback_price = 0.0
-    fallback_qty = order_amount_krw / fallback_price if fallback_price > 0 else 0.0
-    await _record_order_history(
-        db=db,
-        symbol=symbol,
-        analysis=analysis,
-        side="buy",
-        order_result=order_result,
-        fallback_price=fallback_price,
-        fallback_qty=fallback_qty,
+        trading_mode,
     )
     await _send_trade_notification(
         symbol=symbol,
@@ -588,6 +696,7 @@ async def _execute_sell_trade(
     symbol: str,
     analysis: AIAnalysisLog,
     portfolio: PortfolioSummary,
+    trading_mode: str,
 ) -> None:
     target_currency = _extract_target_currency(symbol)
     coin_item = _find_portfolio_item(portfolio, target_currency)
@@ -623,37 +732,70 @@ async def _execute_sell_trade(
         )
         return
 
-    broker = BrokerFactory.get_broker("UPBIT")
-    try:
-        raw_order = await broker.create_order(
+    if trading_mode == "paper":
+        executed_at = datetime.now(UTC)
+        order_result = build_paper_order_result(
             market=symbol,
             side="ask",
             ord_type="market",
-            volume=_fmt_number(sell_volume),
+            executed_price=current_price,
+            executed_qty=sell_volume,
+            executed_at=executed_at,
         )
-    except (ValueError, UpbitAPIError) as exc:
-        logger.warning("AI 시장가 매도 실패: symbol=%s error=%s", symbol, exc, exc_info=True)
-        return
-    except Exception as exc:
-        logger.error("AI 시장가 매도 중 예기치 못한 오류: symbol=%s error=%s", symbol, exc, exc_info=True)
-        return
+        try:
+            await apply_paper_fill(
+                db=db,
+                symbol=symbol,
+                side="sell",
+                executed_price=current_price,
+                executed_qty=sell_volume,
+                executed_at=executed_at,
+                ai_analysis_log_id=analysis.id,
+            )
+            await db.commit()
+        except ValueError as exc:
+            await db.rollback()
+            logger.info("AI paper 매도 스킵: symbol=%s error=%s", symbol, exc)
+            return
+        except Exception as exc:
+            await db.rollback()
+            logger.error("AI paper 매도 적용 중 예기치 못한 오류: symbol=%s error=%s", symbol, exc, exc_info=True)
+            return
+    else:
+        broker = BrokerFactory.get_broker("UPBIT")
+        try:
+            raw_order = await broker.create_order(
+                market=symbol,
+                side="ask",
+                ord_type="market",
+                volume=_fmt_number(sell_volume),
+            )
+        except (ValueError, UpbitAPIError) as exc:
+            logger.warning("AI 시장가 매도 실패: symbol=%s error=%s", symbol, exc, exc_info=True)
+            return
+        except Exception as exc:
+            logger.error("AI 시장가 매도 중 예기치 못한 오류: symbol=%s error=%s", symbol, exc, exc_info=True)
+            return
 
-    order_result = raw_order if isinstance(raw_order, dict) else {}
+        order_result = raw_order if isinstance(raw_order, dict) else {}
+        await _record_order_history(
+            db=db,
+            symbol=symbol,
+            analysis=analysis,
+            side="sell",
+            order_result=order_result,
+            fallback_price=current_price,
+            fallback_qty=sell_volume,
+            is_paper=False,
+        )
+
     logger.info(
-        "AI 시장가 매도 성공: symbol=%s confidence=%s weight=%s uuid=%s",
+        "AI 시장가 매도 성공: symbol=%s confidence=%s weight=%s uuid=%s mode=%s",
         symbol,
         analysis.confidence,
         analysis.recommended_weight,
         order_result.get("uuid"),
-    )
-    await _record_order_history(
-        db=db,
-        symbol=symbol,
-        analysis=analysis,
-        side="sell",
-        order_result=order_result,
-        fallback_price=current_price,
-        fallback_qty=sell_volume,
+        trading_mode,
     )
     await _send_trade_notification(
         symbol=symbol,
@@ -721,12 +863,14 @@ async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
         )
         return
 
+    trading_mode = await get_trading_mode(db)
     if latest_analysis.decision == "BUY":
         await _execute_buy_trade(
             db=db,
             symbol=normalized_symbol,
             analysis=latest_analysis,
             portfolio=portfolio,
+            trading_mode=trading_mode,
         )
         return
 
@@ -736,6 +880,7 @@ async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
             symbol=normalized_symbol,
             analysis=latest_analysis,
             portfolio=portfolio,
+            trading_mode=trading_mode,
         )
         return
 
