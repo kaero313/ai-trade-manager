@@ -9,7 +9,13 @@ from sqlalchemy import desc, select
 from app.db.repository import search_chat_history
 from app.db.session import AsyncSessionLocal
 from app.models.domain import AIAnalysisLog, Asset, OrderHistory, Position
+from app.services.brokers.factory import BrokerFactory
+from app.services.indicators import IndicatorCalculator
+from app.services.market.sentiment_fetcher import get_cached_market_sentiment
+from app.services.market.sentiment_fetcher import get_or_refresh_market_sentiment
 from app.services.portfolio.aggregator import PortfolioService
+
+indicator_calculator = IndicatorCalculator()
 
 
 def _normalize_symbol(symbol: str | None) -> str | None:
@@ -38,11 +44,55 @@ def _format_krw(value: float | int | None) -> str:
     return f"{float(value):,.0f} KRW"
 
 
+def _format_percent(value: float | int | None, digits: int = 2) -> str:
+    if value is None:
+        return "-"
+    return f"{float(value):,.{digits}f}%"
+
+
 def _truncate_text(value: str | None, limit: int = 300) -> str:
     text = str(value or "").strip()
     if len(text) <= limit:
         return text or "-"
     return f"{text[:limit].rstrip()}..."
+
+
+def _to_float(value: Any) -> float | None:
+    try:
+        if value in (None, ""):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_candle_time(raw_time: Any) -> str | None:
+    text = str(raw_time or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    return parsed.isoformat()
+
+
+def _normalize_candles(raw_candles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for row in reversed(raw_candles):
+        if not isinstance(row, dict):
+            continue
+        normalized.append(
+            {
+                "timestamp": _normalize_candle_time(row.get("candle_date_time_utc")),
+                "open": _to_float(row.get("opening_price")),
+                "high": _to_float(row.get("high_price")),
+                "low": _to_float(row.get("low_price")),
+                "close": _to_float(row.get("trade_price")),
+                "volume": _to_float(row.get("candle_acc_trade_volume")),
+            }
+        )
+    return normalized
 
 
 def build_chat_tools(session_id: str) -> list[Any]:
@@ -119,7 +169,7 @@ def build_chat_tools(session_id: str) -> list[Any]:
             lines.append(
                 "- "
                 f"{_format_datetime(order.executed_at)} | "
-                f"심볼={asset.symbol} | "
+                f"종목={asset.symbol} | "
                 f"side={order.side} | "
                 f"price={_format_krw(order.price)} | "
                 f"qty={_format_number(order.qty, 8)} | "
@@ -162,7 +212,7 @@ def build_chat_tools(session_id: str) -> list[Any]:
             lines.append(
                 "- "
                 f"{_format_datetime(log.created_at)} | "
-                f"심볼={log.symbol} | "
+                f"종목={log.symbol} | "
                 f"결정={log.decision} | "
                 f"확신도={log.confidence} | "
                 f"추천비중={log.recommended_weight}% | "
@@ -200,9 +250,114 @@ def build_chat_tools(session_id: str) -> list[Any]:
 
         return "\n".join(lines)
 
+    @tool
+    async def get_realtime_ticker(symbol: str) -> str:
+        """업비트 현재가, 24시간 등락률, 거래대금을 조회합니다."""
+        normalized_symbol = _normalize_symbol(symbol)
+        if normalized_symbol is None:
+            return "조회할 심볼을 입력해 주세요."
+
+        try:
+            broker = BrokerFactory.get_broker("UPBIT")
+            rows = await broker.get_ticker([normalized_symbol])
+        except Exception as exc:
+            return f"{normalized_symbol} 실시간 시세 조회 중 오류가 발생했습니다: {exc}"
+
+        if not rows:
+            return f"{normalized_symbol} 시세 데이터를 찾지 못했습니다."
+
+        row = rows[0] if isinstance(rows[0], dict) else {}
+        current_price = _to_float(row.get("trade_price"))
+        signed_change_rate = _to_float(row.get("signed_change_rate"))
+        acc_trade_price_24h = _to_float(row.get("acc_trade_price_24h"))
+        change_rate_pct = signed_change_rate * 100 if signed_change_rate is not None else None
+
+        lines = [
+            f"[실시간 시세: {normalized_symbol}]",
+            f"- 현재가: {_format_krw(current_price)}",
+            f"- 24시간 등락률: {_format_percent(change_rate_pct, 2)}",
+            f"- 24시간 거래대금: {_format_krw(acc_trade_price_24h)}",
+        ]
+        return "\n".join(lines)
+
+    @tool
+    async def get_technical_indicators(symbol: str, timeframe: str = "15m") -> str:
+        """업비트 캔들 기반 RSI, 볼린저밴드, 이동평균 요약을 조회합니다."""
+        normalized_symbol = _normalize_symbol(symbol)
+        normalized_timeframe = str(timeframe or "15m").strip().lower() or "15m"
+        if normalized_symbol is None:
+            return "조회할 심볼을 입력해 주세요."
+
+        try:
+            broker = BrokerFactory.get_broker("UPBIT")
+            raw_candles = await broker.get_candles(
+                market=normalized_symbol,
+                timeframe=normalized_timeframe,
+                count=200,
+            )
+            normalized_candles = _normalize_candles(raw_candles)
+            enriched_candles = indicator_calculator.calculate_from_candles(normalized_candles)
+        except Exception as exc:
+            return f"{normalized_symbol} 기술 지표 조회 중 오류가 발생했습니다: {exc}"
+
+        if not enriched_candles:
+            return f"{normalized_symbol} 기술 지표 계산에 필요한 캔들 데이터가 없습니다."
+
+        latest = enriched_candles[-1]
+        lines = [
+            f"[기술 지표 요약: {normalized_symbol} / {normalized_timeframe}]",
+            f"- 기준 시각: {latest.get('timestamp') or '-'}",
+            f"- 종가: {_format_krw(latest.get('close'))}",
+            f"- RSI(14): {_format_number(latest.get('rsi_14'), 2)}",
+            (
+                "- Bollinger Bands(20,2): "
+                f"상단={_format_krw(latest.get('bb_upper_20_2'))}, "
+                f"중앙={_format_krw(latest.get('bb_middle_20_2'))}, "
+                f"하단={_format_krw(latest.get('bb_lower_20_2'))}"
+            ),
+            (
+                "- SMA: "
+                f"5={_format_krw(latest.get('sma_5'))}, "
+                f"20={_format_krw(latest.get('sma_20'))}, "
+                f"60={_format_krw(latest.get('sma_60'))}"
+            ),
+            (
+                "- EMA: "
+                f"50={_format_krw(latest.get('ema_50'))}, "
+                f"200={_format_krw(latest.get('ema_200'))}"
+            ),
+            f"- 거래량: {_format_number(latest.get('volume'), 4)}",
+        ]
+        return "\n".join(lines)
+
+    @tool
+    async def get_market_sentiment() -> str:
+        """현재 공포/탐욕 지수 기반 시장 심리를 조회합니다."""
+        try:
+            async with AsyncSessionLocal() as db:
+                snapshot = await get_cached_market_sentiment(db)
+                if snapshot is None:
+                    snapshot = await get_or_refresh_market_sentiment(db)
+        except Exception as exc:
+            return f"시장 심리 지수 조회 중 오류가 발생했습니다: {exc}"
+
+        if snapshot is None:
+            return "현재 시장 심리 지수를 확인할 수 없습니다."
+
+        lines = [
+            "[시장 심리 지수]",
+            f"- 점수: {snapshot.score}",
+            f"- 분류: {snapshot.classification}",
+            f"- 갱신 시각: {_format_datetime(snapshot.updated_at)}",
+        ]
+        return "\n".join(lines)
+
     return [
         query_portfolio_summary,
         query_order_history,
         query_ai_analysis_logs,
         search_past_conversations,
+        get_realtime_ticker,
+        get_technical_indicators,
+        get_market_sentiment,
     ]
