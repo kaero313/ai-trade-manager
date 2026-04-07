@@ -136,3 +136,34 @@ class SystemConfigItem(BaseModel):
 class SystemConfigUpdateItem(BaseModel):
     config_key: str = Field(..., min_length=1)
     config_value: str = Field(...)
+
+
+class ChatSessionCreateResponse(BaseModel):
+    session_id: str = Field(..., min_length=1)
+
+
+class ChatSessionItem(BaseModel):
+    session_id: str = Field(..., min_length=1)
+    created_at: datetime
+    content_preview: str = Field(default="")
+
+
+class ChatMessageCreateRequest(BaseModel):
+    content: str = Field(..., min_length=1)
+
+
+class ChatMessageItem(BaseModel):
+    id: int
+    session_id: str
+    role: str
+    content: str
+    agent_name: str | None = None
+    is_tool_call: bool = False
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ChatApproveRequest(BaseModel):
+    config_key: str = Field(..., min_length=1)
+    config_value: str = Field(...)
