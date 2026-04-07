@@ -2,6 +2,7 @@
 
 from app.api.routes.ai import router as ai_router
 from app.api.routes.backtest import router as backtest_router
+from app.api.routes.chat import router as chat_router
 from app.api.routes.config import router as config_router
 from app.api.routes.configs import router as configs_router
 from app.api.routes.dashboard import router as dashboard_router
@@ -21,6 +22,7 @@ api_router.include_router(dashboard_router)
 api_router.include_router(status_router)
 api_router.include_router(config_router)
 api_router.include_router(configs_router, prefix="/system", tags=["system"])
+api_router.include_router(chat_router, prefix="/chat", tags=["chat"])
 api_router.include_router(positions_router)
 api_router.include_router(favorites_router, prefix="/favorites", tags=["favorites"])
 api_router.include_router(markets_router, prefix="/markets", tags=["markets"])
