@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import json
 from typing import Annotated, Literal, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
+from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
+from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from app.services.chat.tools import build_chat_tools
 
 SupervisorRoute = Literal["rag_agent", "quant_agent", "ops_agent", "FINISH"]
 
@@ -15,18 +19,59 @@ SUPERVISOR_SYSTEM_PROMPT = """
 (당신은 AI 트레이딩 봇의 수석 매니저입니다. 사용자의 질문을 분석하여 rag_agent, quant_agent, ops_agent 중 적절한 에이전트에게 작업을 위임하고, 결과를 종합하여 한국어로 친절하게 답변합니다.)
 
 다음 규칙을 반드시 지키십시오.
-1. 사용자의 요청이 과거 주문/분석/대화 이력, 포트폴리오 조회, 일반 설명 중심이면 rag_agent 로 라우팅합니다.
-2. 사용자의 요청이 실시간 시세, 기술 지표, 시장 심리 등 정량 데이터 중심이면 quant_agent 로 라우팅합니다.
-3. 사용자의 요청이 시스템 설정 조회, 설정 변경 제안, 운영 정책 관련이면 ops_agent 로 라우팅합니다.
+1. 과거 주문/분석/대화 이력, 포트폴리오 조회, 일반 설명 중심이면 rag_agent 로 라우팅합니다.
+2. 실시간 시세, 기술 지표, 시장 심리 등 정량 데이터 중심이면 quant_agent 로 라우팅합니다.
+3. 시스템 설정 조회, 설정 변경 제안, 운영 정책 관련이면 ops_agent 로 라우팅합니다.
 4. Tool 호출이나 다른 에이전트 위임 없이 바로 답변할 수 있는 간단한 질문이면 FINISH 를 선택합니다.
-5. 모든 응답은 한국어로 작성합니다.
-6. 반드시 next_agent 와 response 두 값만 결정합니다.
+5. 이미 rag_agent, quant_agent, ops_agent 의 결과가 들어와 있으면 그 내용을 읽고 최종 답변으로 종합한 뒤 FINISH 를 선택합니다.
+6. ops_agent 결과에 설정 변경 제안 JSON 이 포함되어 있으면 그 JSON 을 훼손하지 말고 그대로 보존해 응답에 포함합니다.
+7. 반드시 next_agent 와 response 두 값만 결정합니다.
+8. 모든 응답은 한국어로 작성합니다.
 """.strip()
+
+RAG_AGENT_SYSTEM_PROMPT = """
+당신은 rag_agent 입니다.
+포트폴리오, 과거 주문, AI 분석 로그, 과거 대화 검색 Tool만 사용할 수 있습니다.
+사용자 질문에 답하기 위해 필요한 경우에만 Tool을 호출하고, 확인된 정보만 바탕으로 한국어로 답하십시오.
+최종 응답은 사실 요약 중심으로 작성하고, 없는 정보는 추측하지 마십시오.
+""".strip()
+
+QUANT_AGENT_SYSTEM_PROMPT = """
+당신은 quant_agent 입니다.
+실시간 시세, 기술 지표, 시장 심리 Tool만 사용할 수 있습니다.
+정량 데이터와 시세 정보 중심으로 한국어로 답하고, 투자 조언처럼 과장하지 말고 관측된 수치 위주로 설명하십시오.
+""".strip()
+
+OPS_AGENT_SYSTEM_PROMPT = """
+당신은 ops_agent 입니다.
+현재 시스템 설정 조회 Tool과 설정 변경 제안 Tool만 사용할 수 있습니다.
+실제 시스템 설정을 직접 바꿀 수 없으며, 변경이 필요하면 propose_config_change Tool을 호출해 승인 대기 JSON 제안서를 생성해야 합니다.
+설정 변경이 적용되었다고 표현하지 말고, 반드시 승인 전 제안 단계임을 분명히 하십시오.
+최종 응답에 config_change JSON 이 있으면 그 JSON 문자열을 그대로 포함하십시오.
+""".strip()
+
+RAG_TOOL_NAMES = {
+    "query_portfolio_summary",
+    "query_order_history",
+    "query_ai_analysis_logs",
+    "search_past_conversations",
+}
+QUANT_TOOL_NAMES = {
+    "get_realtime_ticker",
+    "get_technical_indicators",
+    "get_market_sentiment",
+}
+OPS_TOOL_NAMES = {
+    "propose_config_change",
+    "get_current_system_configs",
+}
+MAX_TOOL_CALL_ROUNDS = 4
 
 
 class OrchestratorState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
     next_agent: str
+    session_id: str
 
 
 class SupervisorDecision(BaseModel):
@@ -34,28 +79,118 @@ class SupervisorDecision(BaseModel):
     response: str = Field(..., min_length=1)
 
 
-def build_supervisor_chain() -> object:
+def _build_chat_model() -> ChatOpenAI:
     if not settings.OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY 가 설정되지 않아 Supervisor 를 초기화할 수 없습니다.")
+        raise RuntimeError("OPENAI_API_KEY 가 설정되지 않아 Chat Orchestrator 를 실행할 수 없습니다.")
 
-    model = ChatOpenAI(
+    return ChatOpenAI(
         model="gpt-4o-mini",
         temperature=0,
         api_key=settings.OPENAI_API_KEY,
     )
-    return model.with_structured_output(SupervisorDecision)
+
+
+def build_supervisor_chain() -> object:
+    return _build_chat_model().with_structured_output(SupervisorDecision)
+
+
+def _stringify_tool_result(result: object) -> str:
+    if isinstance(result, str):
+        return result
+    return json.dumps(result, ensure_ascii=False, default=str)
+
+
+def _get_filtered_tools(session_id: str, allowed_tool_names: set[str]) -> dict[str, BaseTool]:
+    tools = build_chat_tools(session_id)
+    return {tool.name: tool for tool in tools if tool.name in allowed_tool_names}
+
+
+async def _run_worker_agent(
+    state: OrchestratorState,
+    *,
+    agent_name: str,
+    system_prompt: str,
+    allowed_tool_names: set[str],
+) -> OrchestratorState:
+    session_id = str(state.get("session_id") or "").strip()
+    if not session_id:
+        return {
+            "messages": [AIMessage(name=agent_name, content="session_id 가 없어 에이전트를 실행할 수 없습니다.")],
+            "next_agent": "FINISH",
+        }
+
+    messages = list(state.get("messages") or [])
+    tools_by_name = _get_filtered_tools(session_id, allowed_tool_names)
+    bound_model = _build_chat_model().bind_tools(list(tools_by_name.values()))
+    conversation: list[BaseMessage] = [SystemMessage(content=system_prompt), *messages]
+
+    for _ in range(MAX_TOOL_CALL_ROUNDS):
+        response = await bound_model.ainvoke(conversation)
+        conversation.append(response)
+
+        tool_calls = getattr(response, "tool_calls", None) or []
+        if not tool_calls:
+            return {
+                "messages": [AIMessage(name=agent_name, content=response.content or "")],
+                "next_agent": "supervisor",
+            }
+
+        for tool_call in tool_calls:
+            tool_name = str(tool_call.get("name") or "").strip()
+            tool_call_id = str(tool_call.get("id") or tool_name or "tool_call")
+            tool_args = tool_call.get("args") or {}
+            tool = tools_by_name.get(tool_name)
+            if tool is None:
+                conversation.append(
+                    ToolMessage(
+                        tool_call_id=tool_call_id,
+                        name=tool_name or None,
+                        status="error",
+                        content=f"허용되지 않은 Tool 호출입니다: {tool_name}",
+                    )
+                )
+                continue
+
+            try:
+                result = await tool.ainvoke(tool_args)
+                conversation.append(
+                    ToolMessage(
+                        tool_call_id=tool_call_id,
+                        name=tool_name,
+                        status="success",
+                        content=_stringify_tool_result(result),
+                    )
+                )
+            except Exception as exc:
+                conversation.append(
+                    ToolMessage(
+                        tool_call_id=tool_call_id,
+                        name=tool_name,
+                        status="error",
+                        content=f"Tool 실행 중 오류가 발생했습니다: {exc}",
+                    )
+                )
+
+    return {
+        "messages": [
+            AIMessage(
+                name=agent_name,
+                content="도구 호출 단계가 너무 많아 작업을 마무리하지 못했습니다. 현재까지 수집한 정보만으로 다시 요청해 주세요.",
+            )
+        ],
+        "next_agent": "supervisor",
+    }
 
 
 async def supervisor_node(state: OrchestratorState) -> OrchestratorState:
     messages = list(state.get("messages") or [])
     if not messages:
         return {
-            "messages": [AIMessage(content="질문이 비어 있습니다. 먼저 요청 내용을 입력해 주세요.")],
+            "messages": [AIMessage(name="supervisor", content="질문이 비어 있습니다. 먼저 요청 내용을 입력해 주세요.")],
             "next_agent": "FINISH",
         }
 
-    chain = build_supervisor_chain()
-    decision = await chain.ainvoke(
+    decision = await build_supervisor_chain().ainvoke(
         [
             SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT),
             *messages,
@@ -63,6 +198,67 @@ async def supervisor_node(state: OrchestratorState) -> OrchestratorState:
     )
 
     return {
-        "messages": [AIMessage(content=decision.response)],
+        "messages": [AIMessage(name="supervisor", content=decision.response)],
         "next_agent": decision.next_agent,
     }
+
+
+async def rag_agent_node(state: OrchestratorState) -> OrchestratorState:
+    return await _run_worker_agent(
+        state,
+        agent_name="rag_agent",
+        system_prompt=RAG_AGENT_SYSTEM_PROMPT,
+        allowed_tool_names=RAG_TOOL_NAMES,
+    )
+
+
+async def quant_agent_node(state: OrchestratorState) -> OrchestratorState:
+    return await _run_worker_agent(
+        state,
+        agent_name="quant_agent",
+        system_prompt=QUANT_AGENT_SYSTEM_PROMPT,
+        allowed_tool_names=QUANT_TOOL_NAMES,
+    )
+
+
+async def ops_agent_node(state: OrchestratorState) -> OrchestratorState:
+    return await _run_worker_agent(
+        state,
+        agent_name="ops_agent",
+        system_prompt=OPS_AGENT_SYSTEM_PROMPT,
+        allowed_tool_names=OPS_TOOL_NAMES,
+    )
+
+
+def _route_from_supervisor(state: OrchestratorState) -> SupervisorRoute:
+    next_agent = str(state.get("next_agent") or "FINISH").strip()
+    if next_agent in {"rag_agent", "quant_agent", "ops_agent", "FINISH"}:
+        return next_agent  # type: ignore[return-value]
+    return "FINISH"
+
+
+def build_chat_graph():
+    graph = StateGraph(OrchestratorState)
+    graph.add_node("supervisor", supervisor_node)
+    graph.add_node("rag_agent", rag_agent_node)
+    graph.add_node("quant_agent", quant_agent_node)
+    graph.add_node("ops_agent", ops_agent_node)
+
+    graph.add_edge(START, "supervisor")
+    graph.add_conditional_edges(
+        "supervisor",
+        _route_from_supervisor,
+        {
+            "rag_agent": "rag_agent",
+            "quant_agent": "quant_agent",
+            "ops_agent": "ops_agent",
+            "FINISH": END,
+        },
+    )
+    graph.add_edge("rag_agent", "supervisor")
+    graph.add_edge("quant_agent", "supervisor")
+    graph.add_edge("ops_agent", "supervisor")
+    return graph.compile()
+
+
+chat_orchestrator_graph = build_chat_graph()
