@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Literal, TypedDict
+from collections.abc import AsyncGenerator
+from typing import Annotated, Any, Literal, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db.repository import get_recent_chat_messages
+from app.db.repository import save_chat_message
 from app.services.chat.tools import build_chat_tools
 
 SupervisorRoute = Literal["rag_agent", "quant_agent", "ops_agent", "FINISH"]
@@ -66,6 +70,7 @@ OPS_TOOL_NAMES = {
     "get_current_system_configs",
 }
 MAX_TOOL_CALL_ROUNDS = 4
+GRAPH_AGENT_NAMES = {"supervisor", "rag_agent", "quant_agent", "ops_agent"}
 
 
 class OrchestratorState(TypedDict, total=False):
@@ -98,6 +103,65 @@ def _stringify_tool_result(result: object) -> str:
     if isinstance(result, str):
         return result
     return json.dumps(result, ensure_ascii=False, default=str)
+
+
+def _restore_working_memory_messages(history_rows: list[Any]) -> list[BaseMessage]:
+    restored: list[BaseMessage] = []
+    for row in history_rows:
+        role = str(getattr(row, "role", "") or "").strip().lower()
+        content = str(getattr(row, "content", "") or "")
+        agent_name = getattr(row, "agent_name", None)
+
+        if role == "user":
+            restored.append(HumanMessage(content=content))
+            continue
+
+        if role == "assistant":
+            restored.append(AIMessage(content=content, name=agent_name or None))
+
+    return restored
+
+
+def _extract_last_ai_message(messages: list[Any] | None) -> AIMessage | None:
+    if not messages:
+        return None
+
+    for message in reversed(messages):
+        if isinstance(message, AIMessage):
+            return message
+    return None
+
+
+def _extract_agent_message_content(output: Any) -> str:
+    if isinstance(output, dict):
+        last_message = _extract_last_ai_message(output.get("messages"))
+        if last_message is not None:
+            return str(last_message.content or "")
+    return ""
+
+
+def _extract_approval_request_content(raw_output: Any) -> str | None:
+    content = _stringify_tool_result(raw_output)
+    try:
+        payload = json.loads(content)
+    except Exception:
+        return None
+
+    if (
+        isinstance(payload, dict)
+        and payload.get("action") == "config_change"
+        and payload.get("requires_approval") is True
+    ):
+        return content
+    return None
+
+
+def _resolve_graph_agent_name(event: dict[str, Any]) -> str | None:
+    metadata = event.get("metadata") or {}
+    candidate = metadata.get("langgraph_node") or event.get("name")
+    if candidate in GRAPH_AGENT_NAMES:
+        return str(candidate)
+    return None
 
 
 def _get_filtered_tools(session_id: str, allowed_tool_names: set[str]) -> dict[str, BaseTool]:
@@ -262,3 +326,120 @@ def build_chat_graph():
 
 
 chat_orchestrator_graph = build_chat_graph()
+
+
+async def run_chat_stream(
+    session_id: str,
+    user_message: str,
+    db: AsyncSession,
+) -> AsyncGenerator[dict[str, str], None]:
+    normalized_session_id = str(session_id or "").strip()
+    normalized_user_message = str(user_message or "").strip()
+
+    if not normalized_session_id:
+        raise ValueError("session_id 는 비어 있을 수 없습니다.")
+    if not normalized_user_message:
+        raise ValueError("user_message 는 비어 있을 수 없습니다.")
+
+    history_rows = await get_recent_chat_messages(db, normalized_session_id, limit=20)
+    working_memory_messages = _restore_working_memory_messages(history_rows)
+
+    await save_chat_message(
+        db=db,
+        session_id=normalized_session_id,
+        role="user",
+        content=normalized_user_message,
+        agent_name=None,
+        is_tool_call=False,
+    )
+
+    input_messages = [
+        *working_memory_messages,
+        HumanMessage(content=normalized_user_message),
+    ]
+
+    final_answer_saved = False
+
+    async for event in chat_orchestrator_graph.astream_events(
+        {
+            "session_id": normalized_session_id,
+            "messages": input_messages,
+            "next_agent": "",
+        },
+        version="v2",
+    ):
+        event_name = str(event.get("event") or "")
+        agent_name = _resolve_graph_agent_name(event)
+        event_data = event.get("data") or {}
+
+        if event_name == "on_chain_start" and agent_name is not None:
+            yield {
+                "type": "agent_start",
+                "agent_name": agent_name,
+                "content": "",
+            }
+            continue
+
+        if event_name == "on_chain_end" and agent_name is not None:
+            yield {
+                "type": "agent_end",
+                "agent_name": agent_name,
+                "content": _extract_agent_message_content(event_data.get("output")),
+            }
+            continue
+
+        if event_name == "on_tool_end":
+            tool_name = str(event.get("name") or "tool")
+            tool_output = event_data.get("output")
+            tool_content = _stringify_tool_result(tool_output)
+
+            await save_chat_message(
+                db=db,
+                session_id=normalized_session_id,
+                role="tool",
+                content=tool_content,
+                agent_name=tool_name,
+                is_tool_call=True,
+            )
+
+            approval_request_content = _extract_approval_request_content(tool_output)
+            if approval_request_content is not None:
+                yield {
+                    "type": "approval_request",
+                    "agent_name": "ops_agent",
+                    "content": approval_request_content,
+                }
+                continue
+
+            yield {
+                "type": "tool_call",
+                "agent_name": tool_name,
+                "content": tool_content,
+            }
+            continue
+
+        if event_name == "on_chain_end" and str(event.get("name") or "") == "LangGraph" and not final_answer_saved:
+            output_state = event_data.get("output")
+            if isinstance(output_state, dict):
+                final_message = _extract_last_ai_message(output_state.get("messages"))
+                if final_message is None:
+                    continue
+
+                final_content = str(final_message.content or "")
+                final_agent_name = str(final_message.name or "supervisor")
+
+                await save_chat_message(
+                    db=db,
+                    session_id=normalized_session_id,
+                    role="assistant",
+                    content=final_content,
+                    agent_name=final_agent_name,
+                    is_tool_call=False,
+                )
+
+                final_answer_saved = True
+                yield {
+                    "type": "final_answer",
+                    "agent_name": final_agent_name,
+                    "content": final_content,
+                }
