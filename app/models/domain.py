@@ -92,6 +92,22 @@ class AIAnalysisLog(Base):
     accuracy_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class AIChatMessage(Base):
+    __tablename__ = "ai_chat_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    agent_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_tool_call: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class Favorite(Base):
     __tablename__ = "favorites"
     __table_args__ = (
