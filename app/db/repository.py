@@ -2,9 +2,10 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.domain import AIChatMessage as AIChatMessageORM
 from app.models.domain import BotConfig as BotConfigORM
 from app.models.domain import SystemConfig as SystemConfigORM
 from app.models.schemas import BotConfig as BotConfigSchema
@@ -262,3 +263,107 @@ async def store_market_sentiment_cache(
         config_value=json.dumps(sentiment.model_dump(mode="json"), ensure_ascii=False),
         description="Alternative.me 시장 심리 지수 캐시(JSON)",
     )
+
+
+async def save_chat_message(
+    db: AsyncSession,
+    session_id: str,
+    role: str,
+    content: str,
+    agent_name: str | None = None,
+    is_tool_call: bool = False,
+) -> AIChatMessageORM:
+    message = AIChatMessageORM(
+        session_id=session_id,
+        role=role,
+        content=content,
+        agent_name=agent_name,
+        is_tool_call=is_tool_call,
+    )
+    db.add(message)
+    await db.commit()
+    await db.refresh(message)
+    return message
+
+
+async def get_recent_chat_messages(
+    db: AsyncSession,
+    session_id: str,
+    limit: int = 20,
+) -> list[AIChatMessageORM]:
+    if limit <= 0:
+        return []
+
+    result = await db.execute(
+        select(AIChatMessageORM)
+        .where(
+            AIChatMessageORM.session_id == session_id,
+            AIChatMessageORM.is_tool_call.is_(False),
+        )
+        .order_by(desc(AIChatMessageORM.created_at), desc(AIChatMessageORM.id))
+        .limit(limit)
+    )
+    messages = list(result.scalars().all())
+    messages.reverse()
+    return messages
+
+
+async def search_chat_history(
+    db: AsyncSession,
+    session_id: str,
+    keyword: str,
+) -> list[AIChatMessageORM]:
+    normalized_keyword = keyword.strip()
+    if not normalized_keyword:
+        return []
+
+    result = await db.execute(
+        select(AIChatMessageORM)
+        .where(
+            AIChatMessageORM.session_id == session_id,
+            AIChatMessageORM.content.ilike(f"%{normalized_keyword}%"),
+        )
+        .order_by(desc(AIChatMessageORM.created_at), desc(AIChatMessageORM.id))
+    )
+    return list(result.scalars().all())
+
+
+async def get_chat_sessions(db: AsyncSession) -> list[dict[str, Any]]:
+    ranked_messages = (
+        select(
+            AIChatMessageORM.session_id.label("session_id"),
+            AIChatMessageORM.created_at.label("created_at"),
+            AIChatMessageORM.content.label("content"),
+            func.row_number()
+            .over(
+                partition_by=AIChatMessageORM.session_id,
+                order_by=(desc(AIChatMessageORM.created_at), desc(AIChatMessageORM.id)),
+            )
+            .label("row_number"),
+        )
+        .where(AIChatMessageORM.is_tool_call.is_(False))
+        .subquery()
+    )
+
+    result = await db.execute(
+        select(
+            ranked_messages.c.session_id,
+            ranked_messages.c.created_at,
+            ranked_messages.c.content,
+        )
+        .where(ranked_messages.c.row_number == 1)
+        .order_by(desc(ranked_messages.c.created_at), ranked_messages.c.session_id)
+    )
+
+    sessions: list[dict[str, Any]] = []
+    for row in result.all():
+        preview_source = (row.content or "").strip()
+        sessions.append(
+            {
+                "session_id": row.session_id,
+                "created_at": row.created_at,
+                "content_preview": preview_source[:120],
+            }
+        )
+
+    return sessions
