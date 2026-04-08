@@ -2,13 +2,16 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, ChevronDown, ChevronRight, Loader2, Menu, MessageSquare, Plus, SendHorizontal, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
+import { SYSTEM_CONFIGS_QUERY_KEY, useSystemConfigs } from '../hooks/useSystemConfigs'
 import {
+  approveChatConfigChange,
   createChatSession,
   getChatMessages,
   getChatSessions,
   streamChatMessage,
   type ChatMessage,
   type ChatSession,
+  type SystemConfigItem,
 } from '../services/api'
 
 interface NoticeState {
@@ -36,7 +39,25 @@ interface ChatRenderActivityItem {
   isCollapsed: boolean
 }
 
-type ChatRenderItem = ChatRenderMessageItem | ChatRenderActivityItem
+interface ChatRenderApprovalItem {
+  kind: 'approval'
+  key: string
+  agentName: string
+  configKey: string
+  proposedValue: string
+  currentValue: string | null
+  status: 'pending' | 'applying' | 'applied' | 'rejected' | 'failed'
+  errorMessage: string | null
+}
+
+interface ApprovalRequestPayload {
+  action: 'config_change'
+  config_key: string
+  new_value: string
+  requires_approval: true
+}
+
+type ChatRenderItem = ChatRenderMessageItem | ChatRenderActivityItem | ChatRenderApprovalItem
 
 const CHAT_SESSIONS_QUERY_KEY = ['chat-sessions'] as const
 
@@ -117,6 +138,51 @@ function buildActivityCard(agentName: string, key: string): ChatRenderActivityIt
   }
 }
 
+function buildApprovalCard(
+  agentName: string,
+  key: string,
+  payload: ApprovalRequestPayload,
+  currentValue: string | null,
+): ChatRenderApprovalItem {
+  return {
+    kind: 'approval',
+    key,
+    agentName,
+    configKey: payload.config_key,
+    proposedValue: payload.new_value,
+    currentValue,
+    status: 'pending',
+    errorMessage: null,
+  }
+}
+
+function parseApprovalRequestPayload(content: string): ApprovalRequestPayload | null {
+  if (!content.trim()) {
+    return null
+  }
+
+  try {
+    const parsed = JSON.parse(content) as Partial<ApprovalRequestPayload>
+    if (
+      parsed.action !== 'config_change' ||
+      typeof parsed.config_key !== 'string' ||
+      typeof parsed.new_value !== 'string' ||
+      parsed.requires_approval !== true
+    ) {
+      return null
+    }
+
+    return {
+      action: 'config_change',
+      config_key: parsed.config_key,
+      new_value: parsed.new_value,
+      requires_approval: true,
+    }
+  } catch {
+    return null
+  }
+}
+
 function resolveErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) {
     return error.message
@@ -184,6 +250,20 @@ function updateLatestRunningActivity(
   return updateActivityCardByIndex(items, targetIndex, updater)
 }
 
+function updateApprovalCardByKey(
+  items: ChatRenderItem[],
+  key: string,
+  updater: (item: ChatRenderApprovalItem) => ChatRenderApprovalItem,
+): ChatRenderItem[] {
+  return items.map((item) => {
+    if (item.kind !== 'approval' || item.key !== key) {
+      return item
+    }
+
+    return updater(item)
+  })
+}
+
 function collapseActivityCards(items: ChatRenderItem[]): ChatRenderItem[] {
   return items.map((item) => {
     if (item.kind !== 'activity') {
@@ -222,6 +302,48 @@ function resolveActivityCardClassName(status: ChatRenderActivityItem['status']):
     default:
       return 'border-gray-200/80 bg-gray-100/85 text-gray-800 dark:border-gray-600/60 dark:bg-gray-700/35 dark:text-gray-100'
   }
+}
+
+function resolveApprovalStatusLabel(status: ChatRenderApprovalItem['status']): string {
+  switch (status) {
+    case 'applying':
+      return '적용 중'
+    case 'applied':
+      return '적용 완료'
+    case 'rejected':
+      return '사용자가 거부했습니다'
+    case 'failed':
+      return '적용 실패'
+    default:
+      return '승인 대기'
+  }
+}
+
+function resolveApprovalStatusClassName(status: ChatRenderApprovalItem['status']): string {
+  switch (status) {
+    case 'applying':
+      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200'
+    case 'applied':
+      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200'
+    case 'rejected':
+      return 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200'
+    case 'failed':
+      return 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-200'
+    default:
+      return 'bg-slate-100 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200'
+  }
+}
+
+function formatConfigValueLabel(value: string | null, isLoading: boolean): string {
+  if (value && value.trim()) {
+    return value
+  }
+
+  if (isLoading) {
+    return '불러오는 중'
+  }
+
+  return '설정되지 않음'
 }
 
 function MessageSkeleton() {
@@ -263,6 +385,8 @@ function AIChatPage() {
   const bottomAnchorRef = useRef<HTMLDivElement | null>(null)
   const lastScrolledSessionIdRef = useRef<string | null>(null)
 
+  const systemConfigsQuery = useSystemConfigs()
+
   const chatSessionsQuery = useQuery({
     queryKey: CHAT_SESSIONS_QUERY_KEY,
     queryFn: getChatSessions,
@@ -273,6 +397,11 @@ function AIChatPage() {
     queryFn: () => getChatMessages(selectedSessionId ?? ''),
     enabled: Boolean(selectedSessionId),
   })
+
+  const systemConfigMap = useMemo(
+    () => new Map((systemConfigsQuery.data ?? []).map((item) => [item.config_key, item.config_value])),
+    [systemConfigsQuery.data],
+  )
 
   useEffect(() => {
     const serverSessionIds = new Set((chatSessionsQuery.data ?? []).map((item) => item.session_id))
@@ -315,7 +444,7 @@ function AIChatPage() {
     const behavior = lastScrolledSessionIdRef.current === selectedSessionId ? 'smooth' : 'auto'
     bottomAnchorRef.current?.scrollIntoView({ behavior, block: 'end' })
     lastScrolledSessionIdRef.current = selectedSessionId
-  }, [selectedSessionId, chatMessagesQuery.dataUpdatedAt, renderedConversation.length])
+  }, [selectedSessionId, chatMessagesQuery.dataUpdatedAt, renderedConversation])
 
   const syncSessions = async () => {
     await queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_QUERY_KEY })
@@ -383,6 +512,82 @@ function AIChatPage() {
     )
   }
 
+  const handleApproveRequest = async (key: string) => {
+    if (!selectedSessionId) {
+      return
+    }
+
+    const targetItem = liveItems.find(
+      (item): item is ChatRenderApprovalItem =>
+        item.kind === 'approval' && item.key === key && (item.status === 'pending' || item.status === 'failed'),
+    )
+    if (!targetItem) {
+      return
+    }
+
+    setLiveItems((current) =>
+      updateApprovalCardByKey(current, key, (item) => ({
+        ...item,
+        status: 'applying',
+        errorMessage: null,
+      })),
+    )
+
+    try {
+      const nextConfigs = await approveChatConfigChange(selectedSessionId, {
+        config_key: targetItem.configKey,
+        config_value: targetItem.proposedValue,
+      })
+
+      queryClient.setQueryData<SystemConfigItem[]>(SYSTEM_CONFIGS_QUERY_KEY, nextConfigs)
+      await queryClient.invalidateQueries({ queryKey: SYSTEM_CONFIGS_QUERY_KEY })
+
+      const appliedValue =
+        nextConfigs.find((config) => config.config_key === targetItem.configKey)?.config_value ??
+        targetItem.proposedValue
+
+      setLiveItems((current) =>
+        updateApprovalCardByKey(current, key, (item) => ({
+          ...item,
+          status: 'applied',
+          currentValue: appliedValue,
+          errorMessage: null,
+        })),
+      )
+      setNotice({
+        type: 'success',
+        message: `${targetItem.configKey} 설정이 적용되었습니다.`,
+      })
+    } catch (error) {
+      const errorMessage = resolveErrorMessage(error, '설정 적용 요청에 실패했습니다.')
+      setLiveItems((current) =>
+        updateApprovalCardByKey(current, key, (item) => ({
+          ...item,
+          status: 'failed',
+          errorMessage,
+        })),
+      )
+      setNotice({
+        type: 'error',
+        message: errorMessage,
+      })
+    }
+  }
+
+  const handleRejectRequest = (key: string) => {
+    setLiveItems((current) =>
+      updateApprovalCardByKey(current, key, (item) => ({
+        ...item,
+        status: 'rejected',
+        errorMessage: null,
+      })),
+    )
+    setNotice({
+      type: 'info',
+      message: '설정 변경 제안을 거부했습니다.',
+    })
+  }
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
@@ -441,13 +646,29 @@ function AIChatPage() {
         }
 
         if (streamEvent.type === 'approval_request') {
-          setLiveItems((current) =>
-            updateLatestRunningActivity(current, (activity) => ({
+          const approvalPayload = parseApprovalRequestPayload(streamEvent.content)
+
+          setLiveItems((current) => {
+            const nextItems = updateLatestRunningActivity(current, (activity) => ({
               ...activity,
               summaryText: `📝 [${activity.agentName}] 승인 요청안을 준비하고 있습니다...`,
               detailsText: streamEvent.content || activity.detailsText,
-            })),
-          )
+            }))
+
+            if (!approvalPayload) {
+              return nextItems
+            }
+
+            return [
+              ...nextItems,
+              buildApprovalCard(
+                streamEvent.agent_name,
+                `live-approval-${++liveItemSequenceRef.current}`,
+                approvalPayload,
+                systemConfigMap.get(approvalPayload.config_key) ?? null,
+              ),
+            ]
+          })
           return
         }
 
@@ -458,7 +679,7 @@ function AIChatPage() {
               (activity) => ({
                 ...activity,
                 status: 'completed',
-                summaryText: `✅ [${activity.agentName}] 작업을 완료했습니다.`,
+                summaryText: `✅ [${activity.agentName}] 작업이 완료되었습니다.`,
                 detailsText: streamEvent.content || activity.detailsText,
               }),
               streamEvent.agent_name,
@@ -484,9 +705,7 @@ function AIChatPage() {
 
       await syncSessions()
     } catch (error) {
-      setLiveItems((current) =>
-        finishRunningActivities(current, '채팅 스트리밍이 중단되었습니다.'),
-      )
+      setLiveItems((current) => finishRunningActivities(current, '채팅 스트리밍이 중단되었습니다.'))
       setNotice({
         type: 'error',
         message: resolveErrorMessage(error, '채팅 스트리밍 요청에 실패했습니다.'),
@@ -543,7 +762,7 @@ function AIChatPage() {
 
         {!chatSessionsQuery.isLoading && !chatSessionsQuery.isError && sessions.length === 0 && (
           <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
-            아직 저장된 대화가 없습니다.
+            아직 대화 세션이 없습니다.
           </div>
         )}
 
@@ -599,7 +818,8 @@ function AIChatPage() {
               AI 뱅커
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-gray-600 dark:text-gray-300">
-              포트폴리오, 주문, AI 분석, 시스템 설정을 대화형으로 조회하고 조정할 수 있는 멀티 에이전트 채팅 화면입니다.
+              포트폴리오, 주문, AI 분석, 시스템 설정을 대화형으로 조회하고 조정할 수 있는 멀티 에이전트
+              채팅 화면입니다.
             </p>
           </div>
 
@@ -627,7 +847,8 @@ function AIChatPage() {
                 {selectedSession ? '선택된 세션' : '새 대화를 시작하세요'}
               </h2>
               <p className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">
-                {selectedSession?.session_id ?? '좌측 목록에서 세션을 선택하거나 새 대화를 만들어 시작합니다.'}
+                {selectedSession?.session_id ??
+                  '좌측 목록에서 세션을 선택하거나, 바로 질문을 입력하면 새 세션이 자동으로 생성됩니다.'}
               </p>
             </div>
 
@@ -657,7 +878,8 @@ function AIChatPage() {
                   새 대화를 시작하세요
                 </h3>
                 <p className="mt-2 max-w-md text-sm leading-6 text-gray-500 dark:text-gray-400">
-                  상단의 새 대화 버튼을 누르거나 바로 질문을 입력하면, AI 뱅커 전용 세션이 자동으로 생성됩니다.
+                  상단의 새 대화 버튼을 누르거나 바로 질문을 입력하면, AI 뱅커 전용 세션이 자동으로
+                  생성됩니다.
                 </p>
               </div>
             )}
@@ -730,6 +952,93 @@ function AIChatPage() {
                               <p className="mt-1 whitespace-pre-wrap break-words opacity-90">{item.detailsText}</p>
                             </div>
                           )}
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  if (item.kind === 'approval') {
+                    const displayedCurrentValue =
+                      item.currentValue ?? systemConfigMap.get(item.configKey) ?? null
+                    const canApprove = item.status === 'pending' || item.status === 'failed'
+                    const canReject = item.status === 'pending' || item.status === 'failed'
+
+                    return (
+                      <div key={item.key} className="flex justify-start">
+                        <div className="flex max-w-[82%] items-start gap-3">
+                          <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-sm shadow-sm dark:bg-gray-100">
+                            <span aria-hidden="true">🤖</span>
+                          </div>
+                          <div className="w-full rounded-2xl rounded-bl-md border border-amber-200 bg-white px-4 py-4 text-gray-900 shadow-sm dark:border-amber-500/20 dark:bg-gray-800 dark:text-gray-100">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                                {item.agentName}
+                              </span>
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ${resolveApprovalStatusClassName(
+                                  item.status,
+                                )}`}
+                              >
+                                {item.status === 'applying' && <Loader2 className="h-3 w-3 animate-spin" />}
+                                {item.status === 'applied' && <Check className="h-3 w-3" />}
+                                {resolveApprovalStatusLabel(item.status)}
+                              </span>
+                            </div>
+
+                            <p className="mt-2 text-sm font-semibold leading-6 text-gray-900 dark:text-gray-100">
+                              설정 변경 제안
+                            </p>
+                            <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
+                              Operations 에이전트가 아래 설정 변경을 제안했습니다.
+                            </p>
+
+                            <div className="mt-4 overflow-hidden rounded-xl border border-amber-200/80 bg-amber-50/70 dark:border-amber-500/20 dark:bg-amber-500/5">
+                              <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-amber-200/80 px-4 py-3 text-sm dark:border-amber-500/10">
+                                <span className="font-semibold text-gray-700 dark:text-gray-200">변경 대상 키</span>
+                                <span className="break-all text-gray-900 dark:text-gray-100">{item.configKey}</span>
+                              </div>
+                              <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-amber-200/80 px-4 py-3 text-sm dark:border-amber-500/10">
+                                <span className="font-semibold text-gray-700 dark:text-gray-200">현재값</span>
+                                <span className="break-all text-gray-900 dark:text-gray-100">
+                                  {formatConfigValueLabel(displayedCurrentValue, systemConfigsQuery.isLoading)}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-[120px_minmax(0,1fr)] px-4 py-3 text-sm">
+                                <span className="font-semibold text-gray-700 dark:text-gray-200">제안값</span>
+                                <span className="break-all text-gray-900 dark:text-gray-100">{item.proposedValue}</span>
+                              </div>
+                            </div>
+
+                            {item.errorMessage && (
+                              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+                                {item.errorMessage}
+                              </div>
+                            )}
+
+                            <div className="mt-4 flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void handleApproveRequest(item.key)}
+                                disabled={!canApprove || item.status === 'applying'}
+                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                              >
+                                {item.status === 'applying' ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Check className="h-4 w-4" />
+                                )}
+                                승인
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRejectRequest(item.key)}
+                                disabled={!canReject || item.status === 'applying'}
+                                className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
+                              >
+                                거부
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )
