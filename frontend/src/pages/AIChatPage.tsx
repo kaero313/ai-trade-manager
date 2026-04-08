@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Menu, MessageSquare, Plus, SendHorizontal, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Loader2, Menu, MessageSquare, Plus, SendHorizontal, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import {
@@ -26,15 +26,17 @@ interface ChatRenderMessageItem {
   isPending: boolean
 }
 
-interface ChatRenderEventItem {
-  kind: 'event'
+interface ChatRenderActivityItem {
+  kind: 'activity'
   key: string
-  eventType: string
   agentName: string
-  content: string
+  status: 'running' | 'completed' | 'failed'
+  summaryText: string
+  detailsText: string
+  isCollapsed: boolean
 }
 
-type ChatRenderItem = ChatRenderMessageItem | ChatRenderEventItem
+type ChatRenderItem = ChatRenderMessageItem | ChatRenderActivityItem
 
 const CHAT_SESSIONS_QUERY_KEY = ['chat-sessions'] as const
 
@@ -103,6 +105,18 @@ function buildOptimisticMessageItem(
   }
 }
 
+function buildActivityCard(agentName: string, key: string): ChatRenderActivityItem {
+  return {
+    kind: 'activity',
+    key,
+    agentName,
+    status: 'running',
+    summaryText: `🔄 [${agentName}] 작업을 시작합니다...`,
+    detailsText: '',
+    isCollapsed: false,
+  }
+}
+
 function resolveErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) {
     return error.message
@@ -124,31 +138,89 @@ function mapStoredMessagesToRenderItems(messages: ChatMessage[] | undefined): Ch
     }))
 }
 
-function resolveEventLabel(eventType: string): string {
-  switch (eventType) {
-    case 'agent_start':
-      return '에이전트 시작'
-    case 'agent_end':
-      return '에이전트 완료'
-    case 'tool_call':
-      return '툴 호출'
-    case 'approval_request':
-      return '승인 요청'
-    default:
-      return '진행 상태'
-  }
+function updateActivityCardByIndex(
+  items: ChatRenderItem[],
+  targetIndex: number,
+  updater: (item: ChatRenderActivityItem) => ChatRenderActivityItem,
+): ChatRenderItem[] {
+  return items.map((item, index) => {
+    if (index !== targetIndex || item.kind !== 'activity') {
+      return item
+    }
+    return updater(item)
+  })
 }
 
-function resolveEventCardClassName(eventType: string): string {
-  switch (eventType) {
-    case 'approval_request':
-      return 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100'
-    case 'tool_call':
-      return 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-100'
-    case 'agent_end':
-      return 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-100'
+function findLatestRunningActivityIndex(items: ChatRenderItem[], preferredAgentName?: string): number {
+  if (preferredAgentName) {
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index]
+      if (item.kind === 'activity' && item.status === 'running' && item.agentName === preferredAgentName) {
+        return index
+      }
+    }
+  }
+
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index]
+    if (item.kind === 'activity' && item.status === 'running') {
+      return index
+    }
+  }
+
+  return -1
+}
+
+function updateLatestRunningActivity(
+  items: ChatRenderItem[],
+  updater: (item: ChatRenderActivityItem) => ChatRenderActivityItem,
+  preferredAgentName?: string,
+): ChatRenderItem[] {
+  const targetIndex = findLatestRunningActivityIndex(items, preferredAgentName)
+  if (targetIndex === -1) {
+    return items
+  }
+
+  return updateActivityCardByIndex(items, targetIndex, updater)
+}
+
+function collapseActivityCards(items: ChatRenderItem[]): ChatRenderItem[] {
+  return items.map((item) => {
+    if (item.kind !== 'activity') {
+      return item
+    }
+
+    return {
+      ...item,
+      isCollapsed: true,
+    }
+  })
+}
+
+function finishRunningActivities(items: ChatRenderItem[], fallbackText: string): ChatRenderItem[] {
+  return items.map((item) => {
+    if (item.kind !== 'activity' || item.status !== 'running') {
+      return item
+    }
+
+    return {
+      ...item,
+      status: 'failed',
+      summaryText: `⚠️ [${item.agentName}] 응답이 중단되었습니다.`,
+      detailsText: item.detailsText || fallbackText,
+      isCollapsed: false,
+    }
+  })
+}
+
+function resolveActivityCardClassName(status: ChatRenderActivityItem['status']): string {
+  switch (status) {
+    case 'completed':
+      return 'border-gray-200/80 bg-gray-100/80 text-gray-800 dark:border-gray-600/60 dark:bg-gray-700/40 dark:text-gray-100'
+    case 'failed':
+      return 'border-rose-200/80 bg-rose-50/85 text-rose-800 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-100'
     default:
-      return 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-400/20 dark:bg-violet-500/10 dark:text-violet-100'
+      return 'border-gray-200/80 bg-gray-100/85 text-gray-800 dark:border-gray-600/60 dark:bg-gray-700/35 dark:text-gray-100'
   }
 }
 
@@ -249,13 +321,6 @@ function AIChatPage() {
     await queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_QUERY_KEY })
   }
 
-  const syncMessages = async (sessionId: string) => {
-    await queryClient.fetchQuery({
-      queryKey: getChatMessagesQueryKey(sessionId),
-      queryFn: () => getChatMessages(sessionId),
-    })
-  }
-
   const createAndSelectSession = async (): Promise<string | null> => {
     setIsCreatingSession(true)
     try {
@@ -303,6 +368,21 @@ function AIChatPage() {
     setIsSidebarOpen(false)
   }
 
+  const toggleActivityCard = (key: string) => {
+    setLiveItems((current) =>
+      current.map((item) => {
+        if (item.kind !== 'activity' || item.key !== key) {
+          return item
+        }
+
+        return {
+          ...item,
+          isCollapsed: !item.isCollapsed,
+        }
+      }),
+    )
+  }
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
@@ -325,7 +405,7 @@ function AIChatPage() {
     setIsStreaming(true)
     setNotice(null)
     setDraftMessage('')
-    setLiveItems([optimisticUserMessage])
+    setLiveItems((current) => [...current, optimisticUserMessage])
 
     setPendingSessions((current) =>
       current.map((item) =>
@@ -341,41 +421,72 @@ function AIChatPage() {
 
     try {
       await streamChatMessage(targetSessionId, normalizedMessage, (streamEvent) => {
-        if (streamEvent.type === 'final_answer') {
+        if (streamEvent.type === 'agent_start') {
           setLiveItems((current) => [
             ...current,
-            buildOptimisticMessageItem(
-              'assistant',
-              streamEvent.content,
-              `live-assistant-${++liveItemSequenceRef.current}`,
-              streamEvent.agent_name,
-            ),
+            buildActivityCard(streamEvent.agent_name, `live-activity-${++liveItemSequenceRef.current}`),
           ])
           return
         }
 
-        setLiveItems((current) => [
-          ...current,
-          {
-            kind: 'event',
-            key: `live-event-${++liveItemSequenceRef.current}`,
-            eventType: streamEvent.type,
-            agentName: streamEvent.agent_name,
-            content: streamEvent.content,
-          },
-        ])
+        if (streamEvent.type === 'tool_call') {
+          setLiveItems((current) =>
+            updateLatestRunningActivity(current, (activity) => ({
+              ...activity,
+              summaryText: `🔍 [${activity.agentName}] 데이터를 조회하고 있습니다...`,
+              detailsText: streamEvent.content || activity.detailsText,
+            })),
+          )
+          return
+        }
+
+        if (streamEvent.type === 'approval_request') {
+          setLiveItems((current) =>
+            updateLatestRunningActivity(current, (activity) => ({
+              ...activity,
+              summaryText: `📝 [${activity.agentName}] 승인 요청안을 준비하고 있습니다...`,
+              detailsText: streamEvent.content || activity.detailsText,
+            })),
+          )
+          return
+        }
+
+        if (streamEvent.type === 'agent_end') {
+          setLiveItems((current) =>
+            updateLatestRunningActivity(
+              current,
+              (activity) => ({
+                ...activity,
+                status: 'completed',
+                summaryText: `✅ [${activity.agentName}] 작업을 완료했습니다.`,
+                detailsText: streamEvent.content || activity.detailsText,
+              }),
+              streamEvent.agent_name,
+            ),
+          )
+          return
+        }
+
+        if (streamEvent.type === 'final_answer') {
+          setLiveItems((current) =>
+            collapseActivityCards([
+              ...current,
+              buildOptimisticMessageItem(
+                'assistant',
+                streamEvent.content,
+                `live-assistant-${++liveItemSequenceRef.current}`,
+                streamEvent.agent_name,
+              ),
+            ]),
+          )
+        }
       })
 
-      await Promise.all([syncSessions(), syncMessages(targetSessionId)])
-      setLiveItems([])
+      await syncSessions()
     } catch (error) {
-      try {
-        await syncMessages(targetSessionId)
-      } catch {
-        // 동기화 실패는 원래 오류 메시지를 우선 유지합니다.
-      }
-
-      setLiveItems([])
+      setLiveItems((current) =>
+        finishRunningActivities(current, '채팅 스트리밍이 중단되었습니다.'),
+      )
       setNotice({
         type: 'error',
         message: resolveErrorMessage(error, '채팅 스트리밍 요청에 실패했습니다.'),
@@ -574,23 +685,51 @@ function AIChatPage() {
             {selectedSession && !showMessagesSkeleton && !chatMessagesQuery.isError && renderedConversation.length > 0 && (
               <div className="space-y-4">
                 {renderedConversation.map((item) => {
-                  if (item.kind === 'event') {
+                  if (item.kind === 'activity') {
                     return (
-                      <div key={item.key} className="flex justify-center">
+                      <div key={item.key} className="flex justify-start">
                         <div
-                          className={`w-full max-w-2xl rounded-2xl border px-4 py-3 text-sm shadow-sm ${resolveEventCardClassName(
-                            item.eventType,
+                          className={`w-full max-w-2xl rounded-2xl border px-4 py-3 text-sm shadow-sm backdrop-blur-sm ${resolveActivityCardClassName(
+                            item.status,
                           )}`}
                         >
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="text-xs font-semibold uppercase tracking-[0.18em] opacity-80">
-                              {resolveEventLabel(item.eventType)}
-                            </span>
-                            <span className="rounded-full bg-white/70 px-2 py-1 text-[11px] font-semibold text-gray-700 dark:bg-gray-900/30 dark:text-gray-200">
-                              {item.agentName}
-                            </span>
-                          </div>
-                          <p className="mt-2 whitespace-pre-wrap break-words leading-6">{item.content}</p>
+                          <button
+                            type="button"
+                            onClick={() => toggleActivityCard(item.key)}
+                            className="flex w-full items-center justify-between gap-3 text-left"
+                          >
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/75 dark:bg-gray-900/40">
+                                {item.status === 'running' ? (
+                                  <Loader2 className="h-4 w-4 animate-spin text-gray-600 dark:text-gray-200" />
+                                ) : (
+                                  <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="truncate text-xs font-semibold uppercase tracking-[0.18em] opacity-70">
+                                  {item.agentName}
+                                </p>
+                                <p className="mt-1 whitespace-pre-wrap break-words font-medium leading-6">
+                                  {item.summaryText}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="shrink-0 rounded-full bg-white/70 p-1 dark:bg-gray-900/30">
+                              {item.isCollapsed ? (
+                                <ChevronRight className="h-4 w-4" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4" />
+                              )}
+                            </div>
+                          </button>
+
+                          {!item.isCollapsed && item.detailsText && (
+                            <div className="mt-3 border-t border-white/60 pt-3 text-xs leading-6 text-gray-700 dark:border-gray-600/60 dark:text-gray-200">
+                              <p className="font-semibold opacity-80">상세 로그</p>
+                              <p className="mt-1 whitespace-pre-wrap break-words opacity-90">{item.detailsText}</p>
+                            </div>
+                          )}
                         </div>
                       </div>
                     )
