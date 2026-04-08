@@ -1,13 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Menu, MessageSquare, Plus, SendHorizontal, X } from 'lucide-react'
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import {
   createChatSession,
+  getChatMessages,
   getChatSessions,
   streamChatMessage,
+  type ChatMessage,
   type ChatSession,
-  type ChatStreamEvent,
 } from '../services/api'
 
 interface NoticeState {
@@ -15,7 +16,31 @@ interface NoticeState {
   message: string
 }
 
+interface ChatRenderMessageItem {
+  kind: 'message'
+  key: string
+  role: 'user' | 'assistant'
+  content: string
+  agentName: string | null
+  createdAt: string | null
+  isPending: boolean
+}
+
+interface ChatRenderEventItem {
+  kind: 'event'
+  key: string
+  eventType: string
+  agentName: string
+  content: string
+}
+
+type ChatRenderItem = ChatRenderMessageItem | ChatRenderEventItem
+
 const CHAT_SESSIONS_QUERY_KEY = ['chat-sessions'] as const
+
+function getChatMessagesQueryKey(sessionId: string) {
+  return ['chat-messages', sessionId] as const
+}
 
 function formatSessionTimestamp(value: string): string {
   const parsed = new Date(value)
@@ -26,6 +51,22 @@ function formatSessionTimestamp(value: string): string {
   return new Intl.DateTimeFormat('ko-KR', {
     month: '2-digit',
     day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed)
+}
+
+function formatMessageTimestamp(value: string | null): string {
+  if (!value) {
+    return '방금 전'
+  }
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return '방금 전'
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
     hour: '2-digit',
     minute: '2-digit',
   }).format(parsed)
@@ -45,11 +86,95 @@ function buildPendingSession(sessionId: string): ChatSession {
   }
 }
 
+function buildOptimisticMessageItem(
+  role: 'user' | 'assistant',
+  content: string,
+  key: string,
+  agentName: string | null = null,
+): ChatRenderMessageItem {
+  return {
+    kind: 'message',
+    key,
+    role,
+    content,
+    agentName,
+    createdAt: new Date().toISOString(),
+    isPending: true,
+  }
+}
+
 function resolveErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) {
     return error.message
   }
   return fallback
+}
+
+function mapStoredMessagesToRenderItems(messages: ChatMessage[] | undefined): ChatRenderMessageItem[] {
+  return (messages ?? [])
+    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .map((message) => ({
+      kind: 'message',
+      key: `message-${message.id}`,
+      role: message.role as 'user' | 'assistant',
+      content: message.content,
+      agentName: message.agent_name,
+      createdAt: message.created_at,
+      isPending: false,
+    }))
+}
+
+function resolveEventLabel(eventType: string): string {
+  switch (eventType) {
+    case 'agent_start':
+      return '에이전트 시작'
+    case 'agent_end':
+      return '에이전트 완료'
+    case 'tool_call':
+      return '툴 호출'
+    case 'approval_request':
+      return '승인 요청'
+    default:
+      return '진행 상태'
+  }
+}
+
+function resolveEventCardClassName(eventType: string): string {
+  switch (eventType) {
+    case 'approval_request':
+      return 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100'
+    case 'tool_call':
+      return 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-100'
+    case 'agent_end':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-100'
+    default:
+      return 'border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-400/20 dark:bg-violet-500/10 dark:text-violet-100'
+  }
+}
+
+function MessageSkeleton() {
+  return (
+    <div className="space-y-4">
+      {[0, 1, 2, 3, 4].map((index) => (
+        <div
+          key={index}
+          className={`flex ${index % 2 === 0 ? 'justify-start' : 'justify-end'} animate-pulse`}
+        >
+          <div
+            className={`max-w-[78%] rounded-2xl px-4 py-4 ${
+              index % 2 === 0
+                ? 'border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'
+                : 'bg-indigo-300/70 dark:bg-indigo-500/40'
+            }`}
+          >
+            <div className="h-3 w-20 rounded bg-gray-200 dark:bg-gray-700" />
+            <div className="mt-3 h-3 w-64 rounded bg-gray-200 dark:bg-gray-700" />
+            <div className="mt-2 h-3 w-40 rounded bg-gray-200 dark:bg-gray-700" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function AIChatPage() {
@@ -60,20 +185,32 @@ function AIChatPage() {
   const [isStreaming, setIsStreaming] = useState(false)
   const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [pendingSessions, setPendingSessions] = useState<ChatSession[]>([])
-  const [lastStreamEvent, setLastStreamEvent] = useState<ChatStreamEvent | null>(null)
+  const [liveItems, setLiveItems] = useState<ChatRenderItem[]>([])
   const [notice, setNotice] = useState<NoticeState | null>(null)
+  const liveItemSequenceRef = useRef(0)
+  const bottomAnchorRef = useRef<HTMLDivElement | null>(null)
+  const lastScrolledSessionIdRef = useRef<string | null>(null)
 
   const chatSessionsQuery = useQuery({
     queryKey: CHAT_SESSIONS_QUERY_KEY,
     queryFn: getChatSessions,
   })
 
+  const chatMessagesQuery = useQuery({
+    queryKey: selectedSessionId ? getChatMessagesQueryKey(selectedSessionId) : ['chat-messages', 'idle'],
+    queryFn: () => getChatMessages(selectedSessionId ?? ''),
+    enabled: Boolean(selectedSessionId),
+  })
+
   useEffect(() => {
     const serverSessionIds = new Set((chatSessionsQuery.data ?? []).map((item) => item.session_id))
-    setPendingSessions((current) =>
-      current.filter((item) => !serverSessionIds.has(item.session_id)),
-    )
+    setPendingSessions((current) => current.filter((item) => !serverSessionIds.has(item.session_id)))
   }, [chatSessionsQuery.data])
+
+  useEffect(() => {
+    setLiveItems([])
+    setNotice(null)
+  }, [selectedSessionId])
 
   const sessions = useMemo(() => {
     const serverSessions = chatSessionsQuery.data ?? []
@@ -88,8 +225,35 @@ function AIChatPage() {
     [selectedSessionId, sessions],
   )
 
+  const storedMessageItems = useMemo(
+    () => mapStoredMessagesToRenderItems(chatMessagesQuery.data),
+    [chatMessagesQuery.data],
+  )
+
+  const renderedConversation = useMemo(
+    () => [...storedMessageItems, ...liveItems],
+    [liveItems, storedMessageItems],
+  )
+
+  useEffect(() => {
+    if (!selectedSessionId) {
+      return
+    }
+
+    const behavior = lastScrolledSessionIdRef.current === selectedSessionId ? 'smooth' : 'auto'
+    bottomAnchorRef.current?.scrollIntoView({ behavior, block: 'end' })
+    lastScrolledSessionIdRef.current = selectedSessionId
+  }, [selectedSessionId, chatMessagesQuery.dataUpdatedAt, renderedConversation.length])
+
   const syncSessions = async () => {
     await queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_QUERY_KEY })
+  }
+
+  const syncMessages = async (sessionId: string) => {
+    await queryClient.fetchQuery({
+      queryKey: getChatMessagesQueryKey(sessionId),
+      queryFn: () => getChatMessages(sessionId),
+    })
   }
 
   const createAndSelectSession = async (): Promise<string | null> => {
@@ -103,7 +267,6 @@ function AIChatPage() {
         return [nextSession, ...withoutDuplicate]
       })
       setSelectedSessionId(result.session_id)
-      setNotice(null)
       setIsSidebarOpen(false)
       return result.session_id
     } catch (error) {
@@ -125,13 +288,18 @@ function AIChatPage() {
   }
 
   const handleCreateSession = async () => {
+    if (isStreaming) {
+      return
+    }
     await createAndSelectSession()
   }
 
   const handleSelectSession = (sessionId: string) => {
+    if (isStreaming) {
+      return
+    }
+
     setSelectedSessionId(sessionId)
-    setLastStreamEvent(null)
-    setNotice(null)
     setIsSidebarOpen(false)
   }
 
@@ -148,9 +316,16 @@ function AIChatPage() {
       return
     }
 
+    const optimisticUserMessage = buildOptimisticMessageItem(
+      'user',
+      normalizedMessage,
+      `live-user-${++liveItemSequenceRef.current}`,
+    )
+
     setIsStreaming(true)
-    setLastStreamEvent(null)
     setNotice(null)
+    setDraftMessage('')
+    setLiveItems([optimisticUserMessage])
 
     setPendingSessions((current) =>
       current.map((item) =>
@@ -166,12 +341,41 @@ function AIChatPage() {
 
     try {
       await streamChatMessage(targetSessionId, normalizedMessage, (streamEvent) => {
-        setLastStreamEvent(streamEvent)
+        if (streamEvent.type === 'final_answer') {
+          setLiveItems((current) => [
+            ...current,
+            buildOptimisticMessageItem(
+              'assistant',
+              streamEvent.content,
+              `live-assistant-${++liveItemSequenceRef.current}`,
+              streamEvent.agent_name,
+            ),
+          ])
+          return
+        }
+
+        setLiveItems((current) => [
+          ...current,
+          {
+            kind: 'event',
+            key: `live-event-${++liveItemSequenceRef.current}`,
+            eventType: streamEvent.type,
+            agentName: streamEvent.agent_name,
+            content: streamEvent.content,
+          },
+        ])
       })
 
-      setDraftMessage('')
-      await syncSessions()
+      await Promise.all([syncSessions(), syncMessages(targetSessionId)])
+      setLiveItems([])
     } catch (error) {
+      try {
+        await syncMessages(targetSessionId)
+      } catch {
+        // 동기화 실패는 원래 오류 메시지를 우선 유지합니다.
+      }
+
+      setLiveItems([])
       setNotice({
         type: 'error',
         message: resolveErrorMessage(error, '채팅 스트리밍 요청에 실패했습니다.'),
@@ -204,7 +408,7 @@ function AIChatPage() {
         <button
           type="button"
           onClick={() => void handleCreateSession()}
-          disabled={isCreatingSession}
+          disabled={isCreatingSession || isStreaming}
           className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-emerald-300"
         >
           {isCreatingSession ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
@@ -241,11 +445,12 @@ function AIChatPage() {
                 key={session.session_id}
                 type="button"
                 onClick={() => handleSelectSession(session.session_id)}
+                disabled={isStreaming}
                 className={`w-full rounded-xl border px-4 py-3 text-left transition ${
                   isSelected
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200'
                     : 'border-transparent bg-gray-50 text-gray-700 hover:border-gray-200 hover:bg-gray-100 dark:bg-gray-700/40 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:bg-gray-700'
-                }`}
+                } disabled:cursor-not-allowed disabled:opacity-60`}
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="truncate text-sm font-semibold">
@@ -263,6 +468,13 @@ function AIChatPage() {
       </div>
     </div>
   )
+
+  const showMessagesSkeleton = Boolean(selectedSessionId) && chatMessagesQuery.isLoading
+  const showEmptySelectedSession =
+    Boolean(selectedSession) &&
+    !showMessagesSkeleton &&
+    !chatMessagesQuery.isError &&
+    renderedConversation.length === 0
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-6">
@@ -308,19 +520,27 @@ function AIChatPage() {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsSidebarOpen(true)}
-              className="hidden h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 sm:inline-flex lg:hidden dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
-              aria-label="세션 목록 열기"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-3">
+              {isStreaming && (
+                <div className="hidden items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 sm:inline-flex dark:bg-emerald-500/10 dark:text-emerald-200">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  응답 생성 중
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                className="hidden h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 sm:inline-flex lg:hidden dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
+                aria-label="세션 목록 열기"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+            </div>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50/80 px-5 py-5 dark:bg-gray-900/30">
             {!selectedSession && (
-              <div className="flex h-full min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-gray-50/80 px-6 text-center dark:border-gray-600 dark:bg-gray-700/20">
+              <div className="flex h-full min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white/70 px-6 text-center dark:border-gray-600 dark:bg-gray-800/30">
                 <MessageSquare className="h-10 w-10 text-emerald-500" />
                 <h3 className="mt-4 text-xl font-semibold text-gray-900 dark:text-gray-100">
                   새 대화를 시작하세요
@@ -331,37 +551,92 @@ function AIChatPage() {
               </div>
             )}
 
-            {selectedSession && (
-              <div className="flex h-full min-h-[360px] flex-col gap-4 rounded-2xl border border-gray-200 bg-gray-50/80 p-5 dark:border-gray-700 dark:bg-gray-700/20">
-                <div className="rounded-xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">채팅 영역 준비됨</p>
-                  <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                    다음 Task에서 과거 메시지 복원, 스트리밍 메시지 버블, 승인 요청 카드 UI를 이 영역에 채웁니다.
-                  </p>
-                </div>
+            {selectedSession && showMessagesSkeleton && <MessageSkeleton />}
 
-                <div className="grid gap-4 xl:grid-cols-2">
-                  <div className="rounded-xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
-                      Session ID
-                    </p>
-                    <p className="mt-2 break-all text-sm text-gray-700 dark:text-gray-200">
-                      {selectedSession.session_id}
-                    </p>
-                  </div>
+            {selectedSession && chatMessagesQuery.isError && !showMessagesSkeleton && (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+                {resolveErrorMessage(chatMessagesQuery.error, '대화 이력을 불러오지 못했습니다.')}
+              </div>
+            )}
 
-                  <div className="rounded-xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
-                      최근 스트림 이벤트
-                    </p>
-                    <p className="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
-                      {lastStreamEvent?.type ?? (isStreaming ? 'streaming' : '대기 중')}
-                    </p>
-                    <p className="mt-2 line-clamp-4 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                      {lastStreamEvent?.content ?? '아직 수신된 이벤트가 없습니다.'}
-                    </p>
-                  </div>
-                </div>
+            {showEmptySelectedSession && (
+              <div className="flex h-full min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white/70 px-6 text-center dark:border-gray-600 dark:bg-gray-800/30">
+                <MessageSquare className="h-10 w-10 text-indigo-500" />
+                <h3 className="mt-4 text-xl font-semibold text-gray-900 dark:text-gray-100">
+                  아직 이 세션에 메시지가 없습니다
+                </h3>
+                <p className="mt-2 max-w-md text-sm leading-6 text-gray-500 dark:text-gray-400">
+                  아래 입력창에서 첫 질문을 보내면 대화 이력이 이 영역에 순서대로 쌓입니다.
+                </p>
+              </div>
+            )}
+
+            {selectedSession && !showMessagesSkeleton && !chatMessagesQuery.isError && renderedConversation.length > 0 && (
+              <div className="space-y-4">
+                {renderedConversation.map((item) => {
+                  if (item.kind === 'event') {
+                    return (
+                      <div key={item.key} className="flex justify-center">
+                        <div
+                          className={`w-full max-w-2xl rounded-2xl border px-4 py-3 text-sm shadow-sm ${resolveEventCardClassName(
+                            item.eventType,
+                          )}`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-xs font-semibold uppercase tracking-[0.18em] opacity-80">
+                              {resolveEventLabel(item.eventType)}
+                            </span>
+                            <span className="rounded-full bg-white/70 px-2 py-1 text-[11px] font-semibold text-gray-700 dark:bg-gray-900/30 dark:text-gray-200">
+                              {item.agentName}
+                            </span>
+                          </div>
+                          <p className="mt-2 whitespace-pre-wrap break-words leading-6">{item.content}</p>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  if (item.role === 'user') {
+                    return (
+                      <div key={item.key} className="flex justify-end">
+                        <div className="max-w-[82%] rounded-2xl rounded-br-md bg-gradient-to-br from-indigo-600 to-blue-600 px-4 py-3 text-white shadow-sm">
+                          <p className="whitespace-pre-wrap break-words text-sm leading-6">{item.content}</p>
+                          <div className="mt-2 text-right text-[11px] font-medium text-indigo-100/90">
+                            {formatMessageTimestamp(item.createdAt)}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div key={item.key} className="flex justify-start">
+                      <div className="flex max-w-[82%] items-start gap-3">
+                        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-sm shadow-sm dark:bg-gray-100">
+                          <span aria-hidden="true">🤖</span>
+                        </div>
+                        <div className="rounded-2xl rounded-bl-md border border-gray-200 bg-white px-4 py-3 text-gray-900 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                              {item.agentName ?? 'assistant'}
+                            </span>
+                            {item.isPending && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                작성 중
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{item.content}</p>
+                          <div className="mt-2 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                            {formatMessageTimestamp(item.createdAt)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                <div ref={bottomAnchorRef} />
               </div>
             )}
           </div>
