@@ -114,6 +114,70 @@ export interface PaperTradingResetResponse {
   paper_trading_krw_balance: string
 }
 
+export interface ChatSession {
+  session_id: string
+  last_message_preview: string
+  last_activity: string
+}
+
+export interface ChatMessage {
+  id: number
+  session_id: string
+  role: string
+  content: string
+  agent_name: string | null
+  is_tool_call: boolean
+  created_at: string
+}
+
+export interface ChatStreamEvent {
+  type: string
+  agent_name: string
+  content: string
+}
+
+export interface ApprovalPayload {
+  config_key: string
+  config_value: string
+}
+
+interface ChatSessionCreateResponse {
+  session_id: string
+}
+
+interface ChatSessionApiItem {
+  session_id: string
+  created_at: string
+  content_preview: string
+}
+
+function mapChatSession(item: ChatSessionApiItem): ChatSession {
+  return {
+    session_id: item.session_id,
+    last_message_preview: item.content_preview,
+    last_activity: item.created_at,
+  }
+}
+
+async function buildStreamError(response: Response): Promise<Error> {
+  const fallbackMessage = `채팅 스트림 요청에 실패했습니다. (${response.status})`
+  const rawBody = (await response.text()).trim()
+  if (!rawBody) {
+    return new Error(fallbackMessage)
+  }
+
+  try {
+    const parsed = JSON.parse(rawBody) as { detail?: string }
+    if (typeof parsed.detail === 'string' && parsed.detail.trim()) {
+      return new Error(parsed.detail)
+    }
+  } catch {
+    return new Error(rawBody)
+  }
+
+  return new Error(fallbackMessage)
+}
+
 export async function getBotStatus(): Promise<BotStatus> {
   const { data } = await apiClient.get<BotStatus>('/status')
   return data
@@ -175,4 +239,102 @@ export async function updateSystemConfigs(
 export async function resetPaperTradingState(): Promise<PaperTradingResetResponse> {
   const { data } = await apiClient.post<PaperTradingResetResponse>('/system/paper/reset')
   return data
+}
+
+export async function createChatSession(): Promise<ChatSessionCreateResponse> {
+  const { data } = await apiClient.post<ChatSessionCreateResponse>('/chat/sessions')
+  return data
+}
+
+export async function getChatSessions(): Promise<ChatSession[]> {
+  const { data } = await apiClient.get<ChatSessionApiItem[]>('/chat/sessions')
+  return data.map(mapChatSession)
+}
+
+export async function getChatMessages(sessionId: string): Promise<ChatMessage[]> {
+  const { data } = await apiClient.get<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`)
+  return data
+}
+
+export async function approveChatConfigChange(
+  sessionId: string,
+  payload: ApprovalPayload,
+): Promise<SystemConfigItem[]> {
+  const { data } = await apiClient.post<SystemConfigItem[]>(
+    `/chat/sessions/${sessionId}/approve`,
+    payload,
+  )
+  return data
+}
+
+export async function streamChatMessage(
+  sessionId: string,
+  content: string,
+  onEvent: (event: ChatStreamEvent) => void,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}/messages`, {
+    method: 'POST',
+    headers: {
+      Accept: 'text/event-stream',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ content }),
+  })
+
+  if (!response.ok) {
+    throw await buildStreamError(response)
+  }
+
+  if (!response.body) {
+    throw new Error('채팅 스트림 응답 본문이 비어 있습니다.')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let pendingDataLines: string[] = []
+
+  const emitPendingEvent = () => {
+    if (pendingDataLines.length === 0) {
+      return
+    }
+
+    const payload = pendingDataLines.join('\n').trim()
+    pendingDataLines = []
+
+    if (!payload) {
+      return
+    }
+
+    onEvent(JSON.parse(payload) as ChatStreamEvent)
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+
+    let newlineIndex = buffer.indexOf('\n')
+    while (newlineIndex !== -1) {
+      const rawLine = buffer.slice(0, newlineIndex)
+      buffer = buffer.slice(newlineIndex + 1)
+
+      const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+      if (line === '') {
+        emitPendingEvent()
+      } else if (line.startsWith('data:')) {
+        pendingDataLines.push(line.slice(5).trimStart())
+      }
+
+      newlineIndex = buffer.indexOf('\n')
+    }
+
+    if (done) {
+      const remainingLine = buffer.endsWith('\r') ? buffer.slice(0, -1) : buffer
+      if (remainingLine.startsWith('data:')) {
+        pendingDataLines.push(remainingLine.slice(5).trimStart())
+      }
+      emitPendingEvent()
+      break
+    }
+  }
 }
