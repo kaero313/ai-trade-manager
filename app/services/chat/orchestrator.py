@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
@@ -84,14 +84,14 @@ class SupervisorDecision(BaseModel):
     response: str = Field(..., min_length=1)
 
 
-def _build_chat_model() -> ChatOpenAI:
-    if not settings.OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY 가 설정되지 않아 Chat Orchestrator 를 실행할 수 없습니다.")
+def _build_chat_model() -> ChatGoogleGenerativeAI:
+    if not settings.GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY 가 설정되지 않아 Chat Orchestrator 를 실행할 수 없습니다.")
 
-    return ChatOpenAI(
-        model="gpt-4o-mini",
+    return ChatGoogleGenerativeAI(
+        model="gemini-2.0-flash",
         temperature=0,
-        api_key=settings.OPENAI_API_KEY,
+        google_api_key=settings.GEMINI_API_KEY,
     )
 
 
