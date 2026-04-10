@@ -78,6 +78,7 @@ class OrchestratorState(TypedDict, total=False):
     messages: Annotated[list[BaseMessage], add_messages]
     next_agent: str
     session_id: str
+    retry_count: int
 
 
 class SupervisorDecision(BaseModel):
