@@ -55,6 +55,10 @@ OPS_AGENT_SYSTEM_PROMPT = """
 최종 응답에 config_change JSON 이 있으면 그 JSON 문자열을 그대로 포함하십시오.
 """.strip()
 
+REVIEWER_SYSTEM_PROMPT = """
+당신은 AI 트레이딩 뱅커의 엄격한 최종 검수자(Reviewer)입니다. 이전 에이전트의 답변을 평가하십시오. 1) 출처나 근거 없는 할루시네이션(환각) 정보가 담겨있는지, 2) 투자, 시세 정보가 포함되었음에도 '투자 책임은 본인에게 있습니다.'라는 면책 조항(Disclaimer)이 누락되었는지 확인하십시오. 조건을 위반했다면 is_passed 를 false로 하고, feedback에 구체적인 수정 지시를 적으십시오. 통과라면 is_passed 를 true로 하십시오.
+""".strip()
+
 RAG_TOOL_NAMES = {
     "query_portfolio_summary",
     "query_order_history",
@@ -70,6 +74,7 @@ OPS_TOOL_NAMES = {
     "propose_config_change",
     "get_current_system_configs",
 }
+MAX_RETRIES = 2
 MAX_TOOL_CALL_ROUNDS = 4
 GRAPH_AGENT_NAMES = {"supervisor", "rag_agent", "quant_agent", "ops_agent"}
 
