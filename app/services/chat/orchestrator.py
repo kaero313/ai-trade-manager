@@ -106,6 +106,10 @@ def build_supervisor_chain() -> object:
     return _build_chat_model().with_structured_output(SupervisorDecision)
 
 
+def build_reviewer_chain() -> object:
+    return _build_chat_model().with_structured_output(ReviewerDecision)
+
+
 def _stringify_tool_result(result: object) -> str:
     if isinstance(result, str):
         return result
