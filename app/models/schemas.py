@@ -167,3 +167,8 @@ class ChatMessageItem(BaseModel):
 class ChatApproveRequest(BaseModel):
     config_key: str = Field(..., min_length=1)
     config_value: str = Field(...)
+
+
+class ReviewerDecision(BaseModel):
+    is_passed: bool = Field(..., description="통과 여부")
+    feedback: str = Field(..., description="반려 시 개선을 위한 상세 피드백 또는 통과 시 'OK'")
