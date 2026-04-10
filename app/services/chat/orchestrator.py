@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.repository import get_recent_chat_messages
 from app.db.repository import save_chat_message
+from app.models.schemas import ReviewerDecision
 from app.services.chat.tools import build_chat_tools
 
 SupervisorRoute = Literal["rag_agent", "quant_agent", "ops_agent", "FINISH"]
