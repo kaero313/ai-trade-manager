@@ -110,6 +110,14 @@ def build_reviewer_chain() -> object:
     return _build_chat_model().with_structured_output(ReviewerDecision)
 
 
+def _increment_retry_count(state: OrchestratorState) -> int:
+    return int(state.get("retry_count", 0)) + 1
+
+
+def _reset_retry_count() -> int:
+    return 0
+
+
 def _stringify_tool_result(result: object) -> str:
     if isinstance(result, str):
         return result
