@@ -313,6 +313,10 @@ async def ops_agent_node(state: OrchestratorState) -> OrchestratorState:
     )
 
 
+async def reviewer_node(state: OrchestratorState) -> OrchestratorState:
+    pass
+
+
 def _route_from_supervisor(state: OrchestratorState) -> SupervisorRoute:
     next_agent = str(state.get("next_agent") or "FINISH").strip()
     if next_agent in {"rag_agent", "quant_agent", "ops_agent", "FINISH"}:
