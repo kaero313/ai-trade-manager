@@ -314,7 +314,29 @@ async def ops_agent_node(state: OrchestratorState) -> OrchestratorState:
 
 
 async def reviewer_node(state: OrchestratorState) -> OrchestratorState:
-    pass
+    messages = list(state.get("messages") or [])
+    last_message = _extract_last_ai_message(messages)
+
+    if last_message is None:
+        return {
+            "messages": [
+                AIMessage(
+                    name="reviewer",
+                    content="검토할 직전 에이전트 응답이 없어 supervisor로 복귀합니다.",
+                )
+            ],
+            "next_agent": "supervisor",
+        }
+
+    return {
+        "messages": [
+            AIMessage(
+                name="reviewer",
+                content="Reviewer 검토 로직은 아직 구현되지 않았습니다.",
+            )
+        ],
+        "next_agent": "supervisor",
+    }
 
 
 def _route_from_supervisor(state: OrchestratorState) -> SupervisorRoute:
