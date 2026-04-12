@@ -388,13 +388,12 @@ async def reviewer_node(state: OrchestratorState) -> OrchestratorState:
 
     return {
         "messages": [
-            AIMessage(
-                name="reviewer",
-                content=decision.feedback,
+            HumanMessage(
+                content=f"Reviewer Feedback: {decision.feedback} - 주의: 위 피드백을 반영하여 처음부터 다시 작성하세요.",
             )
         ],
         "retry_count": retry_count,
-        "next_agent": "supervisor",
+        "next_agent": last_message.name,
     }
 
 
