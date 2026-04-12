@@ -373,6 +373,19 @@ async def reviewer_node(state: OrchestratorState) -> OrchestratorState:
             "next_agent": "supervisor",
         }
 
+    retry_count = _increment_retry_count(state)
+    if retry_count > MAX_RETRIES:
+        return {
+            "messages": [
+                AIMessage(
+                    name="reviewer",
+                    content="현재 분석에 어려움을 겪고 있습니다. 잠시 후 다시 질문해주세요.",
+                )
+            ],
+            "retry_count": _reset_retry_count(),
+            "next_agent": "supervisor",
+        }
+
     return {
         "messages": [
             AIMessage(
@@ -380,6 +393,7 @@ async def reviewer_node(state: OrchestratorState) -> OrchestratorState:
                 content=decision.feedback,
             )
         ],
+        "retry_count": retry_count,
         "next_agent": "supervisor",
     }
 
