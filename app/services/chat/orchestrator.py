@@ -313,7 +313,7 @@ async def ops_agent_node(state: OrchestratorState) -> OrchestratorState:
     )
 
 
-async def reviewer_node(state: OrchestratorState) -> OrchestratorState:
+async def _reviewer_node_placeholder(state: OrchestratorState) -> OrchestratorState:
     messages = list(state.get("messages") or [])
     last_message = _extract_last_ai_message(messages)
 
@@ -333,6 +333,39 @@ async def reviewer_node(state: OrchestratorState) -> OrchestratorState:
             AIMessage(
                 name="reviewer",
                 content="Reviewer 검토 로직은 아직 구현되지 않았습니다.",
+            )
+        ],
+        "next_agent": "supervisor",
+    }
+
+
+async def reviewer_node(state: OrchestratorState) -> OrchestratorState:
+    messages = list(state.get("messages") or [])
+    last_message = _extract_last_ai_message(messages)
+
+    if last_message is None:
+        return {
+            "messages": [
+                AIMessage(
+                    name="reviewer",
+                    content="검토할 직전 에이전트 응답이 없어 supervisor로 복귀합니다.",
+                )
+            ],
+            "next_agent": "supervisor",
+        }
+
+    decision: ReviewerDecision = await build_reviewer_chain().ainvoke(
+        [
+            SystemMessage(content=REVIEWER_SYSTEM_PROMPT),
+            HumanMessage(content=str(last_message.content or "")),
+        ]
+    )
+
+    return {
+        "messages": [
+            AIMessage(
+                name="reviewer",
+                content=decision.feedback,
             )
         ],
         "next_agent": "supervisor",
