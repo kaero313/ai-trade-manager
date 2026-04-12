@@ -361,6 +361,18 @@ async def reviewer_node(state: OrchestratorState) -> OrchestratorState:
         ]
     )
 
+    if decision.is_passed:
+        return {
+            "messages": [
+                AIMessage(
+                    name="reviewer",
+                    content=decision.feedback,
+                )
+            ],
+            "retry_count": _reset_retry_count(),
+            "next_agent": "supervisor",
+        }
+
     return {
         "messages": [
             AIMessage(
