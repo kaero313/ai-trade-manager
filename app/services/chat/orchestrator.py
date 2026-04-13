@@ -304,6 +304,7 @@ async def quant_agent_node(state: OrchestratorState) -> OrchestratorState:
         agent_name="quant_agent",
         system_prompt=QUANT_AGENT_SYSTEM_PROMPT,
         allowed_tool_names=QUANT_TOOL_NAMES,
+        target_agent="reviewer",
     )
 
 
