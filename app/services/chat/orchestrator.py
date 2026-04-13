@@ -408,6 +408,13 @@ def _route_from_supervisor(state: OrchestratorState) -> SupervisorRoute:
     return "FINISH"
 
 
+def _route_from_reviewer(state: OrchestratorState) -> str:
+    next_agent = str(state.get("next_agent") or "supervisor").strip()
+    if next_agent in {"supervisor", "rag_agent", "quant_agent"}:
+        return next_agent
+    return "supervisor"
+
+
 def build_chat_graph():
     graph = StateGraph(OrchestratorState)
     graph.add_node("supervisor", supervisor_node)
