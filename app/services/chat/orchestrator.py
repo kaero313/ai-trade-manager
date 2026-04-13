@@ -125,6 +125,32 @@ def _stringify_tool_result(result: object) -> str:
     return json.dumps(result, ensure_ascii=False, default=str)
 
 
+def _collapse_messages_for_gemini(messages: list[BaseMessage]) -> list[BaseMessage]:
+    if not messages:
+        return []
+    
+    collapsed: list[BaseMessage] = []
+    for msg in messages:
+        if not collapsed:
+            collapsed.append(msg)
+            continue
+            
+        last_msg = collapsed[-1]
+        if isinstance(last_msg, type(msg)):
+            if isinstance(msg, AIMessage):
+                merged_content = f"{last_msg.content}\n\n[Agent: {msg.name or 'bot'}]\n{msg.content}"
+                collapsed[-1] = AIMessage(content=merged_content, name=last_msg.name)
+            elif isinstance(msg, HumanMessage):
+                merged_content = f"{last_msg.content}\n\n{msg.content}"
+                collapsed[-1] = HumanMessage(content=merged_content)
+            else:
+                collapsed.append(msg)
+        else:
+            collapsed.append(msg)
+            
+    return collapsed
+
+
 def _restore_working_memory_messages(history_rows: list[Any]) -> list[BaseMessage]:
     restored: list[BaseMessage] = []
     for row in history_rows:
@@ -177,11 +203,11 @@ def _extract_approval_request_content(raw_output: Any) -> str | None:
 
 
 def _resolve_graph_agent_name(event: dict[str, Any]) -> str | None:
-    metadata = event.get("metadata") or {}
-    candidate = metadata.get("langgraph_node") or event.get("name")
-    # reviewer는 UI 스트리밍에서 제외함
-    if candidate in GRAPH_AGENT_NAMES:
-        return str(candidate)
+    # LangGraph 내부 체인의 이벤트도 langgraph_node 를 가지므로,
+    # 실제 노드 래벨 이벤트만 필터링하기 위해 event["name"] 을 엄격히 확인합니다.
+    name = str(event.get("name") or "")
+    if name in GRAPH_AGENT_NAMES:
+        return name
     return None
 
 
@@ -208,7 +234,9 @@ async def _run_worker_agent(
     messages = list(state.get("messages") or [])
     tools_by_name = _get_filtered_tools(session_id, allowed_tool_names)
     bound_model = _build_chat_model().bind_tools(list(tools_by_name.values()))
-    conversation: list[BaseMessage] = [SystemMessage(content=system_prompt), *messages]
+    
+    collapsed_messages = _collapse_messages_for_gemini(messages)
+    conversation: list[BaseMessage] = [SystemMessage(content=system_prompt), *collapsed_messages]
 
     for _ in range(MAX_TOOL_CALL_ROUNDS):
         response = await bound_model.ainvoke(conversation)
@@ -276,12 +304,15 @@ async def supervisor_node(state: OrchestratorState) -> OrchestratorState:
             "next_agent": "FINISH",
         }
 
-    decision = await build_supervisor_chain().ainvoke(
-        [
-            SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT),
-            *messages,
-        ]
-    )
+    collapsed_messages = _collapse_messages_for_gemini(messages)
+    
+    final_prompt_messages: list[BaseMessage] = [SystemMessage(content=SUPERVISOR_SYSTEM_PROMPT), *collapsed_messages]
+    if collapsed_messages and isinstance(collapsed_messages[-1], AIMessage):
+        final_prompt_messages.append(
+            HumanMessage(content="위 에이전트들의 응답과 분석 결과를 바탕으로, 사용자에게 전달할 최종 답변을 한국어로 정리해 주세요.")
+        )
+
+    decision = await build_supervisor_chain().ainvoke(final_prompt_messages)
 
     return {
         "messages": [AIMessage(name="supervisor", content=decision.response)],
@@ -359,10 +390,14 @@ async def reviewer_node(state: OrchestratorState) -> OrchestratorState:
             "next_agent": "supervisor",
         }
 
+    content_to_review = str(last_message.content or "").strip()
+    if not content_to_review:
+        content_to_review = "(내용 없음: 에이전트가 빈 응답을 반환했습니다.)"
+
     decision: ReviewerDecision = await build_reviewer_chain().ainvoke(
         [
             SystemMessage(content=REVIEWER_SYSTEM_PROMPT),
-            HumanMessage(content=str(last_message.content or "")),
+            HumanMessage(content=content_to_review),
         ]
     )
 
@@ -568,3 +603,4 @@ async def run_chat_stream(
                     "agent_name": final_agent_name,
                     "content": final_content,
                 }
+                break
