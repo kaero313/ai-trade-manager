@@ -711,6 +711,9 @@ function AIChatPage() {
         message: resolveErrorMessage(error, '채팅 스트리밍 요청에 실패했습니다.'),
       })
     } finally {
+      setLiveItems((current) =>
+        current.map((item) => (item.kind === 'message' ? { ...item, isPending: false } : item)),
+      )
       setIsStreaming(false)
     }
   }
