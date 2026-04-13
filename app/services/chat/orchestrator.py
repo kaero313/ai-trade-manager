@@ -179,6 +179,7 @@ def _extract_approval_request_content(raw_output: Any) -> str | None:
 def _resolve_graph_agent_name(event: dict[str, Any]) -> str | None:
     metadata = event.get("metadata") or {}
     candidate = metadata.get("langgraph_node") or event.get("name")
+    # reviewer는 UI 스트리밍에서 제외함
     if candidate in GRAPH_AGENT_NAMES:
         return str(candidate)
     return None
