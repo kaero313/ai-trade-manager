@@ -79,8 +79,12 @@ async def stream_chat_messages(
         raise HTTPException(status_code=400, detail="메시지 내용이 비어 있습니다.")
 
     async def event_stream() -> AsyncIterator[str]:
-        async for event in run_chat_stream(normalized_session_id, normalized_content, db):
-            yield _to_sse_payload(event)
+        try:
+            async for event in run_chat_stream(normalized_session_id, normalized_content, db):
+                yield _to_sse_payload(event)
+        except Exception as exc:
+            logger.error("SSE 스트림 처리 중 예외 발생", exc_info=True)
+            yield _to_sse_payload({"type": "error", "agent_name": "system", "content": str(exc)})
 
     return StreamingResponse(
         event_stream(),
