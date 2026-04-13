@@ -437,6 +437,15 @@ def build_chat_graph():
     graph.add_edge("rag_agent", "reviewer")
     graph.add_edge("quant_agent", "reviewer")
     graph.add_edge("ops_agent", "supervisor")
+    graph.add_conditional_edges(
+        "reviewer",
+        _route_from_reviewer,
+        {
+            "supervisor": "supervisor",
+            "rag_agent": "rag_agent",
+            "quant_agent": "quant_agent",
+        },
+    )
     return graph.compile()
 
 
