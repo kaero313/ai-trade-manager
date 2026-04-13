@@ -435,7 +435,7 @@ def build_chat_graph():
         },
     )
     graph.add_edge("rag_agent", "reviewer")
-    graph.add_edge("quant_agent", "supervisor")
+    graph.add_edge("quant_agent", "reviewer")
     graph.add_edge("ops_agent", "supervisor")
     return graph.compile()
 
