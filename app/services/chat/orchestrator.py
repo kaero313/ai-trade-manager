@@ -195,6 +195,7 @@ async def _run_worker_agent(
     agent_name: str,
     system_prompt: str,
     allowed_tool_names: set[str],
+    target_agent: str = "supervisor",
 ) -> OrchestratorState:
     session_id = str(state.get("session_id") or "").strip()
     if not session_id:
@@ -216,7 +217,7 @@ async def _run_worker_agent(
         if not tool_calls:
             return {
                 "messages": [AIMessage(name=agent_name, content=response.content or "")],
-                "next_agent": "supervisor",
+                "next_agent": target_agent,
             }
 
         for tool_call in tool_calls:
@@ -262,7 +263,7 @@ async def _run_worker_agent(
                 content="도구 호출 단계가 너무 많아 작업을 마무리하지 못했습니다. 현재까지 수집한 정보만으로 다시 요청해 주세요.",
             )
         ],
-        "next_agent": "supervisor",
+        "next_agent": target_agent,
     }
 
 
@@ -293,6 +294,7 @@ async def rag_agent_node(state: OrchestratorState) -> OrchestratorState:
         agent_name="rag_agent",
         system_prompt=RAG_AGENT_SYSTEM_PROMPT,
         allowed_tool_names=RAG_TOOL_NAMES,
+        target_agent="reviewer",
     )
 
 
