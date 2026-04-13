@@ -421,6 +421,7 @@ def build_chat_graph():
     graph.add_node("rag_agent", rag_agent_node)
     graph.add_node("quant_agent", quant_agent_node)
     graph.add_node("ops_agent", ops_agent_node)
+    graph.add_node("reviewer", reviewer_node)
 
     graph.add_edge(START, "supervisor")
     graph.add_conditional_edges(
