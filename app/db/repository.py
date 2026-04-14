@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import AIChatMessage as AIChatMessageORM
 from app.models.domain import BotConfig as BotConfigORM
+from app.models.domain import PortfolioSnapshot as PortfolioSnapshotORM
 from app.models.domain import SystemConfig as SystemConfigORM
 from app.models.schemas import BotConfig as BotConfigSchema
 from app.models.schemas import MarketSentimentSnapshot
@@ -284,6 +285,23 @@ async def save_chat_message(
     await db.commit()
     await db.refresh(message)
     return message
+
+
+async def save_portfolio_snapshot(
+    db: AsyncSession,
+    total_net_worth: float,
+    total_pnl: float,
+    snapshot_data: list[dict[str, Any]],
+) -> PortfolioSnapshotORM:
+    snapshot = PortfolioSnapshotORM(
+        total_net_worth=total_net_worth,
+        total_pnl=total_pnl,
+        snapshot_data=snapshot_data,
+    )
+    db.add(snapshot)
+    await db.commit()
+    await db.refresh(snapshot)
+    return snapshot
 
 
 async def get_recent_chat_messages(
