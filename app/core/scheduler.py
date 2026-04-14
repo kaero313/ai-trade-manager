@@ -18,9 +18,11 @@ from app.db.repository import AUTONOMOUS_AI_INTERVAL_MINUTES_KEY
 from app.db.repository import NEWS_INTERVAL_HOURS_KEY
 from app.db.repository import SENTIMENT_INTERVAL_MINUTES_KEY
 from app.db.repository import get_system_config_value
+from app.db.repository import save_portfolio_snapshot
 from app.db.session import AsyncSessionLocal
 from app.models.domain import Favorite
 from app.services.market.sentiment_fetcher import refresh_market_sentiment_cache
+from app.services.portfolio.aggregator import PortfolioService
 from app.services.rag.ingestion import run_market_news_ingestion_job
 from app.services.trading.accuracy_worker import update_ai_analysis_accuracy
 from app.services.trading.ai_analyst import execute_ai_analysis
@@ -35,6 +37,7 @@ MARKET_NEWS_INGESTION_JOB_ID = "market_news_ingestion_hourly"
 MARKET_SENTIMENT_REFRESH_JOB_ID = "market_sentiment_refresh"
 AUTONOMOUS_AI_ANALYST_JOB_ID = "autonomous_ai_analyst_watchlist"
 AI_ACCURACY_CHECK_JOB_ID = "ai_accuracy_check"
+PORTFOLIO_SNAPSHOT_JOB_ID = "portfolio_snapshot_hourly"
 DEFAULT_PROVIDER = "openai"
 
 DEFAULT_NEWS_INTERVAL_HOURS = 4
@@ -177,6 +180,13 @@ def _build_ai_accuracy_check_trigger() -> CronTrigger:
     )
 
 
+def _build_portfolio_snapshot_trigger() -> CronTrigger:
+    return CronTrigger(
+        minute=0,
+        timezone=SCHEDULER_TIMEZONE,
+    )
+
+
 def _upsert_scheduler_job(
     job_id: str,
     func,
@@ -243,6 +253,14 @@ def register_ai_accuracy_jobs(runtime_config: SchedulerRuntimeConfig) -> None:
     )
 
 
+def register_portfolio_snapshot_jobs() -> None:
+    _upsert_scheduler_job(
+        PORTFOLIO_SNAPSHOT_JOB_ID,
+        save_portfolio_snapshot_job,
+        _build_portfolio_snapshot_trigger(),
+    )
+
+
 async def reload_scheduler_jobs() -> SchedulerRuntimeConfig:
     runtime_config = await load_scheduler_runtime_config()
     register_daily_jobs(runtime_config)
@@ -250,6 +268,7 @@ async def reload_scheduler_jobs() -> SchedulerRuntimeConfig:
     register_market_sentiment_jobs(runtime_config)
     register_autonomous_ai_analyst_jobs(runtime_config)
     register_ai_accuracy_jobs(runtime_config)
+    register_portfolio_snapshot_jobs()
     logger.info(
         "Scheduler jobs reloaded: news_interval_hours=%s sentiment_interval_minutes=%s ai_briefing_time=%02d:%02d autonomous_ai_interval_minutes=%s",
         runtime_config.news_interval_hours,
@@ -323,6 +342,47 @@ async def ai_accuracy_check_job() -> None:
     except Exception:
         logger.error(
             "AI 분석 정확도 체크 작업이 실패했습니다. 서버는 계속 실행합니다.",
+            exc_info=True,
+        )
+
+
+async def save_portfolio_snapshot_job() -> None:
+    try:
+        async with AsyncSessionLocal() as db:
+            portfolio = await PortfolioService(db).get_aggregated_portfolio()
+            if portfolio.error is not None:
+                logger.warning(
+                    "포트폴리오 스냅샷 저장 스킵: portfolio_error=%s",
+                    portfolio.error,
+                )
+                return
+
+            snapshot_data = [
+                {
+                    "currency": item.currency,
+                    "balance": item.balance,
+                    "current_price": item.current_price,
+                    "total_value": item.total_value,
+                    "pnl_percentage": item.pnl_percentage,
+                }
+                for item in portfolio.items
+            ]
+
+            await save_portfolio_snapshot(
+                db,
+                total_net_worth=portfolio.total_net_worth,
+                total_pnl=portfolio.total_pnl,
+                snapshot_data=snapshot_data,
+            )
+
+        logger.info(
+            "포트폴리오 스냅샷 저장 완료: item_count=%s total_net_worth=%s",
+            len(snapshot_data),
+            portfolio.total_net_worth,
+        )
+    except Exception:
+        logger.error(
+            "포트폴리오 스냅샷 저장 잡 실행 중 오류가 발생했습니다. 스케줄러는 계속 실행됩니다.",
             exc_info=True,
         )
 
