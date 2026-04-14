@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -75,6 +75,72 @@ async def get_latest_analysis(
         return None
 
     return AIAnalysisLogItem.model_validate(latest_analysis)
+
+
+@router.get("/latest-analysis-batch", response_model=dict[str, AIAnalysisLogItem | None])
+async def get_latest_analysis_batch(
+    symbols: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, AIAnalysisLogItem | None]:
+    normalized_symbols: list[str] = []
+    seen_symbols: set[str] = set()
+
+    for raw_symbol in str(symbols or "").split(","):
+        normalized_symbol = _normalize_symbol(raw_symbol)
+        if not normalized_symbol or normalized_symbol in seen_symbols:
+            continue
+        seen_symbols.add(normalized_symbol)
+        normalized_symbols.append(normalized_symbol)
+
+    if not normalized_symbols:
+        raise HTTPException(status_code=400, detail="symbols query parameter is required")
+
+    ranked_analyses = (
+        select(
+            AIAnalysisLog.id.label("id"),
+            AIAnalysisLog.symbol.label("symbol"),
+            AIAnalysisLog.decision.label("decision"),
+            AIAnalysisLog.confidence.label("confidence"),
+            AIAnalysisLog.recommended_weight.label("recommended_weight"),
+            AIAnalysisLog.reasoning.label("reasoning"),
+            AIAnalysisLog.accuracy_label.label("accuracy_label"),
+            AIAnalysisLog.actual_price_diff_pct.label("actual_price_diff_pct"),
+            AIAnalysisLog.created_at.label("created_at"),
+            func.row_number()
+            .over(
+                partition_by=AIAnalysisLog.symbol,
+                order_by=(desc(AIAnalysisLog.created_at), desc(AIAnalysisLog.id)),
+            )
+            .label("row_number"),
+        )
+        .where(AIAnalysisLog.symbol.in_(normalized_symbols))
+        .subquery()
+    )
+
+    result = await db.execute(
+        select(
+            ranked_analyses.c.id,
+            ranked_analyses.c.symbol,
+            ranked_analyses.c.decision,
+            ranked_analyses.c.confidence,
+            ranked_analyses.c.recommended_weight,
+            ranked_analyses.c.reasoning,
+            ranked_analyses.c.accuracy_label,
+            ranked_analyses.c.actual_price_diff_pct,
+            ranked_analyses.c.created_at,
+        ).where(ranked_analyses.c.row_number == 1)
+    )
+
+    latest_by_symbol: dict[str, AIAnalysisLogItem | None] = {
+        symbol: None for symbol in normalized_symbols
+    }
+    for row in result.all():
+        symbol = str(row.symbol or "").strip().upper()
+        if not symbol:
+            continue
+        latest_by_symbol[symbol] = AIAnalysisLogItem.model_validate(dict(row._mapping))
+
+    return latest_by_symbol
 
 
 @router.get("/performance", response_model=AIPerformanceSummary)
