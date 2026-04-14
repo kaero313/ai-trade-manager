@@ -304,6 +304,18 @@ async def save_portfolio_snapshot(
     return snapshot
 
 
+async def get_portfolio_snapshots(
+    db: AsyncSession,
+    limit: int = 168,
+) -> list[PortfolioSnapshotORM]:
+    result = await db.execute(
+        select(PortfolioSnapshotORM)
+        .order_by(desc(PortfolioSnapshotORM.created_at))
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 async def get_recent_chat_messages(
     db: AsyncSession,
     session_id: str,
