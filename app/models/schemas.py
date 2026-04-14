@@ -172,3 +172,17 @@ class ChatApproveRequest(BaseModel):
 class ReviewerDecision(BaseModel):
     is_passed: bool = Field(..., description="통과 여부")
     feedback: str = Field(..., description="반려 시 개선을 위한 상세 피드백 또는 통과 시 'OK'")
+
+
+class PortfolioSnapshotItem(BaseModel):
+    id: int
+    total_net_worth: float
+    total_pnl: float
+    snapshot_data: list[dict]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PortfolioSnapshotListResponse(BaseModel):
+    snapshots: list[PortfolioSnapshotItem]
