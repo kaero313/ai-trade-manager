@@ -11,6 +11,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.markets import router as markets_router
 from app.api.routes.news import router as news_router
 from app.api.routes.orders import router as orders_router
+from app.api.routes.portfolio import router as portfolio_router
 from app.api.routes.positions import router as positions_router
 from app.api.routes.slack import router as slack_router
 from app.api.routes.status import router as status_router
@@ -27,6 +28,7 @@ api_router.include_router(positions_router)
 api_router.include_router(favorites_router, prefix="/favorites", tags=["favorites"])
 api_router.include_router(markets_router, prefix="/markets", tags=["markets"])
 api_router.include_router(orders_router, prefix="/orders", tags=["orders"])
+api_router.include_router(portfolio_router, prefix="/portfolio", tags=["portfolio"])
 api_router.include_router(news_router, prefix="/news", tags=["news"])
 api_router.include_router(upbit_router)
 api_router.include_router(slack_router)
