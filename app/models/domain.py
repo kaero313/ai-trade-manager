@@ -122,3 +122,17 @@ class Favorite(Base):
         nullable=False,
         server_default=func.now(),
     )
+
+
+class PortfolioSnapshot(Base):
+    __tablename__ = "portfolio_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    total_net_worth: Mapped[float] = mapped_column(Float, nullable=False)
+    total_pnl: Mapped[float] = mapped_column(Float, nullable=False)
+    snapshot_data: Mapped[list[dict]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
