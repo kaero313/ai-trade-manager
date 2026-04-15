@@ -45,6 +45,14 @@ export interface PortfolioSnapshotItem {
   created_at: string
 }
 
+export interface AIAnalysisItem {
+  symbol: string
+  decision: 'BUY' | 'SELL' | 'HOLD'
+  confidence: number
+  reasoning: string
+  created_at: string
+}
+
 interface PortfolioSnapshotListResponse {
   snapshots: PortfolioSnapshotItem[]
 }
@@ -64,4 +72,16 @@ export async function fetchPortfolioSnapshots(limit?: number): Promise<Portfolio
     params: { limit },
   })
   return response.data.snapshots
+}
+
+export async function fetchLatestAnalysisBatch(
+  symbols: string[],
+): Promise<Record<string, AIAnalysisItem | null>> {
+  const response = await apiClient.get<Record<string, AIAnalysisItem | null>>(
+    '/ai/latest-analysis-batch',
+    {
+      params: { symbols: symbols.join(',') },
+    },
+  )
+  return response.data
 }
