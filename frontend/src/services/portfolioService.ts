@@ -29,6 +29,26 @@ export interface OrderHistoryItem {
   executed_at: string
 }
 
+export interface PortfolioSnapshotDataItem {
+  currency: string
+  balance: number
+  current_price: number
+  total_value: number
+  pnl_percentage: number
+}
+
+export interface PortfolioSnapshotItem {
+  id: number
+  total_net_worth: number
+  total_pnl: number
+  snapshot_data: PortfolioSnapshotDataItem[]
+  created_at: string
+}
+
+interface PortfolioSnapshotListResponse {
+  snapshots: PortfolioSnapshotItem[]
+}
+
 export async function getPortfolioSummary(): Promise<PortfolioSummary> {
   const { data } = await apiClient.get<PortfolioSummary>('/dashboard')
   return data
@@ -37,4 +57,11 @@ export async function getPortfolioSummary(): Promise<PortfolioSummary> {
 export async function fetchOrders(): Promise<OrderHistoryItem[]> {
   const { data } = await apiClient.get<OrderHistoryItem[]>('/orders/')
   return data
+}
+
+export async function fetchPortfolioSnapshots(limit?: number): Promise<PortfolioSnapshotItem[]> {
+  const response = await apiClient.get<PortfolioSnapshotListResponse>('/portfolio/snapshots', {
+    params: { limit },
+  })
+  return response.data.snapshots
 }
