@@ -1,60 +1,103 @@
 # AI-Trade-Manager 데이터베이스 명세서 (Database Schema Specification)
 
-본 문서는 **Phase 1~17**까지 발전해온 핵심 도메인 모델의 설계 의도와 데이터베이스 운용 수칙을 기재합니다.
-우리는 In-memory 구조에서 벗어나 **PostgreSQL + 비동기 SQLAlchemy 2.0** 스택으로 완벽히 이전 및 확장하였습니다.
+본 문서는 **Phase 1~41**까지 발전해온 핵심 도메인 모델의 설계 의도와 데이터베이스 운용 수칙을 기재합니다.
+**PostgreSQL + 비동기 SQLAlchemy 2.0** 스택으로 운영됩니다.
+
+> **최종 갱신 기준:** Phase 40 완료 / Phase 41 진행 중
 
 ---
 
 ## 1. DB 환경 구성 원칙
-*   **Alembic Migration 필수:** 코드를 수정하여 새로운 테이블이나 컬럼을 만들었다면, **절대** 임의로 디비에 직접 들어가 수정하지 마세요. 무조건 `alembic revision --autogenerate`로 마이그레이션 스크립트를 생성하고, `alembic upgrade head`로 반영해야 합니다.
-*   **비동기 세션 강제:** 쿼리는 반드시 `AsyncSession`과 `select(), insert()...` 등 SQLAlchemy 2.0 스타일 구문을 통해서만 실행해야 합니다. `Session.query()` 같은 동기 방식 1.x 스타일은 전면 금지합니다.
+*   **Alembic Migration 필수:** 새로운 테이블이나 컬럼을 만들었다면, **절대** 임의로 DB에 직접 수정하지 말 것. 반드시 `alembic revision --autogenerate`로 마이그레이션 스크립트를 생성하고, `alembic upgrade head`로 반영.
+*   **비동기 세션 강제:** 쿼리는 반드시 `AsyncSession`과 `select()`, `execute()` 등 SQLAlchemy 2.0 스타일 구문만 사용. `session.query()` 같은 1.x 스타일은 전면 금지.
 
 ## 2. 테이블 설계 결정 사항 (Schema Decisions)
-마이그레이션의 유연성과 빠른 속도를 확보하기 위해 아래와 같은 표준을 정의했습니다.
-1.  **ID 타입:** 모든 PK(기본키)는 `Autoincrement Integer` 방식을 씁니다. (UUID 배제)
-2.  **Enum 타입 배제:** 확장성을 위해 `status`나 `side` 같은 열거형 속성들은 DB 단의 빡빡한 Enum 대신 Pydantic/Python 단에서 검증하는 일반 `String` 속성으로 정의합니다.
-3.  **날짜/시간 자동 생성:** 모든 `updated_at`, `executed_at` 등의 타임스탬프는 서버 시간 동기화 문제를 막기 위해 DB 고유 함수인 `server_default=func.now()`에 100% 위임합니다.
+1.  **ID 타입:** 모든 PK는 `Autoincrement Integer` 방식 (UUID 배제).
+2.  **Enum 타입 배제:** `status`, `side` 등은 DB Enum 대신 Pydantic/Python 단에서 검증하는 `String` 속성.
+3.  **날짜/시간 자동 생성:** 모든 타임스탬프는 `server_default=func.now()`에 위임.
 
 ---
 
 ## 3. 핵심 도메인 모델 정의
 
 ### 3.1. `assets` (자산 정보)
-거래소에서 지원하는 종목 또는 내가 추적하려는 기초 자산의 메타데이터.
+거래소에서 지원하는 종목의 메타데이터.
 *   `id`: (PK) 고유 번호
-*   `symbol`: (String, Unique, Index) 식별용 암호화폐 티커 또는 주식 단축코드 (예: `KRW-BTC`, `005930`)
-*   `asset_type`: (String) 자산 종류 분류 값 (예: `CRYPTO`, `STOCK`, `US_STOCK`)
-*   `base_currency`: (String) 매수하는 데 필요한 기축 통화 (예: `KRW`, `USD`)
-*   `is_active`: (Boolean) 해당 자산의 거래 봇 감시/작동 여부 제어 스위치.
+*   `symbol`: (String, Unique, Index) 암호화폐 티커 (예: `KRW-BTC`)
+*   `asset_type`: (String) 자산 종류 (예: `CRYPTO`, `STOCK`)
+*   `base_currency`: (String) 기축 통화 (예: `KRW`)
+*   `is_active`: (Boolean) 봇 감시/작동 여부 스위치
 
 ### 3.2. `positions` (보유 포지션 상태)
-현재 진행 중이거나 보유 중인 실제 투자 진입 내역.
+현재 보유 중인 투자 진입 내역.
 *   `id`: (PK) 고유 번호
-*   `asset_id`: (FK) `assets` 참조 인덱스 키
-*   `avg_entry_price`: (Float) 매수 평단가 (수수료 포함 계산)
-*   `quantity`: (Float) 현재 들고 있는 보유 수량
-*   `status`: (String) 포지션 상태 (예: `OPEN`, `CLOSED`, `HOLD`)
-*   `updated_at`: (DateTime, AutoNow) 가격 변동이나 매매가 일어날 때 기록.
+*   `asset_id`: (FK → `assets`) 참조 인덱스 키
+*   `avg_entry_price`: (Float) 매수 평단가
+*   `quantity`: (Float) 보유 수량
+*   `status`: (String) 포지션 상태 (`OPEN`, `CLOSED`, `HOLD`)
+*   `is_paper`: (Boolean) 가상 모의투자 여부
+*   `updated_at`: (DateTime, AutoNow)
 
 ### 3.3. `order_history` (매매 체결 히스토리)
-매수/매도할 때마다 찍히는 실제 주문 체결 로그 (손익 계산 및 백테스트의 뼈대).
+매수/매도 체결 로그.
 *   `id`: (PK) 고유 번호
-*   `position_id`: (FK) 이 주문이 종속된 `positions` 스레드 참조 키
-*   `side`: (String) 주문 종류 (예: `BUY`, `SELL`)
-*   `price`: (Float) 1주/1코인당 실제 체결 가격
+*   `position_id`: (FK → `positions`) 종속 포지션
+*   `ai_analysis_log_id`: (FK → `ai_analysis_logs`, Nullable) AI 분석과 연결
+*   `side`: (String) `BUY` / `SELL`
+*   `order_reason`: (String, Nullable) 주문 사유
+*   `is_paper`: (Boolean) 가상 모의투자 여부
+*   `price`: (Float) 체결 가격
 *   `qty`: (Float) 체결 수량
-*   `broker`: (String) 이 주문을 받아준 거래소 (예: `UPBIT`, `KIWOOM`)
-*   `executed_at`: (DateTime, AutoNow) 거래소가 체결을 이행해준 시간.
+*   `broker`: (String) 거래소 (예: `UPBIT`)
+*   `executed_at`: (DateTime, AutoNow)
 
-### 3.4. `bot_configs` (알고리즘 및 AI 위험 설정)
-사용자가 앱이나 슬랙에서 조정하는 매매 알고리즘의 변수값들 모음집. **프론트엔드 UI 모달을 통해 실시간으로(Phase 17) 업데이트**되며 Worker 로직에 즉각 반영됩니다.
+### 3.4. `bot_configs` (봇 설정)
+매매 알고리즘의 파라미터 모음집. 프론트엔드 UI에서 실시간 수정 가능.
 *   `id`: (PK) 고유 번호
-*   `config_json`: (JSON) 동적 설정들을 품는 통. 그리드 매매 기준 간격, 일일 최대 손실액, AI 에이전트의 성향(Aggressive/Conservative 등) 삽입.
-*   `is_active`: (Boolean) 이 설정 프로필이 현재 작동 중인지 여부.
+*   `config_json`: (JSON) 전략, 리스크, 그리드, 스케줄 등 동적 설정
+*   `is_active`: (Boolean) 설정 프로필 작동 여부
 
-### 3.5. `favorites` (관심 종목 모음) [Phase 14 추가]
-사용자가 대시보드에서 하트 표시에 체크한 관심 종목(Watchlist).
+### 3.5. `system_configs` (시스템 설정) [Phase 14 추가]
+스케줄러 간격, AI 설정 등 시스템 레벨 키-값(K/V) 설정 저장소.
 *   `id`: (PK) 고유 번호
-*   `symbol`: (String, Unique) 대상 종목 심볼 (예: `KRW-SOL`)
-*   `broker`: (String) 대상 거래소
-*   `created_at`: (DateTime, AutoNow) 관심 종목으로 지정된 날짜.
+*   `config_key`: (String, Unique, Index) 설정 키 (예: `SENTIMENT_INTERVAL_MINUTES`)
+*   `config_value`: (String) 설정 값
+*   `description`: (String, Nullable) 설명
+
+### 3.6. `favorites` (관심 종목) [Phase 14 추가]
+사용자가 Watchlist에 등록한 관심 종목.
+*   `id`: (PK) 고유 번호
+*   `symbol`: (String, Unique) 종목 심볼
+*   `broker`: (String) 거래소
+*   `created_at`: (DateTime, AutoNow)
+
+### 3.7. `ai_analysis_logs` (AI 분석 로그) [Phase 9 추가]
+AI 자율 분석가가 생성한 매매 판단 로그. 정확도 메타인지 채점 대상.
+*   `id`: (PK) 고유 번호
+*   `symbol`: (String) 분석 대상 종목
+*   `decision`: (String) AI 판단 (`BUY`, `SELL`, `HOLD`)
+*   `confidence`: (Integer) 확신도 (0~100)
+*   `recommended_weight`: (Integer) 추천 투자 비중
+*   `reasoning`: (Text) 분석 근거 (자연어)
+*   `created_at`: (DateTime, AutoNow) 분석 시각
+*   `accuracy_label`: (String, Nullable) 정확도 레이블 (`SUCCESS`, `FAIL`) [Phase 36]
+*   `actual_price_diff_pct`: (Float, Nullable) 실제 가격 변동률 [Phase 36]
+*   `accuracy_checked_at`: (DateTime, Nullable) 정확도 검증 시각 [Phase 36]
+
+### 3.8. `ai_chat_messages` (AI 채팅 메시지) [Phase 39 추가]
+LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
+*   `id`: (PK) 고유 번호
+*   `session_id`: (String, Index) 채팅 세션 식별자
+*   `role`: (String) 발화자 (`user`, `assistant`, `tool`)
+*   `content`: (Text) 메시지 내용
+*   `agent_name`: (String, Nullable) 에이전트 이름 (supervisor, rag_agent 등)
+*   `is_tool_call`: (Boolean) 도구 호출 메시지 여부
+*   `created_at`: (DateTime, AutoNow)
+
+### 3.9. `portfolio_snapshots` (포트폴리오 스냅샷) [Phase 41 추가]
+매시 정각 자동 저장되는 자산 상태 시계열 데이터. 수익률 추이 차트에 사용.
+*   `id`: (PK) 고유 번호
+*   `total_net_worth`: (Float) 총 순자산 (KRW)
+*   `total_pnl`: (Float) 총 평가손익 (KRW)
+*   `snapshot_data`: (JSON, 배열) 코인별 상세 내역 `[{currency, balance, current_price, total_value, pnl_percentage}, ...]`
+*   `created_at`: (DateTime, AutoNow)
