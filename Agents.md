@@ -19,9 +19,10 @@ Codex는 세션을 시작하거나 코드를 수정할 때 반드시 아래의 *
 - **지표 무결성 (Indicator Safety):** 보조 지표 계산(MA, BB, RSI) 시 pandas-ta를 사용하되, 발생하는 `NaN` 값은 프론트엔드 전송 전 반드시 타 플랫폼(JSON) 호환 가능한 `null` / `None` 으로 예외 처리합니다.
 
 ## 3. 작업 수행 가이드 (Execution Workflow)
-- **현재 컨텍스트 (Current Context):** 극초기 백엔드 구조(Phase 1~4), 프론트엔드 대시보드 연동(Phase 5), 코어 워커/메신져 연동(Phase 6~8), AI 에이전트 연동(Phase 9), 고도의 백테스팅/지표 시각화(Phase 15~16) 및 **프론트엔드 실시간 봇 파라미터 제어(Phase 17)**가 완료된 **고도화 단계**에 있습니다.
+- **현재 컨텍스트 (Current Context):** 극초기 백엔드 구조(Phase 1~4), 프론트엔드 대시보드 연동(Phase 5), 코어 워커/메신져 연동(Phase 6~8), AI 에이전트 연동(Phase 9), 고도의 백테스팅/지표 시각화(Phase 15~16), **프론트엔드 실시간 봇 파라미터 제어(Phase 17)**, AI 성과 적중률 메타인지 채점(Phase 36), 분 단위 다이내믹 스케줄링(Phase 37), 가상 모의투자 시뮬레이터(Phase 38), LangGraph 멀티에이전트 AI 뱅커 채팅(Phase 39), Reviewer Agent 자가수정 루프(Phase 40)가 완료되고, **AI-Powered Portfolio Dashboard(Phase 41)**가 진행 중인 **고도화 단계**에 있습니다.
 - **범위 엄수:** Gemini가 제공한 마스터 프롬프트의 지시 범위를 정확히 수행하되, 묻지 않은 과도한 리팩토링이나 오버엔지니어링을 자제하십시오.
 - **안전 중단:** 워크트리에 알 수 없는 변경이 있거나, 지시를 수행하기에 앞서 아키텍처 결함이 예상되면 코딩을 중단하고 사용자에게 보고하십시오.
+- **문서 최신화 규칙:** Phase 마스터 프롬프트의 마지막 Task에는 반드시 `docs/ARCHITECTURE.md`와 `docs/DATABASE.md` 업데이트를 포함하여, 구현과 문서의 싱크를 유지한다.
 
 ## 4. 권한과 한계 (Role Boundaries & Constraints)
 이 프로젝트의 성공은 두 AI의 철저한 역할 분담에 달려있습니다.
