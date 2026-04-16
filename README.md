@@ -1,28 +1,80 @@
-# AI-Trade-Manager
+# 🤖 AI-Trade-Manager
 
-AI가 접목된 코인 통합 자산 관리 웹 플랫폼입니다.
-단순 보조 지표 백테스팅 기능을 넘어, 프론트엔드 대시보드 연동(Phase 5), 코어 워커/메신져 연동(Phase 6~8), **자율주행 AI 에이전트 연동**, **AI 성과 적중률 메타인지 채점(Phase 36)**, **분 단위 다이내믹 스케줄링 & 위치 사이징 제어(Phase 37)**, 그리고 최종적으로 진짜 자본 위협 없이 전략을 런타임으로 점검하는 **가상 모의투자(Paper Trading) 시뮬레이터(Phase 38)** 기능까지 완벽하게 통합된 실시간 오토 트레이딩 솔루션입니다.
+> **AI 멀티에이전트 기반 암호화폐 자율 트레이딩 플랫폼**
 
-## 📚 문서 (Documentation)
-시스템의 자세한 설계와 가이드라인은 아래 문서를 참고하세요.
-- [AI-Trade-Manager 아키텍처 명세 (Architecture)](docs/ARCHITECTURE.md)
-- [데이터베이스 스키마 명세 (Database)](docs/DATABASE.md)
-- [2-AI 시스템 작동 지침 (Agents)](Agents.md)
+AI가 실시간으로 시장을 분석하고, 자율적으로 매매를 결정하며, 스스로 정확도를 검증하는 통합 자산 관리 웹 플랫폼입니다.
+단순 보조 지표 봇을 넘어 **LangGraph 멀티에이전트 오케스트레이션**, **RAG 기반 문맥 분석**, **자가수정 Reviewer Agent**, **가상 모의투자 시뮬레이터**까지 통합된 풀스택 오토 트레이딩 솔루션입니다.
 
-## 🚀 기술 스택 (Tech Stack)
-- **Backend:** Python 3.11+, FastAPI, pandas, pandas-ta-classic
-- **Database:** PostgreSQL 16, SQLAlchemy 2.0 (Async), Alembic
-- **Infrastructure:** Docker & Docker Compose
-- **Control & Alert:** Slack (Socket Mode) Bot 통합
-- **Frontend:** React 18, Vite, Tailwind CSS, lightweight-charts
-- **AI Integration:** LLM 기반 시장 분석가 및 포트폴리오 매니저 자동 연동
+---
 
-## 🛠 실행 방법 (Getting Started)
-1. `.env.example`을 복사하여 `.env.local` 생성 및 API 키 설정 (Upbit, Slack, OpenAI 등)
-2. `docker-compose -f docker-compose-dev.yml up -d db` (PostgreSQL 구동)
-3. 백엔드 설정: `venv\Scripts\alembic upgrade head` (DB 테이블 생성 후 서버 실행)
-4. 프론트엔드 구동: `frontend/` 디렉토리에서 `npm i` 및 `npm run dev` 실행
+## ✨ 주요 기능
+
+### 🧠 AI 멀티에이전트 시스템
+- **LangGraph 오케스트레이터:** Supervisor → RAG/Quant Agent 자동 라우팅
+- **RAG Agent:** ChromaDB 벡터 DB 기반 과거 뉴스/분석 문맥 검색
+- **Quant Agent:** 실시간 시세, 기술지표(RSI, MACD, BB), 호가 분석
+- **Reviewer Agent:** 할루시네이션 검출 + 면책 조항 강제 (Self-Correction Loop, 최대 2회 재작업)
+- **SSE 실시간 스트리밍:** 에이전트 작업 과정을 Activity Card로 시각화
+
+### 📊 실시간 대시보드
+- 캔들 차트 (lightweight-charts) + 기술지표 오버레이
+- 포트폴리오 자산 배분 도넛 차트 (Recharts)
+- 시장 공포/탐욕 지수 + 글로벌 뉴스 감성 분석
+- AI 인사이트 브리핑 (진입 시 자동 생성)
+- 봇 파라미터 실시간 제어 패널
+
+### 🔬 백테스팅 연구소
+- 전략 파라미터 시뮬레이션 엔진
+- 차트 위 매수/매도 타점 시각화
+- 승률, 수익률, 최대낙폭 등 성과 지표
+
+### 🤖 자율 매매 엔진
+- AI 분석 기반 자동 매수/매도 실행
+- 분 단위 다이내믹 스케줄링 & 위치 사이징
+- AI 적중률 메타인지 채점 (정확도 자동 검증)
+- 가상 모의투자 (Paper Trading) 시뮬레이터
+
+### 📱 모바일 제어
+- Slack Socket Mode 봇 통합
+- `/잔고`, `/추천`, `긴급정지` 등 모바일 명령어 지원
+
+---
+
+## 🚀 기술 스택
+
+| 영역 | 스택 |
+|---|---|
+| **Backend** | Python 3.11+, FastAPI, SQLAlchemy 2.0 (Async), Alembic |
+| **Frontend** | React 18, TypeScript, Vite, Recharts, lightweight-charts, TanStack Query |
+| **Database** | PostgreSQL 16, ChromaDB (Vector DB) |
+| **AI/ML** | LangGraph, LangChain, Google Gemini, OpenAI GPT |
+| **Infrastructure** | Docker & Docker Compose |
+| **Scheduler** | APScheduler (AsyncIOScheduler) |
+| **Messaging** | Slack (Socket Mode) Bot |
+
+---
+
+## 🛠 Quick Start
+
+```bash
+# 1. 환경 변수 설정
+cp .env.example .env.local  # API 키 설정 (Upbit, Slack, OpenAI, Gemini)
+
+# 2. Docker DB 실행
+docker-compose -f docker-compose-dev.yml up -d db
+
+# 3. 백엔드 + 프론트엔드 일괄 실행
+.\start_dev.bat
+```
+
+---
+
+## 📚 문서
+- [시스템 아키텍처 명세](docs/ARCHITECTURE.md)
+- [데이터베이스 스키마 명세](docs/DATABASE.md)
+- [AI 개발 가이드라인](Agents.md)
 
 ## 🤖 AI 협업 구조 (2-AI System)
-이 프로젝트는 철저히 **Gemini(Architect)**와 **Codex(Coder)**의 쌍방향 협업 시스템으로 구축되고 있습니다.
-새로운 세션을 시작하거나 기능을 확장하려는 AI 어시스턴트는 반드시 `docs/` 하위의 마크다운 문서들을 먼저 숙지하여 시스템의 전체 컨텍스트를 파악해야 합니다.
+이 프로젝트는 **Gemini(Architect)**와 **Codex(Coder)**의 2-AI 협업 시스템으로 구축되고 있습니다.
+- **Gemini:** 시스템 설계, 기술 스택 결정, 단계별 마스터 프롬프트 작성
+- **Codex:** 마스터 프롬프트의 요구사항을 코드로 구현
