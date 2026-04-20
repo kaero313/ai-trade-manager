@@ -97,7 +97,7 @@ def _build_chat_model() -> ChatGoogleGenerativeAI:
         raise RuntimeError("GEMINI_API_KEY 가 설정되지 않아 Chat Orchestrator 를 실행할 수 없습니다.")
 
     return ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
+        model="gemini-3-flash-preview",
         temperature=0,
         google_api_key=settings.GEMINI_API_KEY,
     )
