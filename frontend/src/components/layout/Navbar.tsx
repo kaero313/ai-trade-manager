@@ -53,6 +53,9 @@ function Navbar({ aiStatus, totalNetWorth, totalPnl, isPortfolioLoading, portfol
             <NavLink to="/" end className={resolveNavLinkClassName}>
               <span>대시보드</span>
             </NavLink>
+            <NavLink to="/portfolio" className={resolveNavLinkClassName}>
+              <span>📊 포트폴리오</span>
+            </NavLink>
             <NavLink to="/chat" className={resolveNavLinkClassName}>
               <MessageSquare className="h-4 w-4" />
               <span>AI 뱅커</span>
