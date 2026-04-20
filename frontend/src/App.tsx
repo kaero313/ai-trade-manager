@@ -5,6 +5,7 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import AIChatPage from './pages/AIChatPage'
 import DashboardPage from './pages/DashboardPage'
 import LaboratoryPage from './pages/LaboratoryPage'
+import PortfolioPage from './pages/PortfolioPage'
 import SettingsPage from './pages/SettingsPage'
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
         <Layout>
           <Routes>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/portfolio" element={<PortfolioPage />} />
             <Route path="/chat" element={<AIChatPage />} />
             <Route path="/laboratory" element={<LaboratoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
