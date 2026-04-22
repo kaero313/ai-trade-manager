@@ -73,8 +73,19 @@ docker-compose -f docker-compose-dev.yml up -d db
 - [시스템 아키텍처 명세](docs/ARCHITECTURE.md)
 - [데이터베이스 스키마 명세](docs/DATABASE.md)
 - [AI 개발 가이드라인](Agents.md)
+- [개발 운영 워크플로우](docs/DEVELOPMENT_WORKFLOW.md)
 
 ## 🤖 AI 협업 구조 (2-AI System)
 이 프로젝트는 **Gemini(Architect)**와 **Codex(Coder)**의 2-AI 협업 시스템으로 구축되고 있습니다.
-- **Gemini:** 시스템 설계, 기술 스택 결정, 단계별 마스터 프롬프트 작성
-- **Codex:** 마스터 프롬프트의 요구사항을 코드로 구현
+- **Gemini / IDE:** 기능 설계, 범위 확정, 아키텍처/DB 변경 승인, 마스터 프롬프트 작성
+- **Codex 앱:** 메인 실행 채널. Gemini 프롬프트를 받아 현재 리포지토리와의 Delta 판정, 작업 분해, 멀티 에이전트 실행, 검증, 커밋까지 담당
+- **Codex CLI:** 좁은 단일 확인이나 반복 명령이 필요할 때만 쓰는 보조 채널
+
+Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구조로 운영됩니다.
+- **Main Orchestrator:** 항상 존재하며 Delta 판정, 작업 분해, 통합, 커밋을 담당
+- **Explorer:** 중간 이상 작업에서 영향 범위와 충돌 가능성을 조사
+- **Backend / Frontend Worker:** API, 서비스, DB, 스케줄러, UI, 시각화 구현을 분담
+- **Reviewer:** 중간 이상 작업에서 요구사항 누락, 구조 위반, 회귀 위험을 검토
+- **Docs Curator:** 포트폴리오 가치가 큰 작업에서 README/아키텍처/DB/운영 문서를 동기화
+
+상세 운영 규칙과 Codex 앱 실행 계약 템플릿은 [개발 운영 워크플로우](docs/DEVELOPMENT_WORKFLOW.md)에 정리되어 있습니다.
