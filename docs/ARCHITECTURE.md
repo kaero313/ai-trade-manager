@@ -53,6 +53,33 @@ graph TD
    - 역할: `AsyncIOScheduler`(APScheduler)로 뉴스 수집, 시장 감성 분석, AI 자율분석, 포트폴리오 스냅샷 저장 등 주기적 잡을 관리.
    - 주요 잡: 뉴스 수집(4h), 시장 감성 갱신(5m), AI 자율분석(관심종목 순회), 포트폴리오 스냅샷(매시 정각)
 
+### 2.2. 개발 운영 아키텍처 (AI Delivery Workflow)
+런타임 멀티에이전트와 별개로, 개발 과정은 **Gemini / IDE 설계 + Codex 앱 적응형 멀티 에이전트 실행** 구조를 사용합니다.
+
+```mermaid
+graph LR
+    Gemini["Gemini / IDE<br/>(설계·승인)"] --> App["Codex App<br/>(Main Orchestrator)"]
+    App --> Explorer["Explorer"]
+    App --> Backend["Backend Worker"]
+    App --> Frontend["Frontend Worker"]
+    App --> Reviewer["Reviewer"]
+    App --> Docs["Docs Curator"]
+    CLI["Codex CLI<br/>(보조)"] --> App
+    App --> Repo["Repository / Docs / Git History"]
+```
+
+- **Gemini / IDE:** 기능 설계, 범위 확정, 수용 기준 작성, 코어 아키텍처/DB/외부 계약 변경 승인
+- **Codex 앱:** 현재 리포지토리와의 Delta 판정, 작업 분해, 병렬 조사/구현, 통합, 검증, 커밋 수행
+- **Codex CLI:** 좁은 단일 확인이나 반복 명령이 필요할 때만 쓰는 보조 채널
+- **Main Orchestrator:** 항상 존재하며 최종 통합과 커밋의 유일한 주체
+- **Explorer / Worker / Reviewer / Docs Curator:** 작업 크기와 포트폴리오 가치에 따라 선택적으로 활성화
+
+작업 크기별 기본 토폴로지는 아래와 같습니다.
+- **작은 작업:** `Main` 단독
+- **표준 작업:** `Main + Explorer + Worker 1명 + Reviewer`
+- **크로스스택/포트폴리오 시그널이 큰 작업:** `Main + Explorer + Backend Worker + Frontend Worker + Reviewer`
+- **문서/설명 가치가 큰 작업:** 위 조합 + `Docs Curator`
+
 ## 3. AI 멀티에이전트 아키텍처 (Phase 36~40)
 
 ```mermaid
