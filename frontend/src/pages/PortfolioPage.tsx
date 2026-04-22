@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
 
+import AiRiskAlert from '../components/portfolio/AiRiskAlert'
+import AssetHoldingList from '../components/portfolio/AssetHoldingList'
+import PortfolioAllocationChart from '../components/portfolio/PortfolioAllocationChart'
+import PortfolioSummaryCard from '../components/portfolio/PortfolioSummaryCard'
+import PortfolioTrendChart from '../components/portfolio/PortfolioTrendChart'
 import {
   fetchLatestAnalysisBatch,
   fetchPortfolioSnapshots,
@@ -19,6 +24,10 @@ function buildPortfolioSymbols(items: AssetItem[]): string[] {
     .map((currency) => `KRW-${currency}`)
 
   return Array.from(new Set(symbols))
+}
+
+function isKrwAsset(item: AssetItem): boolean {
+  return String(item.currency || '').trim().toUpperCase() === 'KRW'
 }
 
 function PortfolioPage() {
@@ -146,20 +155,34 @@ function PortfolioPage() {
     }
   }, [])
 
-  const assetCount = portfolio?.items.length ?? 0
-  const snapshotCount = snapshots.length
-  const aiAnalysisCount = Object.keys(aiAnalysisMap).length
+  const portfolioItems = portfolio?.items ?? []
+  const krwAsset = portfolioItems.find(isKrwAsset)
+  const totalNetWorth = portfolio?.total_net_worth ?? 0
+  const totalPnl = portfolio?.total_pnl ?? 0
+  const krwBalance = krwAsset?.total_value ?? 0
+  const coinCount = portfolioItems.filter((item) => !isKrwAsset(item)).length
 
   return (
-    <div className="space-y-3">
-      <h1 className="text-2xl font-semibold">포트폴리오 페이지</h1>
-      <p className="text-sm text-slate-600 dark:text-slate-300">
-        {isLoading ? '포트폴리오 데이터를 불러오는 중입니다.' : `현재 자산 항목 수: ${assetCount}`}
-      </p>
-      <p className="text-sm text-slate-600 dark:text-slate-300">
-        {isSnapshotsLoading ? '스냅샷 데이터를 불러오는 중입니다.' : `스냅샷 수: ${snapshotCount}`}
-      </p>
-      <p className="text-sm text-slate-600 dark:text-slate-300">{`AI 분석 대상 수: ${aiAnalysisCount}`}</p>
+    <div className="min-h-full lg:grid lg:grid-cols-[1fr_400px] lg:gap-6">
+      <section className="min-w-0 space-y-6 lg:h-[calc(100vh-8rem)] lg:overflow-y-auto lg:pr-2">
+        <PortfolioSummaryCard
+          totalNetWorth={totalNetWorth}
+          totalPnl={totalPnl}
+          krwBalance={krwBalance}
+          coinCount={coinCount}
+          isLoading={isLoading}
+        />
+        <AiRiskAlert items={portfolioItems} totalNetWorth={totalNetWorth} />
+        <PortfolioAllocationChart items={portfolioItems} isLoading={isLoading} />
+        <PortfolioTrendChart snapshots={snapshots} isLoading={isSnapshotsLoading} />
+        <AssetHoldingList
+          items={portfolioItems}
+          aiAnalysisMap={aiAnalysisMap}
+          isLoading={isLoading}
+        />
+      </section>
+
+      <aside className="hidden lg:block" aria-hidden="true" />
     </div>
   )
 }
