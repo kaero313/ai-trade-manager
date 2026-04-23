@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import AiTradeTimeline from '../components/portfolio/AiTradeTimeline'
@@ -40,6 +41,7 @@ function PortfolioPage() {
   const [aiAnalysisMap, setAiAnalysisMap] = useState<Record<string, AIAnalysisItem | null>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isSnapshotsLoading, setIsSnapshotsLoading] = useState(true)
+  const [isMobileAiPanelOpen, setIsMobileAiPanelOpen] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -201,7 +203,7 @@ function PortfolioPage() {
   }
 
   return (
-    <div className="min-h-full lg:grid lg:grid-cols-[1fr_400px] lg:gap-6">
+    <div className="grid min-h-full grid-cols-1 gap-6 lg:grid-cols-[1fr_400px]">
       <section className="min-w-0 space-y-6 lg:h-[calc(100vh-8rem)] lg:overflow-y-auto lg:pr-2">
         <PortfolioSummaryCard
           totalNetWorth={totalNetWorth}
@@ -220,7 +222,34 @@ function PortfolioPage() {
         />
       </section>
 
-      <aside className="hidden lg:flex lg:h-[calc(100vh-8rem)] lg:min-h-0 lg:w-[400px] lg:flex-col lg:gap-6">
+      <div className="lg:hidden">
+        <button
+          type="button"
+          onClick={() => setIsMobileAiPanelOpen((current) => !current)}
+          aria-expanded={isMobileAiPanelOpen}
+          aria-controls="portfolio-ai-panel"
+          className="inline-flex w-full items-center justify-between rounded-[24px] border border-white/60 bg-white/75 px-5 py-4 text-left shadow-[0_20px_60px_-36px_rgba(15,23,42,0.45)] backdrop-blur-xl transition hover:bg-white dark:border-white/10 dark:bg-slate-900/60 dark:hover:bg-slate-900"
+        >
+          <div>
+            <p className="text-[11px] font-semibold tracking-[0.24em] text-slate-500 dark:text-slate-400">
+              AI PANEL
+            </p>
+            <p className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
+              {isMobileAiPanelOpen ? 'AI 패널 접기' : 'AI 패널 열기'}
+            </p>
+          </div>
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200/80 bg-white/80 text-slate-700 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200">
+            {isMobileAiPanelOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+          </span>
+        </button>
+      </div>
+
+      <aside
+        id="portfolio-ai-panel"
+        className={`min-h-0 flex-col gap-6 ${
+          isMobileAiPanelOpen ? 'flex' : 'hidden'
+        } lg:flex lg:h-[calc(100vh-8rem)] lg:w-[400px] lg:min-h-0`}
+      >
         <div className="h-[240px] min-h-0 overflow-y-auto pr-1">
           <PortfolioAiBriefing sessionId={sessionId} />
         </div>
@@ -229,7 +258,7 @@ function PortfolioPage() {
           <AiTradeTimeline />
         </div>
 
-        <div className="min-h-0 flex-1">
+        <div className="h-[400px] min-h-0 lg:h-auto lg:flex-1">
           <PortfolioMiniChat sessionId={sessionId} onCreateSession={handleCreateSession} />
         </div>
       </aside>
