@@ -4,7 +4,6 @@ import {
   CartesianGrid,
   ComposedChart,
   Line,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -13,6 +12,7 @@ import {
 import { apiClient } from '../../services/api'
 import type { MarketSentimentSnapshot } from '../../services/api'
 import type { PortfolioSnapshotItem } from '../../services/portfolioService'
+import useMeasuredChartWidth from './useMeasuredChartWidth'
 
 interface PortfolioTrendChartProps {
   snapshots: PortfolioSnapshotItem[]
@@ -173,6 +173,16 @@ function TrendEmptyState() {
   )
 }
 
+function TrendCanvasPlaceholder() {
+  return (
+    <div className="flex h-[420px] min-w-[640px] w-full items-center justify-center rounded-[24px] border border-white/55 bg-white/45 px-6 text-center backdrop-blur dark:border-white/10 dark:bg-white/5">
+      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+        자산 추이 차트를 불러오는 중입니다...
+      </p>
+    </div>
+  )
+}
+
 function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   if (!active || !payload || payload.length === 0) {
     return null
@@ -232,6 +242,7 @@ function PortfolioTrendChart({
 }: PortfolioTrendChartProps) {
   const trendData = buildTrendData(snapshots)
   const hasData = trendData.length > 0
+  const { containerRef, width: chartWidth } = useMeasuredChartWidth({ minWidth: 640 })
 
   const sentimentQuery = useQuery({
     queryKey: ['portfolio-trend-market-sentiment'],
@@ -272,9 +283,14 @@ function PortfolioTrendChart({
 
         {!isLoading && hasData ? (
           <div className="-mx-2 overflow-x-auto px-2">
-            <div className="h-[420px] min-w-[640px] w-full rounded-[24px] border border-white/55 bg-white/45 p-4 backdrop-blur dark:border-white/10 dark:bg-white/5">
-              <ResponsiveContainer width="100%" height="100%">
+            <div
+              ref={containerRef}
+              className="h-[420px] min-w-[640px] w-full rounded-[24px] border border-white/55 bg-white/45 p-4 backdrop-blur dark:border-white/10 dark:bg-white/5"
+            >
+              {chartWidth > 0 ? (
                 <ComposedChart
+                  width={Math.max(chartWidth - 32, 608)}
+                  height={388}
                   data={trendData}
                   margin={{ top: 20, right: 24, left: 8, bottom: 8 }}
                 >
@@ -323,7 +339,9 @@ function PortfolioTrendChart({
                     activeDot={{ r: 5, fill: '#10b981', stroke: '#ffffff', strokeWidth: 2 }}
                   />
                 </ComposedChart>
-              </ResponsiveContainer>
+              ) : (
+                <TrendCanvasPlaceholder />
+              )}
             </div>
           </div>
         ) : null}
