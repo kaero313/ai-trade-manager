@@ -3,7 +3,7 @@
 본 설계 문서는 **AI-Trade-Manager** 프로젝트의 시스템 구조와 기술 스택 선택의 의도를 설명합니다.
 모든 개발(특히 Codex)은 이 문서를 최우선 기준으로 삼아 구조적 일관성을 유지해야 합니다.
 
-> **최종 갱신 기준:** Phase 40 (Reviewer Agent) 완료 / Phase 41 (AI Portfolio Dashboard) 진행 중
+> **최종 갱신 기준:** Phase 41 (AI Portfolio Dashboard) 완료
 
 ---
 
@@ -150,7 +150,7 @@ ai-trade-manager/
 - **AI 뱅커 (Chat):** LangGraph 멀티에이전트와 SSE 실시간 대화. Activity Card로 에이전트 작업 상태 시각화.
 - **연구소 (Laboratory):** 백테스트 엔진과 연동하여 전략 파라미터를 시뮬레이션하고, 차트 위에 타점(Buy/Sell Marker)을 시각화.
 - **설정 (Settings):** 전략, 리스크, 스케줄, 그리드 매매 파라미터를 실시간 조정.
-- **포트폴리오 (진행 중, Phase 41):** AI 기반 자산 관리 대시보드.
+- **포트폴리오 (완료, Phase 41):** AI 기반 자산 관리 대시보드.
 
 ## 6. 거래소 추상화 (Broker Abstraction) 전략
 어댑터 패턴(Adapter Pattern)을 사용하여 모든 거래소 클라이언트는 반드시 `BaseBrokerClient` 인터페이스를 상속합니다. `BrokerFactory`를 통해 동작하여, 단일 코드베이스로 다수 거래소를 원활하게 지원합니다.
