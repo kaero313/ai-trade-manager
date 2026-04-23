@@ -271,70 +271,92 @@ export async function streamChatMessage(
   sessionId: string,
   content: string,
   onEvent: (event: ChatStreamEvent) => void,
+  options?: { timeoutMs?: number },
 ): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}/messages`, {
-    method: 'POST',
-    headers: {
-      Accept: 'text/event-stream',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ content }),
-  })
-
-  if (!response.ok) {
-    throw await buildStreamError(response)
+  const controller = new AbortController()
+  const timeoutId =
+    typeof options?.timeoutMs === 'number' && Number.isFinite(options.timeoutMs)
+      ? window.setTimeout(() => controller.abort(), options.timeoutMs)
+      : null
+  const clearStreamTimeout = () => {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId)
+    }
   }
+  try {
+    const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      headers: {
+        Accept: 'text/event-stream',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content }),
+      signal: controller.signal,
+    })
 
-  if (!response.body) {
-    throw new Error('채팅 스트림 응답 본문이 비어 있습니다.')
-  }
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  let pendingDataLines: string[] = []
-
-  const emitPendingEvent = () => {
-    if (pendingDataLines.length === 0) {
-      return
+    if (!response.ok) {
+      throw await buildStreamError(response)
     }
 
-    const payload = pendingDataLines.join('\n').trim()
-    pendingDataLines = []
-
-    if (!payload) {
-      return
+    if (!response.body) {
+      throw new Error('채팅 스트림 응답 본문이 비어 있습니다.')
     }
 
-    onEvent(JSON.parse(payload) as ChatStreamEvent)
-  }
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let pendingDataLines: string[] = []
 
-  while (true) {
-    const { value, done } = await reader.read()
-    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+    const emitPendingEvent = () => {
+      if (pendingDataLines.length === 0) {
+        return
+      }
 
-    let newlineIndex = buffer.indexOf('\n')
-    while (newlineIndex !== -1) {
-      const rawLine = buffer.slice(0, newlineIndex)
-      buffer = buffer.slice(newlineIndex + 1)
+      const payload = pendingDataLines.join('\n').trim()
+      pendingDataLines = []
 
-      const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
-      if (line === '') {
+      if (!payload) {
+        return
+      }
+
+      onEvent(JSON.parse(payload) as ChatStreamEvent)
+    }
+
+    while (true) {
+      const { value, done } = await reader.read()
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done })
+
+      let newlineIndex = buffer.indexOf('\n')
+      while (newlineIndex !== -1) {
+        const rawLine = buffer.slice(0, newlineIndex)
+        buffer = buffer.slice(newlineIndex + 1)
+
+        const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+        if (line === '') {
+          emitPendingEvent()
+        } else if (line.startsWith('data:')) {
+          pendingDataLines.push(line.slice(5).trimStart())
+        }
+
+        newlineIndex = buffer.indexOf('\n')
+      }
+
+      if (done) {
+        const remainingLine = buffer.endsWith('\r') ? buffer.slice(0, -1) : buffer
+        if (remainingLine.startsWith('data:')) {
+          pendingDataLines.push(remainingLine.slice(5).trimStart())
+        }
         emitPendingEvent()
-      } else if (line.startsWith('data:')) {
-        pendingDataLines.push(line.slice(5).trimStart())
+        break
       }
-
-      newlineIndex = buffer.indexOf('\n')
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('AI 응답이 지연되어 요청을 종료했습니다. 잠시 후 다시 시도해 주세요.')
     }
 
-    if (done) {
-      const remainingLine = buffer.endsWith('\r') ? buffer.slice(0, -1) : buffer
-      if (remainingLine.startsWith('data:')) {
-        pendingDataLines.push(remainingLine.slice(5).trimStart())
-      }
-      emitPendingEvent()
-      break
-    }
+    throw error
+  } finally {
+    clearStreamTimeout()
   }
 }
