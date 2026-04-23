@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react'
 
+import AiTradeTimeline from '../components/portfolio/AiTradeTimeline'
 import AiRiskAlert from '../components/portfolio/AiRiskAlert'
 import AssetHoldingList from '../components/portfolio/AssetHoldingList'
+import PortfolioAiBriefing from '../components/portfolio/PortfolioAiBriefing'
 import PortfolioAllocationChart from '../components/portfolio/PortfolioAllocationChart'
+import PortfolioMiniChat from '../components/portfolio/PortfolioMiniChat'
 import PortfolioSummaryCard from '../components/portfolio/PortfolioSummaryCard'
 import PortfolioTrendChart from '../components/portfolio/PortfolioTrendChart'
+import { createChatSession } from '../services/api'
 import {
   fetchLatestAnalysisBatch,
   fetchPortfolioSnapshots,
@@ -36,6 +40,7 @@ function PortfolioPage() {
   const [aiAnalysisMap, setAiAnalysisMap] = useState<Record<string, AIAnalysisItem | null>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isSnapshotsLoading, setIsSnapshotsLoading] = useState(true)
+  const [sessionId, setSessionId] = useState<string | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -155,12 +160,45 @@ function PortfolioPage() {
     }
   }, [])
 
+  useEffect(() => {
+    let isMounted = true
+
+    const initializeChatSession = async () => {
+      try {
+        const result = await createChatSession()
+        if (!isMounted) {
+          return
+        }
+        setSessionId(result.session_id)
+      } catch (error) {
+        console.warn('[PortfolioPage] chat session initialization failed', error)
+      }
+    }
+
+    void initializeChatSession()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   const portfolioItems = portfolio?.items ?? []
   const krwAsset = portfolioItems.find(isKrwAsset)
   const totalNetWorth = portfolio?.total_net_worth ?? 0
   const totalPnl = portfolio?.total_pnl ?? 0
   const krwBalance = krwAsset?.total_value ?? 0
   const coinCount = portfolioItems.filter((item) => !isKrwAsset(item)).length
+
+  const handleCreateSession = async (): Promise<string | null> => {
+    try {
+      const result = await createChatSession()
+      setSessionId(result.session_id)
+      return result.session_id
+    } catch (error) {
+      console.warn('[PortfolioPage] chat session creation failed', error)
+      return null
+    }
+  }
 
   return (
     <div className="min-h-full lg:grid lg:grid-cols-[1fr_400px] lg:gap-6">
@@ -182,7 +220,19 @@ function PortfolioPage() {
         />
       </section>
 
-      <aside className="hidden lg:block" aria-hidden="true" />
+      <aside className="hidden lg:flex lg:h-[calc(100vh-8rem)] lg:min-h-0 lg:w-[400px] lg:flex-col lg:gap-6">
+        <div className="h-[240px] min-h-0 overflow-y-auto pr-1">
+          <PortfolioAiBriefing sessionId={sessionId} />
+        </div>
+
+        <div className="h-[300px] min-h-0 overflow-y-auto pr-1">
+          <AiTradeTimeline />
+        </div>
+
+        <div className="min-h-0 flex-1">
+          <PortfolioMiniChat sessionId={sessionId} onCreateSession={handleCreateSession} />
+        </div>
+      </aside>
     </div>
   )
 }
