@@ -39,7 +39,7 @@ function HoldingSkeletonCard() {
 
 function EmptyHoldingState() {
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-white/60 bg-white/70 px-6 py-10 text-center shadow-[0_28px_80px_-38px_rgba(15,23,42,0.42)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_80px_-38px_rgba(2,6,23,0.95)]">
+    <section className="relative overflow-hidden rounded-[28px] border border-white/60 bg-white/70 px-6 py-10 text-center shadow-[0_28px_80px_-38px_rgba(15,23,42,0.42)] backdrop-blur-xl transition-shadow duration-200 hover:shadow-[0_34px_96px_-40px_rgba(15,23,42,0.48)] dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_80px_-38px_rgba(2,6,23,0.95)] dark:hover:shadow-[0_34px_96px_-40px_rgba(2,6,23,1)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(125,211,252,0.16),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.1),_transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.34),rgba(255,255,255,0.05))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.16),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.14),_transparent_32%),linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02))]" />
       <div className="relative">
         <span className="inline-flex items-center rounded-full border border-sky-200/80 bg-sky-50 px-3 py-1 text-xs font-semibold tracking-[0.2em] text-sky-700 dark:border-sky-300/20 dark:bg-sky-500/15 dark:text-sky-200">

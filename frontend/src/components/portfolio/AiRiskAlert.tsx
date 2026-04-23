@@ -98,7 +98,7 @@ function buildRiskAlerts(items: AssetItem[], totalNetWorth: number): RiskAlertIt
 
 function StableStateBadge() {
   return (
-    <div className="rounded-[24px] border border-emerald-200/80 bg-emerald-50/90 px-5 py-4 text-emerald-700 shadow-[0_18px_40px_-30px_rgba(5,150,105,0.8)] dark:border-emerald-300/20 dark:bg-emerald-500/12 dark:text-emerald-200">
+    <div className="rounded-[24px] border border-emerald-200/80 bg-emerald-50/90 px-5 py-4 text-emerald-700 shadow-[0_18px_40px_-30px_rgba(5,150,105,0.8)] transition-shadow duration-200 hover:shadow-[0_24px_56px_-32px_rgba(5,150,105,0.82)] dark:border-emerald-300/20 dark:bg-emerald-500/12 dark:text-emerald-200 dark:hover:shadow-[0_24px_56px_-32px_rgba(5,150,105,0.45)]">
       <div className="flex items-center gap-3">
         <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/80 text-emerald-600 ring-1 ring-emerald-200/80 dark:bg-slate-900/60 dark:text-emerald-200 dark:ring-emerald-300/15">
           <TrendingUp className="h-5 w-5" />
@@ -119,7 +119,7 @@ function AiRiskAlert({
   const alerts = buildRiskAlerts(items, totalNetWorth)
 
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-white/60 bg-white/70 p-6 shadow-[0_28px_90px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_90px_-36px_rgba(2,6,23,0.95)]">
+    <section className="relative overflow-hidden rounded-[28px] border border-white/60 bg-white/70 p-6 shadow-[0_28px_90px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl transition-shadow duration-200 hover:shadow-[0_36px_110px_-44px_rgba(15,23,42,0.58)] dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_90px_-36px_rgba(2,6,23,0.95)] dark:hover:shadow-[0_36px_110px_-44px_rgba(2,6,23,1)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.14),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.1),_transparent_30%),linear-gradient(135deg,rgba(255,255,255,0.34),rgba(255,255,255,0.05))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.16),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.12),_transparent_30%),linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02))]" />
       <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-white/80 dark:bg-white/10" />
 
@@ -146,7 +146,7 @@ function AiRiskAlert({
               return (
                 <article
                   key={alert.id}
-                  className={`rounded-[24px] border px-5 py-4 transition-transform duration-200 hover:-translate-y-0.5 hover:scale-[1.01] ${resolveAlertCardClassName(alert.tone)}`}
+                  className={`rounded-[24px] border px-5 py-4 transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:scale-[1.01] hover:shadow-lg ${resolveAlertCardClassName(alert.tone)}`}
                 >
                   <div className="flex items-start gap-4">
                     <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/80 ring-1 ring-white/70 backdrop-blur dark:bg-slate-900/60 dark:ring-white/10">

@@ -44,7 +44,7 @@ function SummaryMetric({
   valueClassName?: string
 }) {
   return (
-    <div className="rounded-2xl border border-white/60 bg-white/55 px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.7)] backdrop-blur md:px-5 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_40px_-28px_rgba(2,6,23,0.9)]">
+    <div className="rounded-2xl border border-white/60 bg-white/55 px-4 py-4 shadow-[0_18px_40px_-28px_rgba(15,23,42,0.7)] backdrop-blur transition-shadow duration-200 hover:shadow-[0_24px_56px_-30px_rgba(15,23,42,0.72)] md:px-5 dark:border-white/10 dark:bg-white/5 dark:shadow-[0_18px_40px_-28px_rgba(2,6,23,0.9)] dark:hover:shadow-[0_24px_56px_-30px_rgba(2,6,23,0.95)]">
       <p className="text-[11px] font-semibold tracking-[0.22em] text-slate-500 dark:text-slate-400">
         {label}
       </p>
@@ -61,7 +61,7 @@ function PortfolioSummaryCard({
   isLoading,
 }: PortfolioSummaryCardProps) {
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-white/60 bg-white/70 p-6 shadow-[0_28px_90px_-36px_rgba(15,23,42,0.55)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_90px_-36px_rgba(2,6,23,0.95)]">
+    <section className="relative overflow-hidden rounded-[28px] border border-white/60 bg-white/70 p-6 shadow-[0_28px_90px_-36px_rgba(15,23,42,0.55)] backdrop-blur-xl transition-shadow duration-200 hover:shadow-[0_36px_110px_-44px_rgba(15,23,42,0.6)] dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_90px_-36px_rgba(2,6,23,0.95)] dark:hover:shadow-[0_36px_110px_-44px_rgba(2,6,23,1)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.16),_transparent_38%),radial-gradient(circle_at_top_right,_rgba(14,165,233,0.14),_transparent_30%),linear-gradient(135deg,rgba(255,255,255,0.38),rgba(255,255,255,0.05))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.18),_transparent_34%),radial-gradient(circle_at_top_right,_rgba(59,130,246,0.18),_transparent_28%),linear-gradient(135deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))]" />
       <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-white/80 dark:bg-white/15" />
 
