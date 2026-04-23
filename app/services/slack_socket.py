@@ -437,7 +437,6 @@ class SlackSocketService:
         order_type = parsed["order_type"]
         amount_value = parsed["amount_value"]
         amount_is_pct = parsed["amount_is_pct"]
-        amount_raw = parsed.get("amount_raw")
         limit_price = parsed.get("price")
 
         if not settings.upbit_access_key or not settings.upbit_secret_key:
@@ -573,6 +572,7 @@ class SlackSocketService:
         order_type = parsed["order_type"]
         amount_value = parsed["amount_value"]
         amount_is_pct = parsed["amount_is_pct"]
+        amount_raw = parsed.get("amount_raw")
         limit_price = parsed.get("price")
 
         if not settings.upbit_access_key or not settings.upbit_secret_key:

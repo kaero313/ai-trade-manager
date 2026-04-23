@@ -44,7 +44,6 @@ class TradingEngine:
                         config_json = self._normalize_config_json(
                             bot_config.config_json if bot_config else None
                         )
-                        grid_config = self._extract_grid_config(config_json)
                         trade_mode = str(config_json.get("trade_mode", "ai")).lower().strip() or "ai"
 
                         if not is_active:

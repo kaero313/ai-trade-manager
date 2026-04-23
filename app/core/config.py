@@ -1,4 +1,10 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ENV_FILES = tuple(str(PROJECT_ROOT / name) for name in (".env", ".env.prod", ".env.local"))
 
 
 class Settings(BaseSettings):
@@ -44,10 +50,7 @@ class Settings(BaseSettings):
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
-    model_config = SettingsConfigDict(
-        env_file=(".env", ".env.prod", ".env.local"),
-        env_file_encoding="utf-8",
-    )
+    model_config = SettingsConfigDict(env_file=ENV_FILES, env_file_encoding="utf-8")
 
 
 settings = Settings()

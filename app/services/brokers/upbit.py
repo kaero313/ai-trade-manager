@@ -2,7 +2,6 @@ import hashlib
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import unquote, urlencode
 
@@ -186,23 +185,37 @@ def _parse_remaining_req(value: str | None) -> dict[str, str] | None:
 class UpbitBroker(BaseBrokerClient):
     def __init__(
         self,
-        base_url: str = "https://api.upbit.com",
+        base_url: str | None = None,
         access_key: str | None = None,
         secret_key: str | None = None,
-        timeout: float = 10.0,
+        timeout: float | None = None,
     ) -> None:
-        self.base_url = base_url.rstrip("/")
+        self.base_url = base_url.rstrip("/") if base_url else ""
         self.access_key = access_key
         self.secret_key = secret_key
         self.timeout = timeout
         self.last_remaining: dict[str, str] | None = None
 
+    def _resolve_base_url(self) -> str:
+        return (self.base_url or settings.upbit_base_url).rstrip("/")
+
+    def _resolve_timeout(self) -> float:
+        return self.timeout or settings.upbit_timeout
+
+    def _resolve_access_key(self) -> str | None:
+        return self.access_key or settings.upbit_access_key
+
+    def _resolve_secret_key(self) -> str | None:
+        return self.secret_key or settings.upbit_secret_key
+
     def _make_jwt(self, query_string: str | None = None) -> str:
-        if not self.access_key or not self.secret_key:
+        access_key = self._resolve_access_key()
+        secret_key = self._resolve_secret_key()
+        if not access_key or not secret_key:
             raise ValueError("Upbit access/secret key not configured")
 
         payload: dict[str, Any] = {
-            "access_key": self.access_key,
+            "access_key": access_key,
             "nonce": str(uuid.uuid4()),
         }
 
@@ -211,7 +224,7 @@ class UpbitBroker(BaseBrokerClient):
             payload["query_hash"] = query_hash
             payload["query_hash_alg"] = "SHA512"
 
-        token = jwt.encode(payload, self.secret_key, algorithm="HS512")
+        token = jwt.encode(payload, secret_key, algorithm="HS512")
         return token.decode("utf-8") if isinstance(token, bytes) else token
 
     def _auth_headers(self, query_string: str | None = None) -> dict[str, str]:
@@ -271,8 +284,8 @@ class UpbitBroker(BaseBrokerClient):
         if auth:
             headers.update(self._auth_headers(query_string))
 
-        url = f"{self.base_url}{path}"
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
+        url = f"{self._resolve_base_url()}{path}"
+        async with httpx.AsyncClient(timeout=self._resolve_timeout()) as client:
             resp = await client.request(
                 method,
                 url,
@@ -472,9 +485,4 @@ class UpbitBroker(BaseBrokerClient):
         return await self._request("DELETE", "/v1/order", params=params, auth=True)
 
 
-upbit_broker = UpbitBroker(
-    base_url=settings.upbit_base_url,
-    access_key=settings.upbit_access_key,
-    secret_key=settings.upbit_secret_key,
-    timeout=settings.upbit_timeout,
-)
+upbit_broker = UpbitBroker()
