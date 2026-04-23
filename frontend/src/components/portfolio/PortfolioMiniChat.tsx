@@ -2,6 +2,10 @@ import { AlertTriangle, Check, Loader2, MessageSquare, Plus, SendHorizontal } fr
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { streamChatMessage } from '../../services/api'
+import {
+  PORTFOLIO_CARD_CLASS_NAME,
+  PORTFOLIO_SECTION_LABEL_CLASS_NAME,
+} from './portfolioStyles'
 
 interface PortfolioMiniChatProps {
   sessionId: string | null
@@ -350,18 +354,15 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
   }
 
   return (
-    <section className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-white/60 bg-white/70 shadow-[0_28px_90px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl transition-shadow duration-200 hover:shadow-[0_36px_110px_-44px_rgba(15,23,42,0.58)] dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_90px_-36px_rgba(2,6,23,0.95)] dark:hover:shadow-[0_36px_110px_-44px_rgba(2,6,23,1)]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.14),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.12),_transparent_30%),linear-gradient(135deg,rgba(255,255,255,0.34),rgba(255,255,255,0.05))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.16),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.14),_transparent_30%),linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02))]" />
-      <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-white/80 dark:bg-white/10" />
-
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <header className="border-b border-white/50 px-5 py-4 dark:border-white/10">
+    <section className={`${PORTFOLIO_CARD_CLASS_NAME} flex h-full min-h-0 flex-col overflow-hidden`}>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <header className="border-b border-gray-200 px-5 py-4 dark:border-gray-700">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[11px] font-semibold tracking-[0.24em] text-slate-500 dark:text-slate-400">
+              <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
                 AI MINI CHAT
               </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
+              <h2 className="mt-2 text-xl font-semibold tracking-tight text-gray-950 dark:text-white">
                 💬 AI에게 질문하기
               </h2>
             </div>
@@ -377,7 +378,7 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
           {!sessionId ? (
-            <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-white/45 px-6 text-center dark:border-slate-600 dark:bg-slate-800/30">
+            <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 text-center dark:border-gray-600 dark:bg-gray-900/50">
               <MessageSquare className="h-10 w-10 text-emerald-500 dark:text-emerald-300" />
               <h3 className="mt-4 text-lg font-semibold text-slate-950 dark:text-white">
                 채팅 세션이 없습니다
@@ -402,7 +403,7 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
           ) : null}
 
           {sessionId && liveItems.length === 0 ? (
-            <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-white/45 px-6 text-center dark:border-slate-600 dark:bg-slate-800/30">
+            <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 text-center dark:border-gray-600 dark:bg-gray-900/50">
               <MessageSquare className="h-10 w-10 text-sky-500 dark:text-sky-300" />
               <h3 className="mt-4 text-lg font-semibold text-slate-950 dark:text-white">
                 첫 질문을 남겨보세요
@@ -420,10 +421,10 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
                   return (
                     <div key={item.key} className="flex justify-start">
                       <div
-                        className={`w-full max-w-xl rounded-2xl border px-4 py-3 text-sm shadow-sm backdrop-blur-sm ${resolveActivityCardClassName(item.status)}`}
+                        className={`w-full max-w-xl rounded-2xl border px-4 py-3 text-sm shadow-sm ${resolveActivityCardClassName(item.status)}`}
                       >
                         <div className="flex items-start gap-3">
-                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/75 dark:bg-slate-900/40">
+                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white dark:bg-gray-900">
                             {item.status === 'running' ? (
                               <Loader2 className="h-4 w-4 animate-spin text-slate-600 dark:text-slate-200" />
                             ) : item.status === 'completed' ? (
@@ -454,7 +455,7 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
                 if (item.role === 'user') {
                   return (
                     <div key={item.key} className="flex justify-end">
-                      <div className="max-w-[82%] rounded-2xl rounded-br-md bg-gradient-to-br from-indigo-600 to-blue-600 px-4 py-3 text-white shadow-sm">
+                      <div className="max-w-[82%] rounded-2xl rounded-br-md bg-blue-600 px-4 py-3 text-white shadow-sm">
                         <p className="whitespace-pre-wrap break-words text-sm leading-6">{item.content}</p>
                         <div className="mt-2 text-right text-[11px] font-medium text-indigo-100/90">
                           {formatMessageTimestamp(item.createdAt)}
@@ -498,7 +499,7 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
           ) : null}
         </div>
 
-        <div className="border-t border-white/50 px-5 py-4 dark:border-white/10">
+        <div className="border-t border-gray-200 px-5 py-4 dark:border-gray-700">
           {notice ? (
             <div
               className={`mb-3 rounded-xl px-4 py-3 text-sm ${

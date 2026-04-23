@@ -1,11 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, ChevronRight, Loader2, Menu, MessageSquare, Plus, SendHorizontal, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Loader2, Menu, MessageSquare, Plus, SendHorizontal, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import { SYSTEM_CONFIGS_QUERY_KEY, useSystemConfigs } from '../hooks/useSystemConfigs'
 import {
   approveChatConfigChange,
   createChatSession,
+  deleteChatSession,
   getChatMessages,
   getChatSessions,
   streamChatMessage,
@@ -378,6 +379,7 @@ function AIChatPage() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
   const [isCreatingSession, setIsCreatingSession] = useState(false)
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null)
   const [pendingSessions, setPendingSessions] = useState<ChatSession[]>([])
   const [liveItems, setLiveItems] = useState<ChatRenderItem[]>([])
   const [notice, setNotice] = useState<NoticeState | null>(null)
@@ -448,6 +450,40 @@ function AIChatPage() {
 
   const syncSessions = async () => {
     await queryClient.invalidateQueries({ queryKey: CHAT_SESSIONS_QUERY_KEY })
+  }
+
+  const handleDeleteSession = async (sessionId: string) => {
+    if (isStreaming || deletingSessionId !== null) {
+      return
+    }
+
+    setDeletingSessionId(sessionId)
+    setNotice(null)
+
+    try {
+      await deleteChatSession(sessionId)
+
+      const remainingSessions = sessions.filter((item) => item.session_id !== sessionId)
+      const nextSelectedSessionId =
+        selectedSessionId === sessionId ? (remainingSessions[0]?.session_id ?? null) : selectedSessionId
+
+      queryClient.setQueryData<ChatSession[]>(CHAT_SESSIONS_QUERY_KEY, (current) =>
+        (current ?? []).filter((item) => item.session_id !== sessionId),
+      )
+      queryClient.removeQueries({ queryKey: getChatMessagesQueryKey(sessionId), exact: true })
+
+      setPendingSessions((current) => current.filter((item) => item.session_id !== sessionId))
+      setSelectedSessionId(nextSelectedSessionId)
+
+      await syncSessions()
+    } catch (error) {
+      setNotice({
+        type: 'error',
+        message: resolveErrorMessage(error, '대화 세션을 삭제하지 못했습니다.'),
+      })
+    } finally {
+      setDeletingSessionId(null)
+    }
   }
 
   const createAndSelectSession = async (): Promise<string | null> => {
@@ -741,7 +777,7 @@ function AIChatPage() {
         <button
           type="button"
           onClick={() => void handleCreateSession()}
-          disabled={isCreatingSession || isStreaming}
+          disabled={isCreatingSession || isStreaming || deletingSessionId !== null}
           className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-emerald-300"
         >
           {isCreatingSession ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
@@ -772,29 +808,49 @@ function AIChatPage() {
         <div className="space-y-2">
           {sessions.map((session) => {
             const isSelected = session.session_id === selectedSessionId
+            const isDeletingThisSession = deletingSessionId === session.session_id
 
             return (
-              <button
+              <div
                 key={session.session_id}
-                type="button"
-                onClick={() => handleSelectSession(session.session_id)}
-                disabled={isStreaming}
-                className={`w-full rounded-xl border px-4 py-3 text-left transition ${
+                className={`rounded-xl border transition ${
                   isSelected
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200'
                     : 'border-transparent bg-gray-50 text-gray-700 hover:border-gray-200 hover:bg-gray-100 dark:bg-gray-700/40 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:bg-gray-700'
-                } disabled:cursor-not-allowed disabled:opacity-60`}
+                }`}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="truncate text-sm font-semibold">
-                    {session.last_message_preview || '새 대화'}
-                  </span>
-                  <span className="shrink-0 text-[11px] font-medium opacity-70">
-                    {formatSessionTimestamp(session.last_activity)}
-                  </span>
+                <div className="flex items-start gap-2 px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectSession(session.session_id)}
+                    disabled={isStreaming || deletingSessionId !== null}
+                    className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="truncate text-sm font-semibold">
+                        {session.last_message_preview || '새 대화'}
+                      </span>
+                      <span className="shrink-0 text-[11px] font-medium opacity-70">
+                        {formatSessionTimestamp(session.last_activity)}
+                      </span>
+                    </div>
+                    <p className="mt-2 truncate text-xs opacity-80">{session.session_id}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteSession(session.session_id)}
+                    disabled={isStreaming || deletingSessionId !== null}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/20 dark:bg-gray-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                    aria-label={`세션 ${session.session_id} 삭제`}
+                  >
+                    {isDeletingThisSession ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </button>
                 </div>
-                <p className="mt-2 truncate text-xs opacity-80">{session.session_id}</p>
-              </button>
+              </div>
             )
           })}
         </div>

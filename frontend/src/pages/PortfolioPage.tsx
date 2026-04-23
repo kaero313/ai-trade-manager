@@ -9,6 +9,10 @@ import PortfolioAllocationChart from '../components/portfolio/PortfolioAllocatio
 import PortfolioMiniChat from '../components/portfolio/PortfolioMiniChat'
 import PortfolioSummaryCard from '../components/portfolio/PortfolioSummaryCard'
 import PortfolioTrendChart from '../components/portfolio/PortfolioTrendChart'
+import {
+  PORTFOLIO_PANEL_INTERACTIVE_CLASS_NAME,
+  PORTFOLIO_SECTION_LABEL_CLASS_NAME,
+} from '../components/portfolio/portfolioStyles'
 import { createChatSession } from '../services/api'
 import {
   fetchLatestAnalysisBatch,
@@ -228,17 +232,17 @@ function PortfolioPage() {
           onClick={() => setIsMobileAiPanelOpen((current) => !current)}
           aria-expanded={isMobileAiPanelOpen}
           aria-controls="portfolio-ai-panel"
-          className="inline-flex w-full items-center justify-between rounded-[24px] border border-white/60 bg-white/75 px-5 py-4 text-left shadow-[0_20px_60px_-36px_rgba(15,23,42,0.45)] backdrop-blur-xl transition hover:bg-white dark:border-white/10 dark:bg-slate-900/60 dark:hover:bg-slate-900"
+          className={`${PORTFOLIO_PANEL_INTERACTIVE_CLASS_NAME} inline-flex w-full items-center justify-between px-5 py-4 text-left`}
         >
           <div>
-            <p className="text-[11px] font-semibold tracking-[0.24em] text-slate-500 dark:text-slate-400">
+            <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
               AI PANEL
             </p>
-            <p className="mt-2 text-base font-semibold text-slate-950 dark:text-white">
+            <p className="mt-2 text-base font-semibold text-gray-950 dark:text-white">
               {isMobileAiPanelOpen ? 'AI 패널 접기' : 'AI 패널 열기'}
             </p>
           </div>
-          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200/80 bg-white/80 text-slate-700 dark:border-slate-700/80 dark:bg-slate-900/70 dark:text-slate-200">
+          <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
             {isMobileAiPanelOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
           </span>
         </button>

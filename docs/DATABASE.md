@@ -93,6 +93,7 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 *   `agent_name`: (String, Nullable) 에이전트 이름 (supervisor, rag_agent 등)
 *   `is_tool_call`: (Boolean) 도구 호출 메시지 여부
 *   `created_at`: (DateTime, AutoNow)
+*   운영 규칙: AI 뱅커에서 세션 삭제를 실행하면 동일 `session_id`를 가진 메시지와 tool-call 로그가 함께 하드 삭제됩니다.
 
 ### 3.9. `portfolio_snapshots` (포트폴리오 스냅샷) [Phase 41 추가]
 매시 정각 자동 저장되는 자산 상태 시계열 데이터. 수익률 추이 차트에 사용.

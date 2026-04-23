@@ -2,7 +2,7 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import AIChatMessage as AIChatMessageORM
@@ -285,6 +285,13 @@ async def save_chat_message(
     await db.commit()
     await db.refresh(message)
     return message
+
+
+async def delete_chat_session_messages(db: AsyncSession, session_id: str) -> None:
+    await db.execute(
+        delete(AIChatMessageORM).where(AIChatMessageORM.session_id == session_id)
+    )
+    await db.commit()
 
 
 async def save_portfolio_snapshot(

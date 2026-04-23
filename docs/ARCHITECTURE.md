@@ -147,7 +147,7 @@ ai-trade-manager/
 **React 18 + Vite + TypeScript** 기반으로 개발되었으며, `Recharts`와 `lightweight-charts`를 이용해 다양한 차트를 구현합니다.
 
 - **대시보드 (Dashboard):** 실시간 시세 캔들 차트, 포트폴리오 도넛 차트, 시장 심리/뉴스 패널, AI 인사이트 브리핑, 봇 제어 패널, 최근 체결 내역.
-- **AI 뱅커 (Chat):** LangGraph 멀티에이전트와 SSE 실시간 대화. Activity Card로 에이전트 작업 상태 시각화.
+- **AI 뱅커 (Chat):** LangGraph 멀티에이전트와 SSE 실시간 대화. Activity Card로 에이전트 작업 상태를 시각화하고, 세션 목록에서 대화 세션을 즉시 삭제할 수 있습니다.
 - **연구소 (Laboratory):** 백테스트 엔진과 연동하여 전략 파라미터를 시뮬레이션하고, 차트 위에 타점(Buy/Sell Marker)을 시각화.
 - **설정 (Settings):** 전략, 리스크, 스케줄, 그리드 매매 파라미터를 실시간 조정.
 - **포트폴리오 (완료, Phase 41):** AI 기반 자산 관리 대시보드.

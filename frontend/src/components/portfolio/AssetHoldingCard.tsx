@@ -1,4 +1,10 @@
 import { useState } from 'react'
+import {
+  PORTFOLIO_CARD_CLASS_NAME,
+  PORTFOLIO_PANEL_INTERACTIVE_CLASS_NAME,
+  PORTFOLIO_SECTION_LABEL_CLASS_NAME,
+  PORTFOLIO_TOOLTIP_CLASS_NAME,
+} from './portfolioStyles'
 
 interface AssetHoldingAiAnalysis {
   decision: string
@@ -78,30 +84,32 @@ function clampConfidence(value: number): number {
 
 function resolvePnlBadgeClassName(pnlPercentage: number): string {
   if (pnlPercentage > 0) {
-    return 'border-emerald-200/70 bg-gradient-to-br from-emerald-500 via-emerald-400 to-teal-400 text-white shadow-[0_20px_42px_-28px_rgba(5,150,105,0.9)] dark:border-emerald-300/20 dark:from-emerald-500 dark:via-emerald-400 dark:to-teal-400'
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-300/20 dark:bg-emerald-500/15 dark:text-emerald-200'
   }
   if (pnlPercentage < 0) {
-    return 'border-rose-200/70 bg-gradient-to-br from-rose-500 via-rose-400 to-red-400 text-white shadow-[0_20px_42px_-28px_rgba(225,29,72,0.9)] dark:border-rose-300/20 dark:from-rose-500 dark:via-rose-400 dark:to-red-400'
+    return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-300/20 dark:bg-rose-500/15 dark:text-rose-200'
   }
-  return 'border-slate-200/70 bg-gradient-to-br from-slate-200 via-slate-100 to-white text-slate-700 shadow-[0_20px_42px_-28px_rgba(100,116,139,0.55)] dark:border-slate-700/70 dark:from-slate-700 dark:via-slate-800 dark:to-slate-900 dark:text-slate-100'
+  return 'border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100'
 }
 
 function resolvePnlLabelClassName(pnlPercentage: number): string {
-  if (pnlPercentage === 0) {
-    return 'text-slate-500 dark:text-slate-300'
+  if (pnlPercentage > 0) {
+    return 'text-emerald-600 dark:text-emerald-200'
   }
-
-  return 'text-white/80'
+  if (pnlPercentage < 0) {
+    return 'text-rose-600 dark:text-rose-200'
+  }
+  return 'text-gray-500 dark:text-gray-300'
 }
 
 function resolveAiBadgeClassName(confidence: number): string {
   if (confidence >= 70) {
-    return 'border border-emerald-200/80 bg-emerald-50 text-emerald-700 shadow-[0_16px_34px_-24px_rgba(5,150,105,0.75)] dark:border-emerald-300/20 dark:bg-emerald-500/15 dark:text-emerald-200'
+    return 'border border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-300/20 dark:bg-emerald-500/15 dark:text-emerald-200'
   }
   if (confidence >= 50) {
-    return 'border border-amber-200/80 bg-amber-50 text-amber-700 shadow-[0_16px_34px_-24px_rgba(217,119,6,0.7)] dark:border-amber-300/20 dark:bg-amber-500/15 dark:text-amber-200'
+    return 'border border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-300/20 dark:bg-amber-500/15 dark:text-amber-200'
   }
-  return 'border border-rose-200/80 bg-rose-50 text-rose-700 shadow-[0_16px_34px_-24px_rgba(225,29,72,0.7)] dark:border-rose-300/20 dark:bg-rose-500/15 dark:text-rose-200'
+  return 'border border-rose-200/80 bg-rose-50 text-rose-700 dark:border-rose-300/20 dark:bg-rose-500/15 dark:text-rose-200'
 }
 
 function HoldingMetric({
@@ -112,11 +120,11 @@ function HoldingMetric({
   value: string
 }) {
   return (
-    <div className="rounded-2xl border border-white/60 bg-white/55 px-4 py-3 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.7)] backdrop-blur transition-shadow duration-200 hover:shadow-[0_22px_50px_-28px_rgba(15,23,42,0.72)] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_16px_36px_-30px_rgba(2,6,23,0.95)] dark:hover:shadow-[0_22px_50px_-28px_rgba(2,6,23,0.98)]">
-      <p className="text-[11px] font-semibold tracking-[0.2em] text-slate-500 dark:text-slate-400">
+    <div className={`${PORTFOLIO_PANEL_INTERACTIVE_CLASS_NAME} px-4 py-3`}>
+      <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
         {label}
       </p>
-      <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{value}</p>
+      <p className="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-100">{value}</p>
     </div>
   )
 }
@@ -137,24 +145,21 @@ function AssetHoldingCard({
   const isTooltipVisible = Boolean(aiAnalysis) && (isTooltipHovered || isTooltipPinned)
 
   return (
-    <section className="group relative overflow-visible rounded-[28px] border border-white/60 bg-white/70 p-5 shadow-[0_28px_80px_-38px_rgba(15,23,42,0.45)] backdrop-blur-xl transition-[box-shadow,transform] duration-200 hover:scale-[1.01] hover:shadow-[0_34px_96px_-40px_rgba(15,23,42,0.5)] dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_80px_-38px_rgba(2,6,23,0.95)] dark:hover:shadow-[0_34px_96px_-40px_rgba(2,6,23,1)]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.14),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.12),_transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.34),rgba(255,255,255,0.05))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.14),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.14),_transparent_32%),linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02))]" />
-      <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-white/80 dark:bg-white/10" />
-
-      <div className="relative">
+    <section className={`${PORTFOLIO_CARD_CLASS_NAME} group overflow-visible p-5`}>
+      <div>
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3 lg:hidden">
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold tracking-[0.24em] text-slate-500 dark:text-slate-400">
+                <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
                   보유 종목
                 </p>
-                <h3 className="mt-2 break-words text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                <h3 className="mt-2 break-words text-2xl font-semibold tracking-tight text-gray-950 dark:text-white">
                   {currency}
                 </h3>
               </div>
               <div
-                className={`inline-flex shrink-0 rounded-[22px] border px-4 py-3 text-right ${resolvePnlBadgeClassName(pnlPercentage)}`}
+                className={`inline-flex shrink-0 rounded-xl border px-4 py-3 text-right ${resolvePnlBadgeClassName(pnlPercentage)}`}
               >
                 <div>
                   <p className={`text-[11px] font-semibold tracking-[0.2em] ${resolvePnlLabelClassName(pnlPercentage)}`}>
@@ -167,16 +172,16 @@ function AssetHoldingCard({
 
             <div className="hidden lg:flex lg:items-start lg:justify-between lg:gap-6">
               <div className="min-w-0">
-                <p className="text-[11px] font-semibold tracking-[0.24em] text-slate-500 dark:text-slate-400">
+                <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
                   보유 종목
                 </p>
-                <h3 className="mt-2 break-words text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+                <h3 className="mt-2 break-words text-2xl font-semibold tracking-tight text-gray-950 dark:text-white">
                   {currency}
                 </h3>
               </div>
 
               <div
-                className={`inline-flex shrink-0 rounded-[24px] border px-5 py-4 text-right ${resolvePnlBadgeClassName(pnlPercentage)}`}
+                className={`inline-flex shrink-0 rounded-xl border px-5 py-4 text-right ${resolvePnlBadgeClassName(pnlPercentage)}`}
               >
                 <div>
                   <p className={`text-[11px] font-semibold tracking-[0.2em] ${resolvePnlLabelClassName(pnlPercentage)}`}>
@@ -196,9 +201,9 @@ function AssetHoldingCard({
           </div>
         </div>
 
-        <div className="mt-5 flex items-start justify-between gap-4 border-t border-white/50 pt-4 dark:border-white/10">
+        <div className="mt-5 flex items-start justify-between gap-4 border-t border-gray-200 pt-4 dark:border-gray-700">
           <div>
-            <p className="text-[11px] font-semibold tracking-[0.2em] text-slate-500 dark:text-slate-400">
+            <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
               AI 신뢰도
             </p>
             <div
@@ -216,24 +221,24 @@ function AssetHoldingCard({
                       setIsTooltipHovered(false)
                       setIsTooltipPinned(false)
                     }}
-                    className={`inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold transition-transform duration-200 hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-sky-400/60 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 ${resolveAiBadgeClassName(safeConfidence)}`}
+                    className={`inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold transition-colors duration-200 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-sky-400/60 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 ${resolveAiBadgeClassName(safeConfidence)}`}
                   >
                     {`AI: ${translateDecision(aiAnalysis.decision)} [${safeConfidence}%]`}
                   </button>
 
                   {isTooltipVisible ? (
-                    <div className="absolute bottom-[calc(100%+12px)] left-0 z-20 w-[min(320px,calc(100vw-64px))] rounded-2xl border border-white/70 bg-white/90 p-4 shadow-[0_28px_70px_-34px_rgba(15,23,42,0.55)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95 dark:shadow-[0_28px_70px_-34px_rgba(2,6,23,0.95)]">
-                      <p className="text-sm leading-6 text-slate-700 dark:text-slate-200">
+                    <div className={`absolute bottom-[calc(100%+12px)] left-0 z-20 w-[min(320px,calc(100vw-64px))] ${PORTFOLIO_TOOLTIP_CLASS_NAME} p-4`}>
+                      <p className="text-sm leading-6 text-gray-700 dark:text-gray-200">
                         {aiAnalysis.reasoning}
                       </p>
-                      <p className="mt-3 text-[11px] font-semibold tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                      <p className="mt-3 text-[11px] font-semibold tracking-[0.14em] text-gray-500 dark:text-gray-400">
                         최근 분석 {formatUpdatedAt(aiAnalysis.created_at)}
                       </p>
                     </div>
                   ) : null}
                 </>
               ) : (
-                <span className="inline-flex items-center rounded-full border border-slate-200/80 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-500 dark:border-slate-700/80 dark:bg-slate-800 dark:text-slate-300">
+                <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
                   AI 분석 없음
                 </span>
               )}
