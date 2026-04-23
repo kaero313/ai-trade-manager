@@ -256,6 +256,10 @@ export async function getChatMessages(sessionId: string): Promise<ChatMessage[]>
   return data
 }
 
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  await apiClient.delete(`/chat/sessions/${sessionId}`)
+}
+
 export async function approveChatConfigChange(
   sessionId: string,
   payload: ApprovalPayload,

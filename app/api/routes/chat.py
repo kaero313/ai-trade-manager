@@ -3,7 +3,7 @@ import logging
 from collections.abc import AsyncIterator
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ from app.db.repository import AUTONOMOUS_AI_INTERVAL_MINUTES_KEY
 from app.db.repository import NEWS_INTERVAL_HOURS_KEY
 from app.db.repository import SENTIMENT_INTERVAL_MINUTES_KEY
 from app.db.repository import bulk_upsert_system_configs
+from app.db.repository import delete_chat_session_messages
 from app.db.repository import get_chat_sessions
 from app.db.repository import get_recent_chat_messages
 from app.db.session import get_db
@@ -62,6 +63,19 @@ async def create_chat_session() -> ChatSessionCreateResponse:
 async def list_chat_sessions(db: AsyncSession = Depends(get_db)) -> list[ChatSessionItem]:
     sessions = await get_chat_sessions(db)
     return [ChatSessionItem.model_validate(session) for session in sessions]
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_chat_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    normalized_session_id = session_id.strip()
+    if not normalized_session_id:
+        raise HTTPException(status_code=400, detail="session_id가 비어 있습니다.")
+
+    await delete_chat_session_messages(db, normalized_session_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/sessions/{session_id}/messages")
