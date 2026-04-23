@@ -250,62 +250,67 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
     let hasFinalAnswer = false
 
     try {
-      await streamChatMessage(sessionId, normalizedMessage, (streamEvent) => {
-        if (activeRequestIdRef.current !== requestId) {
-          return
-        }
+      await streamChatMessage(
+        sessionId,
+        normalizedMessage,
+        (streamEvent) => {
+          if (activeRequestIdRef.current !== requestId) {
+            return
+          }
 
-        if (streamEvent.type === 'agent_start') {
-          setLiveItems((current) => [
-            ...current,
-            buildActivityCard(
-              streamEvent.agent_name,
-              `mini-chat-activity-${++liveItemSequenceRef.current}`,
-            ),
-          ])
-          return
-        }
+          if (streamEvent.type === 'agent_start') {
+            setLiveItems((current) => [
+              ...current,
+              buildActivityCard(
+                streamEvent.agent_name,
+                `mini-chat-activity-${++liveItemSequenceRef.current}`,
+              ),
+            ])
+            return
+          }
 
-        if (streamEvent.type === 'tool_call') {
-          setLiveItems((current) =>
-            updateLatestRunningActivity(current, (activity) => ({
-              ...activity,
-              summaryText: `[${activity.agentName}] 도구를 호출하고 있습니다...`,
-              detailsText: streamEvent.content || activity.detailsText,
-            })),
-          )
-          return
-        }
-
-        if (streamEvent.type === 'agent_end') {
-          setLiveItems((current) =>
-            updateLatestRunningActivity(
-              current,
-              (activity) => ({
+          if (streamEvent.type === 'tool_call') {
+            setLiveItems((current) =>
+              updateLatestRunningActivity(current, (activity) => ({
                 ...activity,
-                status: 'completed',
-                summaryText: `[${activity.agentName}] 작업이 완료되었습니다.`,
+                summaryText: `[${activity.agentName}] 도구를 호출하고 있습니다...`,
                 detailsText: streamEvent.content || activity.detailsText,
-              }),
-              streamEvent.agent_name,
-            ),
-          )
-          return
-        }
+              })),
+            )
+            return
+          }
 
-        if (streamEvent.type === 'final_answer') {
-          hasFinalAnswer = true
-          setLiveItems((current) => [
-            ...current,
-            buildOptimisticMessageItem(
-              'assistant',
-              streamEvent.content,
-              `mini-chat-assistant-${++liveItemSequenceRef.current}`,
-              streamEvent.agent_name,
-            ),
-          ])
-        }
-      })
+          if (streamEvent.type === 'agent_end') {
+            setLiveItems((current) =>
+              updateLatestRunningActivity(
+                current,
+                (activity) => ({
+                  ...activity,
+                  status: 'completed',
+                  summaryText: `[${activity.agentName}] 작업이 완료되었습니다.`,
+                  detailsText: streamEvent.content || activity.detailsText,
+                }),
+                streamEvent.agent_name,
+              ),
+            )
+            return
+          }
+
+          if (streamEvent.type === 'final_answer') {
+            hasFinalAnswer = true
+            setLiveItems((current) => [
+              ...current,
+              buildOptimisticMessageItem(
+                'assistant',
+                streamEvent.content,
+                `mini-chat-assistant-${++liveItemSequenceRef.current}`,
+                streamEvent.agent_name,
+              ),
+            ])
+          }
+        },
+        { timeoutMs: 45000 },
+      )
 
       if (activeRequestIdRef.current !== requestId || hasFinalAnswer) {
         return
@@ -324,9 +329,10 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
         return
       }
 
-      setLiveItems((current) =>
-        finishRunningActivities(current, '채팅 스트리밍이 중단되었습니다.'),
-      )
+      setLiveItems((current) => [
+        ...finishRunningActivities(current, '채팅 스트리밍이 중단되었습니다.'),
+        buildFallbackAssistantMessage(`mini-chat-assistant-fallback-${++liveItemSequenceRef.current}`),
+      ])
       setNotice({
         type: 'error',
         message: resolveErrorMessage(error, '채팅 요청을 처리하지 못했습니다.'),

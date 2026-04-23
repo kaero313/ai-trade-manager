@@ -48,16 +48,21 @@ function PortfolioAiBriefing({ sessionId }: PortfolioAiBriefingProps) {
     let hasFinalAnswer = false
 
     try {
-      await streamChatMessage(targetSessionId, AUTO_BRIEFING_PROMPT, (streamEvent) => {
-        if (activeRequestIdRef.current !== requestId) {
-          return
-        }
+      await streamChatMessage(
+        targetSessionId,
+        AUTO_BRIEFING_PROMPT,
+        (streamEvent) => {
+          if (activeRequestIdRef.current !== requestId) {
+            return
+          }
 
-        if (streamEvent.type === 'final_answer') {
-          hasFinalAnswer = true
-          finalAnswerContent = String(streamEvent.content || '').trim()
-        }
-      })
+          if (streamEvent.type === 'final_answer') {
+            hasFinalAnswer = true
+            finalAnswerContent = String(streamEvent.content || '').trim()
+          }
+        },
+        { timeoutMs: 45000 },
+      )
 
       if (activeRequestIdRef.current !== requestId) {
         return
