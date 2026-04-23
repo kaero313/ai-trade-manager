@@ -112,7 +112,7 @@ function HoldingMetric({
   value: string
 }) {
   return (
-    <div className="rounded-2xl border border-white/60 bg-white/55 px-4 py-3 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.7)] backdrop-blur dark:border-white/10 dark:bg-white/5 dark:shadow-[0_16px_36px_-30px_rgba(2,6,23,0.95)]">
+    <div className="rounded-2xl border border-white/60 bg-white/55 px-4 py-3 shadow-[0_16px_36px_-30px_rgba(15,23,42,0.7)] backdrop-blur transition-shadow duration-200 hover:shadow-[0_22px_50px_-28px_rgba(15,23,42,0.72)] dark:border-white/10 dark:bg-white/5 dark:shadow-[0_16px_36px_-30px_rgba(2,6,23,0.95)] dark:hover:shadow-[0_22px_50px_-28px_rgba(2,6,23,0.98)]">
       <p className="text-[11px] font-semibold tracking-[0.2em] text-slate-500 dark:text-slate-400">
         {label}
       </p>
@@ -137,7 +137,7 @@ function AssetHoldingCard({
   const isTooltipVisible = Boolean(aiAnalysis) && (isTooltipHovered || isTooltipPinned)
 
   return (
-    <section className="group relative overflow-visible rounded-[28px] border border-white/60 bg-white/70 p-5 shadow-[0_28px_80px_-38px_rgba(15,23,42,0.45)] backdrop-blur-xl transition-transform duration-200 hover:scale-[1.01] dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_80px_-38px_rgba(2,6,23,0.95)]">
+    <section className="group relative overflow-visible rounded-[28px] border border-white/60 bg-white/70 p-5 shadow-[0_28px_80px_-38px_rgba(15,23,42,0.45)] backdrop-blur-xl transition-[box-shadow,transform] duration-200 hover:scale-[1.01] hover:shadow-[0_34px_96px_-40px_rgba(15,23,42,0.5)] dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_80px_-38px_rgba(2,6,23,0.95)] dark:hover:shadow-[0_34px_96px_-40px_rgba(2,6,23,1)]">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.14),_transparent_36%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.12),_transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.34),rgba(255,255,255,0.05))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.14),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.14),_transparent_32%),linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02))]" />
       <div className="pointer-events-none absolute inset-x-5 top-0 h-px bg-white/80 dark:bg-white/10" />
 
