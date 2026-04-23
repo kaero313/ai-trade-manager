@@ -110,9 +110,9 @@ function Layout({ children }: LayoutProps) {
         isPortfolioLoading={isPortfolioLoading}
         portfolioError={portfolioErrorCode}
       />
-      <main className="mx-auto flex-1 min-h-0 w-full max-w-full overflow-y-auto px-4 pb-10 pt-24 sm:px-6 lg:px-8">
+      <main className="mx-auto flex-1 min-h-0 w-full max-w-full overflow-y-auto px-4 pb-10 pt-28 sm:px-6 lg:px-8 lg:pt-24">
         {isPaperTradingMode && (
-          <div className="sticky top-16 z-40 -mx-4 mb-6 border-b border-amber-300 bg-amber-100/95 px-4 py-3 shadow-sm backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 dark:border-amber-400/30 dark:bg-amber-500/20">
+          <div className="sticky top-24 z-40 -mx-4 mb-6 border-b border-amber-300 bg-amber-100/95 px-4 py-3 shadow-sm backdrop-blur sm:-mx-6 sm:px-6 lg:top-16 lg:-mx-8 lg:px-8 dark:border-amber-400/30 dark:bg-amber-500/20">
             <div className="mx-auto flex w-full max-w-full items-start gap-3 text-sm font-semibold leading-6 text-amber-950 dark:text-amber-50">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
               <p>
