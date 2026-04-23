@@ -1,6 +1,7 @@
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
+import { Cell, Legend, Pie, PieChart, Tooltip } from 'recharts'
 
 import type { AssetItem } from '../../services/portfolioService'
+import useMeasuredChartWidth from './useMeasuredChartWidth'
 
 interface PortfolioAllocationChartProps {
   items: AssetItem[]
@@ -125,12 +126,23 @@ function ChartEmptyState() {
   )
 }
 
+function ChartCanvasPlaceholder() {
+  return (
+    <div className="flex h-[420px] min-w-[560px] w-full items-center justify-center rounded-[24px] border border-white/55 bg-white/45 px-6 text-center backdrop-blur dark:border-white/10 dark:bg-white/5">
+      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+        자산 배분 차트를 불러오는 중입니다...
+      </p>
+    </div>
+  )
+}
+
 function PortfolioAllocationChart({
   items,
   isLoading,
 }: PortfolioAllocationChartProps) {
   const chartData = buildChartData(items)
   const hasData = chartData.length > 0
+  const { containerRef, width: chartWidth } = useMeasuredChartWidth({ minWidth: 560 })
 
   return (
     <section className="relative overflow-hidden rounded-[28px] border border-white/60 bg-white/70 p-6 shadow-[0_28px_90px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl transition-shadow duration-200 hover:shadow-[0_36px_110px_-44px_rgba(15,23,42,0.58)] dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_90px_-36px_rgba(2,6,23,0.95)] dark:hover:shadow-[0_36px_110px_-44px_rgba(2,6,23,1)]">
@@ -155,9 +167,9 @@ function PortfolioAllocationChart({
 
         {!isLoading && hasData ? (
           <div className="-mx-2 overflow-x-auto px-2">
-            <div className="h-[420px] min-w-[560px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
+            <div ref={containerRef} className="h-[420px] min-w-[560px] w-full">
+              {chartWidth > 0 ? (
+                <PieChart width={chartWidth} height={420}>
                   <Pie
                     data={chartData}
                     dataKey="value"
@@ -187,7 +199,9 @@ function PortfolioAllocationChart({
                     }}
                   />
                 </PieChart>
-              </ResponsiveContainer>
+              ) : (
+                <ChartCanvasPlaceholder />
+              )}
             </div>
           </div>
         ) : null}

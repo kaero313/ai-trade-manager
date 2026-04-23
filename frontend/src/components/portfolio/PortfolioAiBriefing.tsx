@@ -13,7 +13,12 @@ interface BriefingEntry {
 }
 
 const AUTO_BRIEFING_PROMPT =
-  '현재 내 포트폴리오 요약과 시장 상황을 기반으로 간단한 투자 브리핑을 작성해줘. 3줄 이내로 핵심만 요약해.'
+  '현재 포트폴리오 요약과 시장 상황을 기반으로 간단한 투자 브리핑을 작성해줘. 3줄 이내로 핵심만 요약해줘.'
+
+const BRIEFING_FALLBACK_TEXT =
+  'AI 브리핑 응답을 받지 못했습니다. 현재 포트폴리오 카드, 자산 추이, 공포/탐욕 지수, 최근 AI 매매 기록을 먼저 확인한 뒤 다시 분석을 시도해주세요.'
+
+const BRIEFING_FALLBACK_ERROR = 'AI 브리핑을 불러오지 못해 기본 안내를 표시합니다.'
 
 function PortfolioAiBriefing({ sessionId }: PortfolioAiBriefingProps) {
   const [briefingEntries, setBriefingEntries] = useState<Record<string, BriefingEntry>>({})
@@ -62,8 +67,8 @@ function PortfolioAiBriefing({ sessionId }: PortfolioAiBriefingProps) {
         setBriefingEntries((current) => ({
           ...current,
           [targetSessionId]: {
-            content: current[targetSessionId]?.content ?? '',
-            errorMessage: '브리핑을 불러오지 못했습니다.',
+            content: current[targetSessionId]?.content || BRIEFING_FALLBACK_TEXT,
+            errorMessage: BRIEFING_FALLBACK_ERROR,
           },
         }))
         return
@@ -84,8 +89,8 @@ function PortfolioAiBriefing({ sessionId }: PortfolioAiBriefingProps) {
       setBriefingEntries((current) => ({
         ...current,
         [targetSessionId]: {
-          content: current[targetSessionId]?.content ?? '',
-          errorMessage: '브리핑을 불러오지 못했습니다.',
+          content: current[targetSessionId]?.content || BRIEFING_FALLBACK_TEXT,
+          errorMessage: BRIEFING_FALLBACK_ERROR,
         },
       }))
     } finally {
@@ -168,7 +173,7 @@ function PortfolioAiBriefing({ sessionId }: PortfolioAiBriefingProps) {
 
         {sessionId && !isLoading && !briefingText && errorMessage ? (
           <div className="rounded-[24px] border border-rose-200/80 bg-rose-50/90 px-5 py-6 text-sm font-medium text-rose-700 shadow-[0_18px_40px_-30px_rgba(225,29,72,0.65)] dark:border-rose-300/20 dark:bg-rose-500/12 dark:text-rose-200">
-            브리핑을 불러오지 못했습니다.
+            {errorMessage}
           </div>
         ) : null}
 
@@ -176,7 +181,7 @@ function PortfolioAiBriefing({ sessionId }: PortfolioAiBriefingProps) {
           <div className="space-y-4">
             {errorMessage ? (
               <div className="rounded-2xl border border-rose-200/80 bg-rose-50/90 px-4 py-3 text-sm font-medium text-rose-700 dark:border-rose-300/20 dark:bg-rose-500/12 dark:text-rose-200">
-                브리핑을 불러오지 못했습니다.
+                {errorMessage}
               </div>
             ) : null}
 

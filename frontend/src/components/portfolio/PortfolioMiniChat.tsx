@@ -158,6 +158,18 @@ function resolveErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
+function buildFallbackAssistantMessage(key: string): ChatRenderMessageItem {
+  return {
+    kind: 'message',
+    key,
+    role: 'assistant',
+    content: '최종 답변을 받지 못했습니다. 잠시 후 다시 시도해주세요.',
+    agentName: 'assistant',
+    createdAt: new Date().toISOString(),
+    isPending: true,
+  }
+}
+
 function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProps) {
   const [draftMessage, setDraftMessage] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -235,6 +247,7 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
     setIsStreaming(true)
     setNotice(null)
     setLiveItems((current) => [...current, optimisticUserMessage])
+    let hasFinalAnswer = false
 
     try {
       await streamChatMessage(sessionId, normalizedMessage, (streamEvent) => {
@@ -281,6 +294,7 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
         }
 
         if (streamEvent.type === 'final_answer') {
+          hasFinalAnswer = true
           setLiveItems((current) => [
             ...current,
             buildOptimisticMessageItem(
@@ -291,6 +305,19 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
             ),
           ])
         }
+      })
+
+      if (activeRequestIdRef.current !== requestId || hasFinalAnswer) {
+        return
+      }
+
+      setLiveItems((current) => [
+        ...finishRunningActivities(current, '최종 답변 이벤트 없이 스트림이 종료되었습니다.'),
+        buildFallbackAssistantMessage(`mini-chat-assistant-fallback-${++liveItemSequenceRef.current}`),
+      ])
+      setNotice({
+        type: 'error',
+        message: '최종 답변을 받지 못했습니다. 잠시 후 다시 시도해주세요.',
       })
     } catch (error) {
       if (activeRequestIdRef.current !== requestId) {
