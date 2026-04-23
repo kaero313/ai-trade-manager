@@ -1,6 +1,14 @@
 import { Cell, Legend, Pie, PieChart, Tooltip } from 'recharts'
 
 import type { AssetItem } from '../../services/portfolioService'
+import {
+  PORTFOLIO_BODY_TEXT_CLASS_NAME,
+  PORTFOLIO_CARD_CLASS_NAME,
+  PORTFOLIO_PANEL_CLASS_NAME,
+  PORTFOLIO_SECTION_LABEL_CLASS_NAME,
+  PORTFOLIO_TITLE_CLASS_NAME,
+  PORTFOLIO_TOOLTIP_CLASS_NAME,
+} from './portfolioStyles'
 import useMeasuredChartWidth from './useMeasuredChartWidth'
 
 interface PortfolioAllocationChartProps {
@@ -78,12 +86,12 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
 
   const item = payload[0].payload
   return (
-    <div className="rounded-2xl border border-white/70 bg-white/90 px-4 py-3 shadow-[0_24px_60px_-30px_rgba(15,23,42,0.45)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90 dark:shadow-[0_24px_60px_-30px_rgba(2,6,23,0.95)]">
-      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{item.name}</p>
-      <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+    <div className={`${PORTFOLIO_TOOLTIP_CLASS_NAME} px-4 py-3`}>
+      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{item.name}</p>
+      <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
         평가금액: {formatKrw(item.value)}
       </p>
-      <p className="text-xs text-slate-600 dark:text-slate-300">
+      <p className="text-xs text-gray-600 dark:text-gray-300">
         비중: {item.percent.toFixed(1)}%
       </p>
     </div>
@@ -92,18 +100,18 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
 
 function ChartLoadingState() {
   return (
-    <div className="relative overflow-hidden rounded-[24px] border border-white/55 bg-white/45 p-6 backdrop-blur dark:border-white/10 dark:bg-white/5">
+    <div className={`${PORTFOLIO_PANEL_CLASS_NAME} relative overflow-hidden p-6`}>
       <div className="animate-pulse">
-        <div className="h-3 w-28 rounded-full bg-slate-200/90 dark:bg-slate-700/80" />
-        <div className="mt-3 h-5 w-48 rounded-full bg-slate-200/90 dark:bg-slate-700/80" />
+        <div className="h-3 w-28 rounded-full bg-gray-200 dark:bg-gray-700" />
+        <div className="mt-3 h-5 w-48 rounded-full bg-gray-200 dark:bg-gray-700" />
 
         <div className="mt-8 flex flex-col items-center justify-center gap-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="h-64 w-64 rounded-full border-[28px] border-slate-200/90 dark:border-slate-700/80" />
+          <div className="h-64 w-64 rounded-full border-[28px] border-gray-200 dark:border-gray-700" />
           <div className="grid w-full max-w-[180px] gap-3">
-            <div className="h-4 rounded-full bg-slate-200/90 dark:bg-slate-700/80" />
-            <div className="h-4 rounded-full bg-slate-200/90 dark:bg-slate-700/80" />
-            <div className="h-4 rounded-full bg-slate-200/90 dark:bg-slate-700/80" />
-            <div className="h-4 rounded-full bg-slate-200/90 dark:bg-slate-700/80" />
+            <div className="h-4 rounded-full bg-gray-200 dark:bg-gray-700" />
+            <div className="h-4 rounded-full bg-gray-200 dark:bg-gray-700" />
+            <div className="h-4 rounded-full bg-gray-200 dark:bg-gray-700" />
+            <div className="h-4 rounded-full bg-gray-200 dark:bg-gray-700" />
           </div>
         </div>
       </div>
@@ -113,12 +121,12 @@ function ChartLoadingState() {
 
 function ChartEmptyState() {
   return (
-    <div className="flex min-h-[420px] items-center justify-center rounded-[24px] border border-white/55 bg-white/45 px-6 text-center backdrop-blur dark:border-white/10 dark:bg-white/5">
+    <div className={`${PORTFOLIO_PANEL_CLASS_NAME} flex min-h-[420px] items-center justify-center px-6 text-center`}>
       <div>
-        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
           자산 배분 데이터를 표시할 수 없습니다
         </p>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
           평가금액이 있는 자산이 생기면 포트폴리오 비중 차트가 이 영역에 표시됩니다.
         </p>
       </div>
@@ -128,8 +136,8 @@ function ChartEmptyState() {
 
 function ChartCanvasPlaceholder() {
   return (
-    <div className="flex h-[420px] min-w-[560px] w-full items-center justify-center rounded-[24px] border border-white/55 bg-white/45 px-6 text-center backdrop-blur dark:border-white/10 dark:bg-white/5">
-      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+    <div className={`${PORTFOLIO_PANEL_CLASS_NAME} flex h-[420px] min-w-[560px] w-full items-center justify-center px-6 text-center`}>
+      <p className="text-sm font-medium text-gray-600 dark:text-gray-300">
         자산 배분 차트를 불러오는 중입니다...
       </p>
     </div>
@@ -145,19 +153,16 @@ function PortfolioAllocationChart({
   const { containerRef, width: chartWidth } = useMeasuredChartWidth({ minWidth: 560 })
 
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-white/60 bg-white/70 p-6 shadow-[0_28px_90px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl transition-shadow duration-200 hover:shadow-[0_36px_110px_-44px_rgba(15,23,42,0.58)] dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_90px_-36px_rgba(2,6,23,0.95)] dark:hover:shadow-[0_36px_110px_-44px_rgba(2,6,23,1)]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.12),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.12),_transparent_32%),linear-gradient(135deg,rgba(255,255,255,0.34),rgba(255,255,255,0.05))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.14),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(16,185,129,0.14),_transparent_32%),linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02))]" />
-      <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-white/80 dark:bg-white/10" />
-
-      <div className="relative">
+    <section className={`${PORTFOLIO_CARD_CLASS_NAME} overflow-hidden p-6`}>
+      <div>
         <header className="mb-5">
-          <p className="text-[11px] font-semibold tracking-[0.24em] text-slate-500 dark:text-slate-400">
+          <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
             PORTFOLIO MIX
           </p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+          <h2 className={PORTFOLIO_TITLE_CLASS_NAME}>
             자산 배분
           </h2>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+          <p className={PORTFOLIO_BODY_TEXT_CLASS_NAME}>
             평가금액 기준으로 현재 포트폴리오 비중을 확인합니다.
           </p>
         </header>

@@ -12,6 +12,14 @@ import {
 import { apiClient } from '../../services/api'
 import type { MarketSentimentSnapshot } from '../../services/api'
 import type { PortfolioSnapshotItem } from '../../services/portfolioService'
+import {
+  PORTFOLIO_BODY_TEXT_CLASS_NAME,
+  PORTFOLIO_CARD_CLASS_NAME,
+  PORTFOLIO_PANEL_CLASS_NAME,
+  PORTFOLIO_SECTION_LABEL_CLASS_NAME,
+  PORTFOLIO_TITLE_CLASS_NAME,
+  PORTFOLIO_TOOLTIP_CLASS_NAME,
+} from './portfolioStyles'
 import useMeasuredChartWidth from './useMeasuredChartWidth'
 
 interface PortfolioTrendChartProps {
@@ -139,12 +147,12 @@ function buildTrendData(snapshots: PortfolioSnapshotItem[]): TrendDatum[] {
 
 function TrendLoadingState() {
   return (
-    <div className="relative overflow-hidden rounded-[24px] border border-white/55 bg-white/45 p-6 backdrop-blur dark:border-white/10 dark:bg-white/5">
+    <div className={`${PORTFOLIO_PANEL_CLASS_NAME} relative overflow-hidden p-6`}>
       <div className="animate-pulse">
-        <div className="h-3 w-28 rounded-full bg-slate-200/90 dark:bg-slate-700/80" />
-        <div className="mt-3 h-5 w-52 rounded-full bg-slate-200/90 dark:bg-slate-700/80" />
+        <div className="h-3 w-28 rounded-full bg-gray-200 dark:bg-gray-700" />
+        <div className="mt-3 h-5 w-52 rounded-full bg-gray-200 dark:bg-gray-700" />
 
-        <div className="mt-8 h-[360px] rounded-[24px] border border-white/50 bg-white/40 dark:border-white/10 dark:bg-white/5">
+        <div className="mt-8 h-[360px] rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-900">
           <div className="flex h-full items-end gap-3 px-6 pb-8">
             <div className="h-24 w-full rounded-t-3xl bg-emerald-100/90 dark:bg-emerald-500/20" />
             <div className="h-36 w-full rounded-t-3xl bg-emerald-100/90 dark:bg-emerald-500/20" />
@@ -160,12 +168,12 @@ function TrendLoadingState() {
 
 function TrendEmptyState() {
   return (
-    <div className="flex min-h-[420px] items-center justify-center rounded-[24px] border border-white/55 bg-white/45 px-6 text-center backdrop-blur dark:border-white/10 dark:bg-white/5">
+    <div className={`${PORTFOLIO_PANEL_CLASS_NAME} flex min-h-[420px] items-center justify-center px-6 text-center`}>
       <div>
-        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
           아직 수집된 자산 추이 데이터가 없습니다.
         </p>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
           포트폴리오 스냅샷이 쌓이면 총 자산 추이를 이 영역에서 확인할 수 있습니다.
         </p>
       </div>
@@ -175,8 +183,8 @@ function TrendEmptyState() {
 
 function TrendCanvasPlaceholder() {
   return (
-    <div className="flex h-[420px] min-w-[640px] w-full items-center justify-center rounded-[24px] border border-white/55 bg-white/45 px-6 text-center backdrop-blur dark:border-white/10 dark:bg-white/5">
-      <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+    <div className={`${PORTFOLIO_PANEL_CLASS_NAME} flex h-[420px] min-w-[640px] w-full items-center justify-center px-6 text-center`}>
+      <p className="text-sm font-medium text-gray-600 dark:text-gray-300">
         자산 추이 차트를 불러오는 중입니다...
       </p>
     </div>
@@ -190,11 +198,11 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
 
   const item = payload[0]
   return (
-    <div className="rounded-2xl border border-white/70 bg-white/90 px-4 py-3 shadow-[0_24px_60px_-30px_rgba(15,23,42,0.45)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/90 dark:shadow-[0_24px_60px_-30px_rgba(2,6,23,0.95)]">
-      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+    <div className={`${PORTFOLIO_TOOLTIP_CLASS_NAME} px-4 py-3`}>
+      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
         {formatTooltipDate(label ?? item.payload.created_at)}
       </p>
-      <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+      <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
         총 자산: {formatKrw(item.value)}
       </p>
     </div>
@@ -210,14 +218,14 @@ function SentimentOverlay({
 }) {
   if (!snapshot || isError) {
     return (
-      <div className="absolute right-6 top-6 z-10 rounded-2xl border border-slate-200/80 bg-white/85 px-4 py-3 shadow-[0_16px_36px_-28px_rgba(15,23,42,0.5)] backdrop-blur-xl dark:border-slate-700/80 dark:bg-slate-900/85">
-        <p className="text-[11px] font-semibold tracking-[0.2em] text-slate-500 dark:text-slate-400">
+      <div className="absolute right-6 top-6 z-10 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <p className="text-[11px] font-semibold tracking-[0.16em] text-gray-500 dark:text-gray-400">
           AI SENTIMENT
         </p>
-        <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+        <p className="mt-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
           공포/탐욕: -
         </p>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">정보 없음</p>
+        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">정보 없음</p>
       </div>
     )
   }
@@ -227,7 +235,7 @@ function SentimentOverlay({
 
   return (
     <div
-      className={`absolute right-6 top-6 z-10 rounded-2xl px-4 py-3 shadow-[0_16px_36px_-28px_rgba(15,23,42,0.5)] backdrop-blur-xl ${tone.badgeClassName}`}
+      className={`absolute right-6 top-6 z-10 rounded-2xl border px-4 py-3 shadow-sm ${tone.badgeClassName}`}
     >
       <p className="text-[11px] font-semibold tracking-[0.2em] opacity-80">AI SENTIMENT</p>
       <p className="mt-2 text-sm font-semibold">{`공포/탐욕: ${score}`}</p>
@@ -256,19 +264,16 @@ function PortfolioTrendChart({
   })
 
   return (
-    <section className="relative overflow-hidden rounded-[28px] border border-white/60 bg-white/70 p-6 shadow-[0_28px_90px_-36px_rgba(15,23,42,0.5)] backdrop-blur-xl transition-shadow duration-200 hover:shadow-[0_36px_110px_-44px_rgba(15,23,42,0.58)] dark:border-white/10 dark:bg-slate-900/60 dark:shadow-[0_28px_90px_-36px_rgba(2,6,23,0.95)] dark:hover:shadow-[0_36px_110px_-44px_rgba(2,6,23,1)]">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.16),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(59,130,246,0.12),_transparent_30%),linear-gradient(135deg,rgba(255,255,255,0.34),rgba(255,255,255,0.05))] dark:bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.18),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(56,189,248,0.14),_transparent_30%),linear-gradient(135deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02))]" />
-      <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-white/80 dark:bg-white/10" />
-
-      <div className="relative">
+    <section className={`${PORTFOLIO_CARD_CLASS_NAME} overflow-hidden p-6`}>
+      <div>
         <header className="mb-5 pr-[180px]">
-          <p className="text-[11px] font-semibold tracking-[0.24em] text-slate-500 dark:text-slate-400">
+          <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
             PORTFOLIO TREND
           </p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
+          <h2 className={PORTFOLIO_TITLE_CLASS_NAME}>
             총 자산 추이
           </h2>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+          <p className={PORTFOLIO_BODY_TEXT_CLASS_NAME}>
             시간에 따른 포트폴리오 총 순자산 변화를 확인합니다.
           </p>
         </header>
@@ -285,7 +290,7 @@ function PortfolioTrendChart({
           <div className="-mx-2 overflow-x-auto px-2">
             <div
               ref={containerRef}
-              className="h-[420px] min-w-[640px] w-full rounded-[24px] border border-white/55 bg-white/45 p-4 backdrop-blur dark:border-white/10 dark:bg-white/5"
+              className="h-[420px] min-w-[640px] w-full rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/60"
             >
               {chartWidth > 0 ? (
                 <ComposedChart
