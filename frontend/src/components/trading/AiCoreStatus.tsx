@@ -24,6 +24,47 @@ function resolveTickerText(
   return isActive ? 'AI 엔진 작업 동기화 중...' : 'AI 엔진 대기 중...'
 }
 
+function AnimatedTicker({ text }: { text: string }) {
+  const [displayedAction, setDisplayedAction] = useState('')
+  const [isTickerVisible, setIsTickerVisible] = useState(false)
+
+  useEffect(() => {
+    let index = 0
+    let intervalId: number | undefined
+
+    const animationFrameId = window.requestAnimationFrame(() => {
+      setIsTickerVisible(true)
+      intervalId = window.setInterval(() => {
+        index += 1
+        setDisplayedAction(text.slice(0, index))
+
+        if (index >= text.length) {
+          if (intervalId !== undefined) {
+            window.clearInterval(intervalId)
+          }
+        }
+      }, 28)
+    })
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId)
+      if (intervalId !== undefined) {
+        window.clearInterval(intervalId)
+      }
+    }
+  }, [text])
+
+  return (
+    <p
+      aria-live="polite"
+      className={`overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px] font-medium transition-opacity duration-300 ${isTickerVisible ? 'opacity-100' : 'opacity-40'}`}
+    >
+      {displayedAction}
+      <span className="ml-0.5 inline-block h-3.5 w-px animate-pulse bg-current align-middle opacity-70" />
+    </p>
+  )
+}
+
 function AiCoreStatus() {
   const botStatusQuery = useQuery({
     queryKey: ['bot-status'],
@@ -41,33 +82,6 @@ function AiCoreStatus() {
     botStatusQuery.isLoading,
   )
 
-  const [displayedAction, setDisplayedAction] = useState('')
-  const [isTickerVisible, setIsTickerVisible] = useState(false)
-
-  useEffect(() => {
-    setDisplayedAction('')
-    setIsTickerVisible(false)
-
-    const animationFrameId = window.requestAnimationFrame(() => {
-      setIsTickerVisible(true)
-    })
-
-    let index = 0
-    const intervalId = window.setInterval(() => {
-      index += 1
-      setDisplayedAction(targetAction.slice(0, index))
-
-      if (index >= targetAction.length) {
-        window.clearInterval(intervalId)
-      }
-    }, 28)
-
-    return () => {
-      window.cancelAnimationFrame(animationFrameId)
-      window.clearInterval(intervalId)
-    }
-  }, [targetAction])
-
   const containerClassName = isActive
     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 ring-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20'
     : 'border-rose-200 bg-rose-50 text-rose-700 ring-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20'
@@ -78,7 +92,7 @@ function AiCoreStatus() {
   const badgeClassName = isActive
     ? 'bg-white/80 text-emerald-700 dark:bg-gray-900/60 dark:text-emerald-300'
     : 'bg-white/80 text-rose-700 dark:bg-gray-900/60 dark:text-rose-300'
-  const badgeText = isActive ? '🟢 Active' : '🔴 Offline'
+  const badgeText = isActive ? '● Active' : '◶ Offline'
 
   return (
     <section
@@ -90,13 +104,7 @@ function AiCoreStatus() {
       </span>
 
       <div className="min-w-0 flex-1">
-        <p
-          aria-live="polite"
-          className={`overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px] font-medium transition-opacity duration-300 ${isTickerVisible ? 'opacity-100' : 'opacity-40'}`}
-        >
-          {displayedAction}
-          <span className="ml-0.5 inline-block h-3.5 w-px animate-pulse bg-current align-middle opacity-70" />
-        </p>
+        <AnimatedTicker key={targetAction} text={targetAction} />
       </div>
 
       <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClassName}`}>

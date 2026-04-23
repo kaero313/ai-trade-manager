@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import { AlertTriangle, Loader2, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { fetchFavorites, fetchTickers, removeFavorite, type FavoriteItem, type TickerItem } from '../api/markets'
@@ -213,10 +213,10 @@ function BulkWatchlistPanel() {
     refetchIntervalInBackground: true,
     placeholderData: (previousData) => previousData,
   })
-
-  useEffect(() => {
-    setSelectedSymbols((current) => current.filter((symbol) => symbols.includes(symbol)))
-  }, [symbols])
+  const sanitizedSelectedSymbols = useMemo(
+    () => selectedSymbols.filter((symbol) => symbols.includes(symbol)),
+    [selectedSymbols, symbols],
+  )
 
   const tickerMap = useMemo(() => {
     const map = new Map<string, TickerItem>()
@@ -243,7 +243,7 @@ function BulkWatchlistPanel() {
     },
   })
 
-  const allSelected = symbols.length > 0 && selectedSymbols.length === symbols.length
+  const allSelected = symbols.length > 0 && sanitizedSelectedSymbols.length === symbols.length
 
   const handleToggleAll = () => {
     setSelectedSymbols(allSelected ? [] : symbols)
@@ -256,13 +256,13 @@ function BulkWatchlistPanel() {
   }
 
   const handleBulkDelete = async () => {
-    if (selectedSymbols.length === 0) {
+    if (sanitizedSelectedSymbols.length === 0) {
       setNotice({ type: 'info', message: '삭제할 관심 종목을 먼저 선택해 주세요.' })
       return
     }
 
     try {
-      const result = await bulkDeleteMutation.mutateAsync(selectedSymbols)
+      const result = await bulkDeleteMutation.mutateAsync(sanitizedSelectedSymbols)
       setSelectedSymbols(result.failedSymbols)
 
       if (result.failedSymbols.length === 0) {
@@ -319,7 +319,7 @@ function BulkWatchlistPanel() {
               총 {symbols.length}개 종목
             </span>
             <span className="rounded-full bg-white px-3 py-1 font-semibold shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-              선택 {selectedSymbols.length}개
+              선택 {sanitizedSelectedSymbols.length}개
             </span>
             <label className="inline-flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
               <input
@@ -336,7 +336,7 @@ function BulkWatchlistPanel() {
           <button
             type="button"
             onClick={() => void handleBulkDelete()}
-            disabled={selectedSymbols.length === 0 || bulkDeleteMutation.isPending}
+            disabled={sanitizedSelectedSymbols.length === 0 || bulkDeleteMutation.isPending}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-rose-300"
           >
             {bulkDeleteMutation.isPending ? (
@@ -406,7 +406,7 @@ function BulkWatchlistPanel() {
                   {(favoritesQuery.data ?? []).map((favorite: FavoriteItem) => {
                     const symbol = favorite.symbol.toUpperCase()
                     const ticker = tickerMap.get(symbol)
-                    const isSelected = selectedSymbols.includes(symbol)
+                    const isSelected = sanitizedSelectedSymbols.includes(symbol)
 
                     return (
                       <tr
@@ -714,72 +714,84 @@ function DangerZonePanel() {
 function ScheduleSettingsPanel() {
   const systemConfigsQuery = useSystemConfigs()
   const updateSystemConfigsMutation = useUpdateSystemConfigs()
-  const [draft, setDraft] = useState<ScheduleDraft>(() => buildScheduleDraft(undefined))
+  const [draftPatch, setDraftPatch] = useState<Partial<ScheduleDraft>>({})
   const [notice, setNotice] = useState<NoticeState | null>(null)
+  const serverDraft = useMemo(() => buildScheduleDraft(systemConfigsQuery.data), [systemConfigsQuery.data])
+  const draft = useMemo(() => ({ ...serverDraft, ...draftPatch }), [serverDraft, draftPatch])
 
-  useEffect(() => {
-    setDraft(buildScheduleDraft(systemConfigsQuery.data))
-  }, [systemConfigsQuery.data])
+  const setDraftValue = <K extends keyof ScheduleDraft>(key: K, value: ScheduleDraft[K]) => {
+    setDraftPatch((current) => {
+      if (serverDraft[key] === value) {
+        const next = { ...current }
+        delete next[key]
+        return next
+      }
+
+      return {
+        ...current,
+        [key]: value,
+      }
+    })
+  }
 
   const handleSave = async () => {
-    const current = buildScheduleDraft(systemConfigsQuery.data)
     const updates: SystemConfigUpdateItem[] = []
 
-    if (draft.newsIntervalHours !== current.newsIntervalHours) {
+    if (draft.newsIntervalHours !== serverDraft.newsIntervalHours) {
       updates.push({
         config_key: NEWS_INTERVAL_HOURS_KEY,
         config_value: draft.newsIntervalHours,
       })
     }
-    if (draft.sentimentIntervalMinutes !== current.sentimentIntervalMinutes) {
+    if (draft.sentimentIntervalMinutes !== serverDraft.sentimentIntervalMinutes) {
       updates.push({
         config_key: SENTIMENT_INTERVAL_MINUTES_KEY,
         config_value: draft.sentimentIntervalMinutes,
       })
     }
-    if (draft.autonomousAiIntervalMinutes !== current.autonomousAiIntervalMinutes) {
+    if (draft.autonomousAiIntervalMinutes !== serverDraft.autonomousAiIntervalMinutes) {
       updates.push({
         config_key: AUTONOMOUS_AI_INTERVAL_MINUTES_KEY,
         config_value: draft.autonomousAiIntervalMinutes,
       })
     }
-    if (draft.maxAllocationPct !== current.maxAllocationPct) {
+    if (draft.maxAllocationPct !== serverDraft.maxAllocationPct) {
       updates.push({
         config_key: MAX_ALLOCATION_PCT_KEY,
         config_value: draft.maxAllocationPct,
       })
     }
-    if (draft.hardTakeProfitPct !== current.hardTakeProfitPct) {
+    if (draft.hardTakeProfitPct !== serverDraft.hardTakeProfitPct) {
       updates.push({
         config_key: HARD_TAKE_PROFIT_PCT_KEY,
         config_value: draft.hardTakeProfitPct,
       })
     }
-    if (draft.hardStopLossPct !== current.hardStopLossPct) {
+    if (draft.hardStopLossPct !== serverDraft.hardStopLossPct) {
       updates.push({
         config_key: HARD_STOP_LOSS_PCT_KEY,
         config_value: draft.hardStopLossPct,
       })
     }
-    if (draft.aiBriefingTime !== current.aiBriefingTime) {
+    if (draft.aiBriefingTime !== serverDraft.aiBriefingTime) {
       updates.push({
         config_key: AI_BRIEFING_TIME_KEY,
         config_value: draft.aiBriefingTime,
       })
     }
-    if (draft.aiMinConfidenceTrade !== current.aiMinConfidenceTrade) {
+    if (draft.aiMinConfidenceTrade !== serverDraft.aiMinConfidenceTrade) {
       updates.push({
         config_key: AI_MIN_CONFIDENCE_TRADE_KEY,
         config_value: draft.aiMinConfidenceTrade,
       })
     }
-    if (draft.aiAnalysisMaxAgeMinutes !== current.aiAnalysisMaxAgeMinutes) {
+    if (draft.aiAnalysisMaxAgeMinutes !== serverDraft.aiAnalysisMaxAgeMinutes) {
       updates.push({
         config_key: AI_ANALYSIS_MAX_AGE_MINUTES_KEY,
         config_value: draft.aiAnalysisMaxAgeMinutes,
       })
     }
-    if (draft.aiCustomPersonaPrompt !== current.aiCustomPersonaPrompt) {
+    if (draft.aiCustomPersonaPrompt !== serverDraft.aiCustomPersonaPrompt) {
       updates.push({
         config_key: AI_CUSTOM_PERSONA_PROMPT_KEY,
         config_value: draft.aiCustomPersonaPrompt,
@@ -793,6 +805,7 @@ function ScheduleSettingsPanel() {
 
     try {
       await updateSystemConfigsMutation.mutateAsync(updates)
+      setDraftPatch({})
       setNotice({
         type: 'success',
         message: '시스템 설정이 저장되었고 백그라운드 워커에 즉시 반영되었습니다.',
@@ -862,9 +875,7 @@ function ScheduleSettingsPanel() {
                 </span>
                 <select
                   value={draft.newsIntervalHours}
-                  onChange={(event) =>
-                    setDraft((current) => ({ ...current, newsIntervalHours: event.target.value }))
-                  }
+                  onChange={(event) => setDraftValue('newsIntervalHours', event.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
                 >
                   {NEWS_INTERVAL_OPTIONS.map((value) => (
@@ -888,12 +899,7 @@ function ScheduleSettingsPanel() {
                 </span>
                 <select
                   value={draft.sentimentIntervalMinutes}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      sentimentIntervalMinutes: event.target.value,
-                    }))
-                  }
+                  onChange={(event) => setDraftValue('sentimentIntervalMinutes', event.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
                 >
                   {SENTIMENT_INTERVAL_OPTIONS.map((value) => (
@@ -919,12 +925,7 @@ function ScheduleSettingsPanel() {
                 </span>
                 <select
                   value={draft.autonomousAiIntervalMinutes}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      autonomousAiIntervalMinutes: event.target.value,
-                    }))
-                  }
+                  onChange={(event) => setDraftValue('autonomousAiIntervalMinutes', event.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
                 >
                   {AUTONOMOUS_AI_INTERVAL_OPTIONS.map((value) => (
@@ -952,12 +953,7 @@ function ScheduleSettingsPanel() {
                   max="100"
                   step="0.1"
                   value={draft.maxAllocationPct}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      maxAllocationPct: event.target.value,
-                    }))
-                  }
+                  onChange={(event) => setDraftValue('maxAllocationPct', event.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
                 />
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -980,12 +976,7 @@ function ScheduleSettingsPanel() {
                   min="0"
                   step="0.1"
                   value={draft.hardTakeProfitPct}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      hardTakeProfitPct: event.target.value,
-                    }))
-                  }
+                  onChange={(event) => setDraftValue('hardTakeProfitPct', event.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
                 />
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1006,12 +997,7 @@ function ScheduleSettingsPanel() {
                   max="0"
                   step="0.1"
                   value={draft.hardStopLossPct}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      hardStopLossPct: event.target.value,
-                    }))
-                  }
+                  onChange={(event) => setDraftValue('hardStopLossPct', event.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
                 />
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1034,12 +1020,7 @@ function ScheduleSettingsPanel() {
                   min="0"
                   max="100"
                   value={draft.aiMinConfidenceTrade}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      aiMinConfidenceTrade: event.target.value,
-                    }))
-                  }
+                  onChange={(event) => setDraftValue('aiMinConfidenceTrade', event.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
                 />
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1059,12 +1040,7 @@ function ScheduleSettingsPanel() {
                   type="number"
                   min="1"
                   value={draft.aiAnalysisMaxAgeMinutes}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      aiAnalysisMaxAgeMinutes: event.target.value,
-                    }))
-                  }
+                  onChange={(event) => setDraftValue('aiAnalysisMaxAgeMinutes', event.target.value)}
                   className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
                 />
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1084,9 +1060,7 @@ function ScheduleSettingsPanel() {
               <input
                 type="time"
                 value={draft.aiBriefingTime}
-                onChange={(event) =>
-                  setDraft((current) => ({ ...current, aiBriefingTime: event.target.value }))
-                }
+                onChange={(event) => setDraftValue('aiBriefingTime', event.target.value)}
                 className="w-full max-w-[220px] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
               />
               <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1114,12 +1088,7 @@ function ScheduleSettingsPanel() {
                     <button
                       key={preset.key}
                       type="button"
-                      onClick={() =>
-                        setDraft((current) => ({
-                          ...current,
-                          aiCustomPersonaPrompt: preset.value,
-                        }))
-                      }
+                      onClick={() => setDraftValue('aiCustomPersonaPrompt', preset.value)}
                       className="inline-flex items-center rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:border-violet-300 hover:bg-violet-100 dark:border-violet-400/20 dark:bg-gray-800 dark:text-violet-200 dark:hover:border-violet-300/40 dark:hover:bg-violet-500/10"
                     >
                       {preset.label}
@@ -1131,12 +1100,7 @@ function ScheduleSettingsPanel() {
               <div className="mt-4">
                 <textarea
                   value={draft.aiCustomPersonaPrompt}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      aiCustomPersonaPrompt: event.target.value,
-                    }))
-                  }
+                  onChange={(event) => setDraftValue('aiCustomPersonaPrompt', event.target.value)}
                   placeholder="예: 손실 회피를 최우선으로 삼고, 뉴스 리스크가 있으면 HOLD를 우선하라. RSI와 심리지수, 뉴스 출처를 모두 인용해 reasoning을 작성하라."
                   className="min-h-[260px] w-full rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-300 dark:border-violet-400/20 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-violet-300 dark:focus:ring-violet-400/30"
                 />
