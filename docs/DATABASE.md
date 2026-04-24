@@ -102,3 +102,11 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 *   `total_pnl`: (Float) 총 평가손익 (KRW)
 *   `snapshot_data`: (JSON, 배열) 코인별 상세 내역 `[{currency, balance, current_price, total_value, pnl_percentage}, ...]`
 *   `created_at`: (DateTime, AutoNow)
+## Phase 42 업데이트
+- `chat_sessions`
+  - `session_id` (PK, String)
+  - `surface` (`ai_banker` | `portfolio`)
+  - `created_at` (DateTime, AutoNow)
+- 기존 `ai_chat_messages.session_id`는 `chat_sessions.session_id`를 부모로 참조하며, 세션 삭제 시 메시지가 함께 cascade delete 됩니다.
+- 기존 `ai_chat_messages`에 존재하던 모든 distinct `session_id`는 마이그레이션 시 `surface='ai_banker'`로 백필합니다.
+- 기본 AI 뱅커 세션 목록은 `ai_banker` 세션만 조회하고, 포트폴리오 자동 브리핑/미니챗은 `portfolio` 세션으로 분리 보관합니다.
