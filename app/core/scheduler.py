@@ -24,6 +24,7 @@ from app.models.domain import Favorite
 from app.services.market.sentiment_fetcher import refresh_market_sentiment_cache
 from app.services.portfolio.aggregator import PortfolioService
 from app.services.rag.ingestion import run_market_news_ingestion_job
+from app.services.ai.providers.gemini import AIProviderRateLimitError
 from app.services.trading.accuracy_worker import update_ai_analysis_accuracy
 from app.services.trading.ai_analyst import execute_ai_analysis
 from app.services.trading.ai_executor import execute_hard_tp_sl_check
@@ -430,6 +431,13 @@ async def autonomous_ai_analyst_job() -> None:
                 try:
                     await execute_ai_analysis(db, symbol)
                     logger.info("Watchlist 자율주행 AI 분석 완료: symbol=%s", symbol)
+                except AIProviderRateLimitError as exc:
+                    logger.warning(
+                        "Watchlist 자율주행 AI 분석 조기 중단: symbol=%s reason=%s",
+                        symbol,
+                        exc,
+                    )
+                    break
                 except Exception:
                     logger.error(
                         "Watchlist 자율주행 AI 분석 실패: symbol=%s",
