@@ -282,6 +282,10 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
 
     try:
         try:
+            if not await client.indices.exists(index=INDEX_NAME):
+                logger.info("RAG 뉴스 인덱스 미존재. RSS 뉴스 폴백으로 전환합니다: index=%s", INDEX_NAME)
+                raise RuntimeError("market_news index missing")
+
             response = await client.search(
                 index=INDEX_NAME,
                 body=_build_market_news_query(terms, NEWS_RESULT_LIMIT),
