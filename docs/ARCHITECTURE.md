@@ -154,3 +154,8 @@ ai-trade-manager/
 
 ## 6. 거래소 추상화 (Broker Abstraction) 전략
 어댑터 패턴(Adapter Pattern)을 사용하여 모든 거래소 클라이언트는 반드시 `BaseBrokerClient` 인터페이스를 상속합니다. `BrokerFactory`를 통해 동작하여, 단일 코드베이스로 다수 거래소를 원활하게 지원합니다.
+## Phase 42 업데이트
+- AI 채팅 세션 메타데이터를 `chat_sessions` 테이블로 분리하고, 각 세션에 `surface`(`ai_banker` 또는 `portfolio`)를 부여했습니다.
+- AI 뱅커 메인 화면은 `ai_banker` 세션만 생성·조회합니다.
+- 포트폴리오 자동 브리핑과 포트폴리오 미니챗은 `portfolio` 세션을 공유하지만, AI 뱅커 세션 목록에는 노출되지 않습니다.
+- `ai_chat_messages`는 계속 메시지 본문을 저장하되, 모든 메시지는 `chat_sessions.session_id`를 부모로 참조합니다.
