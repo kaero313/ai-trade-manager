@@ -17,6 +17,15 @@ def _resolve_openai_api_key() -> str | None:
     return api_key
 
 
+def _normalize_openai_error(error: Exception) -> str:
+    message = str(error).lower()
+    if "invalid_api_key" in message or "incorrect api key" in message:
+        return "OpenAI API 설정이 필요해 분석을 완료하지 못했습니다."
+    if "rate limit" in message or "429" in message:
+        return "OpenAI 요청 한도에 도달해 잠시 분석을 완료할 수 없습니다."
+    return "OpenAI 분석을 일시적으로 완료하지 못했습니다."
+
+
 class OpenAIAnalyzer(BaseAIAnalyzer):
     def __init__(self) -> None:
         api_key = _resolve_openai_api_key()
@@ -24,7 +33,7 @@ class OpenAIAnalyzer(BaseAIAnalyzer):
 
     async def generate_report(self, portfolio_str: str) -> str:
         if self.client is None:
-            return " OpenAI API 키가 설정되지 않아 분석 리포트를 생성할 수 없습니다."
+            return "OpenAI API 설정이 필요해 분석을 완료하지 못했습니다."
 
         try:
             response = await self.client.chat.completions.create(
@@ -40,6 +49,6 @@ class OpenAIAnalyzer(BaseAIAnalyzer):
                 if isinstance(content, str) and content.strip():
                     return content
 
-            return " AI 분석 응답이 비어 있습니다."
+            return "OpenAI 분석 응답이 비어 있습니다."
         except Exception as error:
-            return f" AI 분석을 가져오는 중 오류가 발생했습니다: {error}"
+            return _normalize_openai_error(error)

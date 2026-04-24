@@ -11,13 +11,22 @@ from app.services.ai.providers.base import SYSTEM_PROMPT
 StructuredResponseT = TypeVar("StructuredResponseT", bound=BaseModel)
 
 
+def _normalize_gemini_error(error: Exception) -> str:
+    message = str(error).lower()
+    if "resource_exhausted" in message or "quota" in message or "429" in message:
+        return "Gemini 쿼터 초과로 잠시 분석을 완료할 수 없습니다."
+    if "api key" in message or "permission" in message or "403" in message:
+        return "Gemini API 설정이 필요해 분석을 완료하지 못했습니다."
+    return "Gemini 분석을 일시적으로 완료하지 못했습니다."
+
+
 class GeminiAnalyzer(BaseAIAnalyzer):
     def __init__(self) -> None:
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY) if settings.GEMINI_API_KEY else None
 
     async def generate_report(self, portfolio_str: str) -> str:
         if self.client is None:
-            return "Gemini API 키가 설정되지 않아 분석 리포트를 생성할 수 없습니다."
+            return "Gemini API 설정이 필요해 분석을 완료하지 못했습니다."
 
         try:
             response = await self.client.aio.models.generate_content(
@@ -32,9 +41,9 @@ class GeminiAnalyzer(BaseAIAnalyzer):
             if isinstance(response_text, str) and response_text.strip():
                 return response_text
 
-            return "AI 분석 응답이 비어 있습니다."
+            return "Gemini 분석 응답이 비어 있습니다."
         except Exception as error:
-            return f"AI 분석을 가져오는 중 오류가 발생했습니다: {error}"
+            return _normalize_gemini_error(error)
 
     async def generate_structured_analysis(
         self,
