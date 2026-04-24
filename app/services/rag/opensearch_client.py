@@ -1,9 +1,12 @@
+import logging
+
 from opensearchpy import AsyncOpenSearch
 
 from app.core.config import settings
 
 INDEX_NAME = "market_news"
 EMBEDDING_DIMENSION = 1536
+logger = logging.getLogger(__name__)
 
 MARKET_NEWS_INDEX_BODY = {
     "settings": {
@@ -55,11 +58,26 @@ async def close_opensearch_client() -> None:
         _opensearch_client = None
 
 
-async def ensure_market_news_index() -> None:
+async def ensure_market_news_index() -> bool:
     client = get_opensearch_client()
-    index_exists = await client.indices.exists(index=INDEX_NAME)
+    try:
+        index_exists = await client.indices.exists(index=INDEX_NAME)
+    except Exception:
+        logger.exception("market_news 인덱스 존재 여부 확인에 실패했습니다: index=%s", INDEX_NAME)
+        return False
 
     if index_exists:
-        return
+        return True
 
-    await client.indices.create(index=INDEX_NAME, body=MARKET_NEWS_INDEX_BODY)
+    try:
+        await client.indices.create(index=INDEX_NAME, body=MARKET_NEWS_INDEX_BODY)
+        return True
+    except Exception as exc:
+        details = getattr(exc, "info", None)
+        logger.error(
+            "market_news 인덱스 생성 실패: index=%s details=%s",
+            INDEX_NAME,
+            details if details is not None else str(exc),
+            exc_info=True,
+        )
+        return False

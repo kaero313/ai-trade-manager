@@ -345,9 +345,13 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
         "deleted": 0,
         "errors": 0,
     }
+    index_ready = False
 
     try:
-        await ensure_market_news_index()
+        index_ready = await ensure_market_news_index()
+        if not index_ready:
+            logger.warning("market_news 인덱스 준비 실패로 ingestion 작업을 건너뜁니다.")
+            return stats
 
         async with httpx.AsyncClient(
             timeout=NEWS_HTTP_TIMEOUT,
@@ -371,11 +375,12 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
         stats["errors"] += 1
         logger.exception("market_news ingestion job failed.")
     finally:
-        try:
-            stats["deleted"] = await _delete_expired_documents()
-        except Exception:
-            logger.exception("Failed to delete expired market_news documents.")
-            stats["errors"] += 1
+        if index_ready:
+            try:
+                stats["deleted"] = await _delete_expired_documents()
+            except Exception:
+                logger.exception("Failed to delete expired market_news documents.")
+                stats["errors"] += 1
 
     logger.info(
         "market_news ingestion finished: fetched=%s indexed=%s deleted=%s errors=%s",
