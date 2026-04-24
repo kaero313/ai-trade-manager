@@ -235,6 +235,32 @@ def merge_bot_config_metadata(config_payload: dict[str, Any], existing_payload: 
     return merged_payload
 
 
+BOT_RUNTIME_STATUS_KEY = "runtime_status"
+
+
+def extract_bot_runtime_status(raw_payload: Any) -> dict[str, Any]:
+    metadata = extract_bot_config_metadata(raw_payload)
+    runtime_status = metadata.get(BOT_RUNTIME_STATUS_KEY)
+    if isinstance(runtime_status, dict):
+        return dict(runtime_status)
+    return {}
+
+
+def merge_bot_runtime_status(existing_payload: Any, runtime_status: dict[str, Any]) -> dict[str, Any]:
+    payload = normalize_bot_config_payload(existing_payload)
+    metadata = extract_bot_config_metadata(existing_payload)
+    if runtime_status:
+        metadata[BOT_RUNTIME_STATUS_KEY] = dict(runtime_status)
+    else:
+        metadata.pop(BOT_RUNTIME_STATUS_KEY, None)
+
+    if metadata:
+        payload[BOT_CONFIG_METADATA_KEY] = metadata
+    else:
+        payload.pop(BOT_CONFIG_METADATA_KEY, None)
+    return payload
+
+
 async def read_cached_market_sentiment(db: AsyncSession) -> MarketSentimentSnapshot | None:
     raw_snapshot = await get_system_config_value(db, MARKET_SENTIMENT_SNAPSHOT_KEY)
     if raw_snapshot is None:
