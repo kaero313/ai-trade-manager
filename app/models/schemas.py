@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.models.domain import ChatSessionSurface
+
 
 class StrategyParams(BaseModel):
     ema_fast: int = 12
@@ -136,6 +138,10 @@ class SystemConfigItem(BaseModel):
 class SystemConfigUpdateItem(BaseModel):
     config_key: str = Field(..., min_length=1)
     config_value: str = Field(...)
+
+
+class ChatSessionCreateRequest(BaseModel):
+    surface: ChatSessionSurface = ChatSessionSurface.AI_BANKER
 
 
 class ChatSessionCreateResponse(BaseModel):
