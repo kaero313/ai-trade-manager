@@ -63,9 +63,18 @@ cp .env.example .env.local  # API 키 설정 (Upbit, Slack, OpenAI, Gemini)
 # 2. Docker DB 실행
 docker-compose -f docker-compose-dev.yml up -d db
 
-# 3. 백엔드 + 프론트엔드 일괄 실행
+# 3. 백엔드가 이미 떠 있으면 먼저 종료
+#    Windows PowerShell 예시:
+#    Get-NetTCPConnection -LocalPort 8000 | Select-Object -ExpandProperty OwningProcess | Get-Unique | ForEach-Object { Stop-Process -Id $_ -Force }
+
+# 4. 백엔드 + 프론트엔드 일괄 실행
 .\start_dev.bat
+
+# 또는 백엔드만 단독 실행
+venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
+
+`start_dev.bat`와 백엔드 단독 실행 명령은 동시에 사용하지 않습니다. 둘 중 하나만 사용해 8000 포트 uvicorn 프로세스를 하나로 유지하세요.
 
 ---
 
