@@ -1,12 +1,15 @@
 import json
 from collections.abc import Sequence
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import AIChatMessage as AIChatMessageORM
 from app.models.domain import BotConfig as BotConfigORM
+from app.models.domain import ChatSession as ChatSessionORM
+from app.models.domain import ChatSessionSurface
 from app.models.domain import PortfolioSnapshot as PortfolioSnapshotORM
 from app.models.domain import SystemConfig as SystemConfigORM
 from app.models.schemas import BotConfig as BotConfigSchema
@@ -313,9 +316,30 @@ async def save_chat_message(
     return message
 
 
-async def delete_chat_session_messages(db: AsyncSession, session_id: str) -> None:
+async def create_chat_session_record(
+    db: AsyncSession,
+    surface: ChatSessionSurface,
+) -> ChatSessionORM:
+    session = ChatSessionORM(
+        session_id=str(uuid4()),
+        surface=surface.value,
+    )
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    return session
+
+
+async def get_chat_session_record(
+    db: AsyncSession,
+    session_id: str,
+) -> ChatSessionORM | None:
+    return await db.get(ChatSessionORM, session_id)
+
+
+async def delete_chat_session_record(db: AsyncSession, session_id: str) -> None:
     await db.execute(
-        delete(AIChatMessageORM).where(AIChatMessageORM.session_id == session_id)
+        delete(ChatSessionORM).where(ChatSessionORM.session_id == session_id)
     )
     await db.commit()
 
@@ -391,7 +415,10 @@ async def search_chat_history(
     return list(result.scalars().all())
 
 
-async def get_chat_sessions(db: AsyncSession) -> list[dict[str, Any]]:
+async def get_chat_sessions(
+    db: AsyncSession,
+    surface: ChatSessionSurface = ChatSessionSurface.AI_BANKER,
+) -> list[dict[str, Any]]:
     ranked_messages = (
         select(
             AIChatMessageORM.session_id.label("session_id"),
@@ -410,12 +437,21 @@ async def get_chat_sessions(db: AsyncSession) -> list[dict[str, Any]]:
 
     result = await db.execute(
         select(
-            ranked_messages.c.session_id,
-            ranked_messages.c.created_at,
-            ranked_messages.c.content,
+            ChatSessionORM.session_id,
+            func.coalesce(ranked_messages.c.created_at, ChatSessionORM.created_at).label("created_at"),
+            func.coalesce(ranked_messages.c.content, "").label("content"),
         )
-        .where(ranked_messages.c.row_number == 1)
-        .order_by(desc(ranked_messages.c.created_at), ranked_messages.c.session_id)
+        .select_from(ChatSessionORM)
+        .outerjoin(
+            ranked_messages,
+            (ranked_messages.c.session_id == ChatSessionORM.session_id)
+            & (ranked_messages.c.row_number == 1),
+        )
+        .where(ChatSessionORM.surface == surface.value)
+        .order_by(
+            desc(func.coalesce(ranked_messages.c.created_at, ChatSessionORM.created_at)),
+            ChatSessionORM.session_id,
+        )
     )
 
     sessions: list[dict[str, Any]] = []
