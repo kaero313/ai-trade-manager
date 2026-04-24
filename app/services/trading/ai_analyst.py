@@ -16,6 +16,7 @@ from app.schemas.portfolio import AssetItem
 from app.schemas.portfolio import PortfolioSummary
 from app.services.ai.analyzer import AIAnalyzerFactory
 from app.services.ai.providers.gemini import GeminiAnalyzer
+from app.services.ai.providers.gemini import AIProviderRateLimitError
 from app.services.brokers.factory import BrokerFactory
 from app.services.indicators import IndicatorCalculator
 from app.services.market.sentiment_fetcher import get_cached_market_sentiment
@@ -752,6 +753,9 @@ async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisRespon
             user_prompt=_build_analysis_user_prompt(normalized_symbol, context_text),
             response_model=AIAnalysisResponse,
         )
+    except AIProviderRateLimitError as exc:
+        logger.warning("AI 구조화 분석 quota 초과: symbol=%s error=%s", normalized_symbol, exc)
+        raise
     except Exception as exc:
         logger.error("AI 구조화 분석 실패: symbol=%s error=%s", normalized_symbol, exc, exc_info=True)
         analysis = _build_fallback_analysis()

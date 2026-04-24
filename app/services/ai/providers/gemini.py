@@ -11,6 +11,15 @@ from app.services.ai.providers.base import SYSTEM_PROMPT
 StructuredResponseT = TypeVar("StructuredResponseT", bound=BaseModel)
 
 
+class AIProviderRateLimitError(RuntimeError):
+    """AI provider quota/rate-limit으로 인해 즉시 중단이 필요한 경우."""
+
+
+def _is_gemini_rate_limit_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return "resource_exhausted" in message or "quota" in message or "429" in message
+
+
 def _normalize_gemini_error(error: Exception) -> str:
     message = str(error).lower()
     if "resource_exhausted" in message or "quota" in message or "429" in message:
@@ -55,15 +64,20 @@ class GeminiAnalyzer(BaseAIAnalyzer):
         if self.client is None:
             raise RuntimeError("Gemini API 키가 설정되지 않아 구조화 분석을 실행할 수 없습니다.")
 
-        response = await self.client.aio.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                response_mime_type="application/json",
-                response_schema=response_model,
-            ),
-        )
+        try:
+            response = await self.client.aio.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=user_prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    response_mime_type="application/json",
+                    response_schema=response_model,
+                ),
+            )
+        except Exception as error:
+            if _is_gemini_rate_limit_error(error):
+                raise AIProviderRateLimitError(_normalize_gemini_error(error)) from error
+            raise
 
         parsed = getattr(response, "parsed", None)
         if isinstance(parsed, response_model):
