@@ -141,6 +141,12 @@ export interface ApprovalPayload {
   config_value: string
 }
 
+export type ChatSessionSurface = 'ai_banker' | 'portfolio'
+
+interface ChatSessionCreateRequest {
+  surface: ChatSessionSurface
+}
+
 interface ChatSessionCreateResponse {
   session_id: string
 }
@@ -241,13 +247,20 @@ export async function resetPaperTradingState(): Promise<PaperTradingResetRespons
   return data
 }
 
-export async function createChatSession(): Promise<ChatSessionCreateResponse> {
-  const { data } = await apiClient.post<ChatSessionCreateResponse>('/chat/sessions')
+export async function createChatSession(
+  surface: ChatSessionSurface = 'ai_banker',
+): Promise<ChatSessionCreateResponse> {
+  const payload: ChatSessionCreateRequest = { surface }
+  const { data } = await apiClient.post<ChatSessionCreateResponse>('/chat/sessions', payload)
   return data
 }
 
-export async function getChatSessions(): Promise<ChatSession[]> {
-  const { data } = await apiClient.get<ChatSessionApiItem[]>('/chat/sessions')
+export async function getChatSessions(
+  surface: ChatSessionSurface = 'ai_banker',
+): Promise<ChatSession[]> {
+  const { data } = await apiClient.get<ChatSessionApiItem[]>('/chat/sessions', {
+    params: { surface },
+  })
   return data.map(mapChatSession)
 }
 
