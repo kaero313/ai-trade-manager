@@ -15,6 +15,7 @@ from app.services.brokers.upbit import (
     format_upbit_critical_message,
     is_critical_upbit_error,
 )
+from app.services.bot_service import update_bot_runtime_status
 from app.services.slack_bot import slack_bot
 from app.services.trading.paper import PaperBroker
 from app.services.trading.paper import apply_paper_fill
@@ -48,23 +49,79 @@ class TradingEngine:
 
                         if not is_active:
                             logger.info("봇이 일시 정지 상태입니다.")
+                            await self._set_runtime_status(
+                                db,
+                                latest_action="AI 엔진 대기 중...",
+                            )
                             await asyncio.sleep(5)
                             continue
 
                         logger.info("트레이딩 루프 활성 상태 감지: mode=%s", trade_mode)
                         if trade_mode == "grid" and bot_config is not None:
+                            await self._set_runtime_status(
+                                db,
+                                latest_action="그리드 전략 실행 점검 중...",
+                            )
                             await self._check_and_execute_grid(db, bot_config)
                         else:
                             logger.debug("AI 모드 패스 중. 스케줄러 전담: mode=%s", trade_mode)
+                            await self._set_runtime_status(
+                                db,
+                                latest_action="AI 모드 대기 중...",
+                            )
                 except Exception:
                     logger.error(
                         "TradingEngine 루프 처리 중 예외가 발생했습니다. 다음 주기에서 계속 실행합니다.",
                         exc_info=True,
                     )
+                    await self._record_runtime_error("트레이딩 루프 처리 예외", None)
 
                 await asyncio.sleep(5)
         finally:
             logger.info("TradingEngine run_loop 종료")
+
+    async def _set_runtime_status(
+        self,
+        db: AsyncSession,
+        *,
+        latest_action: str,
+        last_error: str | None = None,
+    ) -> None:
+        await update_bot_runtime_status(
+            db,
+            last_heartbeat=self._runtime_heartbeat(),
+            latest_action=latest_action,
+            last_error=last_error,
+        )
+
+    async def _record_runtime_error(
+        self,
+        latest_action: str,
+        error: Exception | None,
+    ) -> None:
+        try:
+            async with self.session_factory() as db:
+                await update_bot_runtime_status(
+                    db,
+                    last_heartbeat=self._runtime_heartbeat(),
+                    latest_action=latest_action,
+                    last_error=self._format_runtime_error(error),
+                )
+        except Exception:
+            logger.exception("트레이딩 런타임 오류 상태를 저장하지 못했습니다.")
+
+    @staticmethod
+    def _runtime_heartbeat() -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    @staticmethod
+    def _format_runtime_error(error: Exception | None) -> str:
+        if error is None:
+            return "알 수 없는 트레이딩 엔진 오류"
+        message = str(error).strip()
+        if not message:
+            return error.__class__.__name__
+        return f"{error.__class__.__name__}: {message}"[:240]
 
     async def _check_and_execute_grid(self, db: AsyncSession, config: BotConfig) -> None:
         config_json = self._normalize_config_json(config.config_json)
@@ -119,6 +176,11 @@ class TradingEngine:
             )
         except UpbitAPIError as exc:
             logger.exception("그리드 전략 실행 실패(UpbitAPIError): market=%s error=%s", market, exc)
+            await self._set_runtime_status(
+                db,
+                latest_action="그리드 전략 실행 실패",
+                last_error=self._format_runtime_error(exc),
+            )
             if is_critical_upbit_error(exc):
                 await self._notify_critical_error(
                     key=f"upbit:{exc.status_code}:{exc.error_name}:{exc.message}",
@@ -127,6 +189,11 @@ class TradingEngine:
             return
         except Exception as exc:
             logger.exception("그리드 전략 실행 중 예외가 발생했습니다: market=%s", market)
+            await self._set_runtime_status(
+                db,
+                latest_action="그리드 전략 실행 실패",
+                last_error=self._format_runtime_error(exc),
+            )
             generic_critical_message = self._resolve_generic_critical_message(exc)
             if generic_critical_message:
                 await self._notify_critical_error(
@@ -146,6 +213,10 @@ class TradingEngine:
                 logger.info("그리드 주문 쿨타임 적용 중입니다. next_order_at=%s", next_order_at)
             elif reason != "no_signal":
                 logger.info("그리드 전략 미체결: market=%s reason=%s", market, reason)
+            await self._set_runtime_status(
+                db,
+                latest_action="그리드 전략 대기 중...",
+            )
             return
 
         signal_side = str(strategy_result.side or "").lower().strip()
@@ -219,6 +290,10 @@ class TradingEngine:
             config.config_json = updated_config
 
             await db.commit()
+            await self._set_runtime_status(
+                db,
+                latest_action=f"{market} {signal_side} 주문 반영 완료",
+            )
             await self._notify_order_filled(
                 market=market,
                 side=signal_side,
@@ -228,9 +303,19 @@ class TradingEngine:
         except ValueError as exc:
             await db.rollback()
             logger.info("그리드 paper 주문 스킵: market=%s side=%s error=%s", market, signal_side, exc)
+            await self._set_runtime_status(
+                db,
+                latest_action="그리드 주문 적용 실패",
+                last_error=self._format_runtime_error(exc),
+            )
         except Exception:
             await db.rollback()
             logger.exception("주문 성공 후 DB 기록 중 예외가 발생했습니다: market=%s side=%s", market, signal_side)
+            await self._set_runtime_status(
+                db,
+                latest_action="그리드 주문 반영 실패",
+                last_error="주문 성공 후 DB 기록 중 예외가 발생했습니다.",
+            )
 
     async def _get_or_create_asset(self, db: AsyncSession, market: str) -> Asset:
         result = await db.execute(select(Asset).where(Asset.symbol == market))
