@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any
 
@@ -58,9 +59,10 @@ class PortfolioService:
 
         try:
             broker = BrokerFactory.get_broker("UPBIT")
-            accounts = await broker.get_accounts()
-
-            all_markets = await broker.get_markets()
+            accounts, all_markets = await asyncio.gather(
+                broker.get_accounts(),
+                broker.get_markets(),
+            )
             valid_market_symbols = {
                 str(m.get("market") or "").upper()
                 for m in all_markets
