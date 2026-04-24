@@ -171,7 +171,7 @@ function PortfolioPage() {
 
     const initializeChatSession = async () => {
       try {
-        const result = await createChatSession()
+        const result = await createChatSession('portfolio')
         if (!isMounted) {
           return
         }
@@ -197,7 +197,7 @@ function PortfolioPage() {
 
   const handleCreateSession = async (): Promise<string | null> => {
     try {
-      const result = await createChatSession()
+      const result = await createChatSession('portfolio')
       setSessionId(result.session_id)
       return result.session_id
     } catch (error) {

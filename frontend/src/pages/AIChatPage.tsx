@@ -391,7 +391,7 @@ function AIChatPage() {
 
   const chatSessionsQuery = useQuery({
     queryKey: CHAT_SESSIONS_QUERY_KEY,
-    queryFn: getChatSessions,
+    queryFn: () => getChatSessions('ai_banker'),
   })
 
   const chatMessagesQuery = useQuery({
@@ -489,7 +489,7 @@ function AIChatPage() {
   const createAndSelectSession = async (): Promise<string | null> => {
     setIsCreatingSession(true)
     try {
-      const result = await createChatSession()
+      const result = await createChatSession('ai_banker')
       const nextSession = buildPendingSession(result.session_id)
 
       setPendingSessions((current) => {
