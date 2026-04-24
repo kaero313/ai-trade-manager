@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock
 
-from fastapi import status
+import pytest
+from fastapi import HTTPException
 from sqlalchemy.dialects import sqlite
 
 stub_scheduler_module = ModuleType("app.core.scheduler")
@@ -32,12 +33,82 @@ sys.modules.setdefault("app.services.chat.orchestrator", stub_orchestrator_modul
 
 from app.api.routes import chat as chat_routes
 from app.db import repository
+from app.models.domain import AIChatMessage as AIChatMessageORM
+from app.models.domain import ChatSessionSurface
 
 
-def test_delete_chat_session_messages_deletes_all_rows_for_session() -> None:
+def test_create_chat_session_defaults_to_ai_banker_surface(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_create_chat_session_record(_db: object, surface: ChatSessionSurface) -> SimpleNamespace:
+        captured["surface"] = surface
+        return SimpleNamespace(session_id="session-ai")
+
+    monkeypatch.setattr(chat_routes, "create_chat_session_record", fake_create_chat_session_record)
+
+    response = asyncio.run(chat_routes.create_chat_session(payload=None, db=object()))
+
+    assert response.session_id == "session-ai"
+    assert captured["surface"] == ChatSessionSurface.AI_BANKER
+
+
+def test_list_chat_sessions_uses_requested_surface(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+    created_at = datetime(2026, 4, 24, tzinfo=timezone.utc)
+
+    async def fake_get_chat_sessions(_db: object, surface: ChatSessionSurface) -> list[dict[str, object]]:
+        captured["surface"] = surface
+        return [
+            {
+                "session_id": "portfolio-session",
+                "created_at": created_at,
+                "content_preview": "portfolio auto briefing",
+            }
+        ]
+
+    monkeypatch.setattr(chat_routes, "get_chat_sessions", fake_get_chat_sessions)
+
+    response = asyncio.run(
+        chat_routes.list_chat_sessions(
+            surface=ChatSessionSurface.PORTFOLIO,
+            db=object(),
+        )
+    )
+
+    assert captured["surface"] == ChatSessionSurface.PORTFOLIO
+    assert [item.session_id for item in response] == ["portfolio-session"]
+
+
+def test_delete_chat_session_returns_404_for_missing_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get_chat_session_record(_db: object, _session_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(chat_routes, "get_chat_session_record", fake_get_chat_session_record)
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(chat_routes.delete_chat_session("missing-session", db=object()))
+
+    assert exc_info.value.status_code == 404
+
+
+def test_get_chat_session_messages_returns_404_for_missing_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get_chat_session_record(_db: object, _session_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(chat_routes, "get_chat_session_record", fake_get_chat_session_record)
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(chat_routes.get_chat_session_messages("missing-session", db=object()))
+
+    assert exc_info.value.status_code == 404
+
+
+def test_delete_chat_session_record_deletes_parent_session_row() -> None:
     db = AsyncMock()
 
-    asyncio.run(repository.delete_chat_session_messages(db, "session-alpha"))
+    asyncio.run(repository.delete_chat_session_record(db, "session-alpha"))
 
     statement = db.execute.await_args.args[0]
     compiled_sql = str(
@@ -47,99 +118,31 @@ def test_delete_chat_session_messages_deletes_all_rows_for_session() -> None:
         )
     )
 
-    assert "DELETE FROM ai_chat_messages" in compiled_sql
+    assert "DELETE FROM chat_sessions" in compiled_sql
     assert "session-alpha" in compiled_sql
-    assert "is_tool_call" not in compiled_sql
     db.commit.assert_awaited_once()
 
 
-def test_delete_chat_session_endpoint_keeps_session_queries_in_sync(monkeypatch) -> None:
-    created_at = datetime(2026, 4, 23, tzinfo=timezone.utc)
-    state = [
-        {
-            "id": 1,
-            "session_id": "session-a",
-            "role": "user",
-            "content": "첫 번째 질문",
-            "agent_name": None,
-            "is_tool_call": False,
-            "created_at": created_at,
-        },
-        {
-            "id": 2,
-            "session_id": "session-a",
-            "role": "tool",
-            "content": "도구 호출 로그",
-            "agent_name": "rag_agent",
-            "is_tool_call": True,
-            "created_at": created_at,
-        },
-        {
-            "id": 3,
-            "session_id": "session-b",
-            "role": "assistant",
-            "content": "다른 세션 응답",
-            "agent_name": "assistant",
-            "is_tool_call": False,
-            "created_at": created_at,
-        },
-    ]
+def test_get_chat_sessions_filters_by_surface() -> None:
+    db = AsyncMock()
+    db.execute.return_value = SimpleNamespace(all=lambda: [])
 
-    async def fake_delete_chat_session_messages(_db: object, session_id: str) -> None:
-        state[:] = [row for row in state if row["session_id"] != session_id]
+    asyncio.run(repository.get_chat_sessions(db, ChatSessionSurface.PORTFOLIO))
 
-    async def fake_get_chat_sessions(_db: object) -> list[dict[str, object]]:
-        latest_by_session: dict[str, dict[str, object]] = {}
-        for row in state:
-            if row["is_tool_call"]:
-                continue
+    statement = db.execute.await_args.args[0]
+    compiled_sql = str(
+        statement.compile(
+            dialect=sqlite.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    )
 
-            current = latest_by_session.get(row["session_id"])
-            if current is None or (row["created_at"], row["id"]) > (
-                current["created_at"],
-                current["id"],
-            ):
-                latest_by_session[row["session_id"]] = row
+    assert "FROM chat_sessions" in compiled_sql
+    assert "chat_sessions.surface = 'portfolio'" in compiled_sql
 
-        return [
-            {
-                "session_id": row["session_id"],
-                "created_at": row["created_at"],
-                "content_preview": str(row["content"])[:120],
-            }
-            for row in sorted(
-                latest_by_session.values(),
-                key=lambda item: (item["created_at"], item["session_id"]),
-                reverse=True,
-            )
-        ]
 
-    async def fake_get_recent_chat_messages(
-        _db: object,
-        session_id: str,
-        limit: int = 50,
-    ) -> list[SimpleNamespace]:
-        visible_rows = [
-            SimpleNamespace(**row)
-            for row in state
-            if row["session_id"] == session_id and not row["is_tool_call"]
-        ]
-        visible_rows.sort(key=lambda item: (item.created_at, item.id))
-        return visible_rows[-limit:]
+def test_ai_chat_message_session_id_uses_cascade_foreign_key() -> None:
+    foreign_key = next(iter(AIChatMessageORM.__table__.c.session_id.foreign_keys))
 
-    monkeypatch.setattr(chat_routes, "delete_chat_session_messages", fake_delete_chat_session_messages)
-    monkeypatch.setattr(chat_routes, "get_chat_sessions", fake_get_chat_sessions)
-    monkeypatch.setattr(chat_routes, "get_recent_chat_messages", fake_get_recent_chat_messages)
-
-    response = asyncio.run(chat_routes.delete_chat_session("session-a", db=object()))
-    assert response.status_code == status.HTTP_204_NO_CONTENT
-    assert all(row["session_id"] != "session-a" for row in state)
-
-    sessions = asyncio.run(chat_routes.list_chat_sessions(db=object()))
-    assert [item.session_id for item in sessions] == ["session-b"]
-
-    messages = asyncio.run(chat_routes.get_chat_session_messages("session-a", db=object()))
-    assert messages == []
-
-    missing_response = asyncio.run(chat_routes.delete_chat_session("missing-session", db=object()))
-    assert missing_response.status_code == status.HTTP_204_NO_CONTENT
+    assert foreign_key.target_fullname == "chat_sessions.session_id"
+    assert foreign_key.ondelete == "CASCADE"
