@@ -4,9 +4,23 @@ from app.core.config import settings
 from app.services.ai.providers.base import BaseAIAnalyzer, SYSTEM_PROMPT
 
 
+def _resolve_openai_api_key() -> str | None:
+    api_key = str(settings.OPENAI_API_KEY or "").strip()
+    if not api_key:
+        return None
+
+    normalized = api_key.lower()
+    if normalized.startswith("your_"):
+        return None
+    if normalized.endswith("_here") or normalized.endswith("here"):
+        return None
+    return api_key
+
+
 class OpenAIAnalyzer(BaseAIAnalyzer):
     def __init__(self) -> None:
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
+        api_key = _resolve_openai_api_key()
+        self.client = AsyncOpenAI(api_key=api_key) if api_key else None
 
     async def generate_report(self, portfolio_str: str) -> str:
         if self.client is None:
