@@ -186,6 +186,7 @@ function buildPayload(draft: BotConfigDraft, baseConfig: NormalizedBotConfig): B
     strategy: baseConfig.strategy,
     risk: baseConfig.risk,
     schedule: baseConfig.schedule,
+    trade_mode: 'ai',
     grid: baseConfig.grid,
   }
 }
@@ -241,7 +242,7 @@ function BotConfigEditor({ initialConfig }: { initialConfig: NormalizedBotConfig
       const savedConfig = await updateBotConfig(payload)
       queryClient.setQueryData(BOT_CONFIG_QUERY_KEY, savedConfig)
       void queryClient.invalidateQueries({ queryKey: BOT_CONFIG_QUERY_KEY })
-      setSaveNotice('AI 매매 대상 설정이 저장되었습니다.')
+      setSaveNotice('AI 매매 대상 설정이 저장되었고 봇 모드는 AI로 고정되었습니다.')
     } catch (error) {
       setSaveError(resolveErrorMessage(error, 'AI 매매 대상 설정을 저장하지 못했습니다.'))
     } finally {
@@ -303,7 +304,7 @@ function BotConfigEditor({ initialConfig }: { initialConfig: NormalizedBotConfig
 
       <footer className="flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          저장 즉시 AI 대상 심볼과 배분이 반영됩니다.
+          저장 payload에는 `trade_mode: ai`가 함께 포함됩니다.
         </p>
         <button
           type="submit"
