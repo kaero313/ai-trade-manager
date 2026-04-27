@@ -83,12 +83,15 @@ venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --r
 - [데이터베이스 스키마 명세](docs/DATABASE.md)
 - [AI 개발 가이드라인](Agents.md)
 - [개발 운영 워크플로우](docs/DEVELOPMENT_WORKFLOW.md)
+- [IDE Agent Chat용 Codex 마스터 프롬프트 템플릿](docs/IDE_AGENT_CHAT_PROMPT_TEMPLATE.md)
 
 ## 🤖 AI 협업 구조 (2-AI System)
 이 프로젝트는 **Gemini(Architect)**와 **Codex(Coder)**의 2-AI 협업 시스템으로 구축되고 있습니다.
 - **Gemini / IDE:** 기능 설계, 범위 확정, 아키텍처/DB 변경 승인, 마스터 프롬프트 작성
 - **Codex 앱:** 메인 실행 채널. Gemini 프롬프트를 받아 현재 리포지토리와의 Delta 판정, 작업 분해, 멀티 에이전트 실행, 검증, 커밋까지 담당
 - **Codex CLI:** 좁은 단일 확인이나 반복 명령이 필요할 때만 쓰는 보조 채널
+
+IDE agent chat에서 Codex용 실행 프롬프트를 만들 때는 [IDE Agent Chat용 Codex 마스터 프롬프트 템플릿](docs/IDE_AGENT_CHAT_PROMPT_TEMPLATE.md)을 기본으로 사용합니다.
 
 Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구조로 운영됩니다.
 - **Main Orchestrator:** 항상 존재하며 Delta 판정, 작업 분해, 통합, 커밋을 담당
