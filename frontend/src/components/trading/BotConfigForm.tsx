@@ -172,7 +172,7 @@ function parseAllocationList(rawValue: string): number[] {
   return tokens.map((token, index) => parseFiniteNumber(token, `종목별 자산 배분 비율 ${index + 1}`))
 }
 
-function buildPayload(draft: BotConfigDraft, baseConfig: NormalizedBotConfig): BotConfig {
+function buildBotConfigUpdate(draft: BotConfigDraft, baseConfig: NormalizedBotConfig): BotConfig {
   const symbols = parseSymbols(draft.symbols)
   const allocationPctPerSymbol = parseAllocationList(draft.allocationPctPerSymbol)
 
@@ -237,12 +237,12 @@ function BotConfigEditor({ initialConfig }: { initialConfig: NormalizedBotConfig
     setSaveNotice(null)
 
     try {
-      const payload = buildPayload(draft, initialConfig)
+      const nextConfig = buildBotConfigUpdate(draft, initialConfig)
       setIsSaving(true)
-      const savedConfig = await updateBotConfig(payload)
+      const savedConfig = await updateBotConfig(nextConfig)
       queryClient.setQueryData(BOT_CONFIG_QUERY_KEY, savedConfig)
       void queryClient.invalidateQueries({ queryKey: BOT_CONFIG_QUERY_KEY })
-      setSaveNotice('AI 매매 대상 설정이 저장되었고 봇 모드는 AI로 고정되었습니다.')
+      setSaveNotice('AI 매매 대상 설정이 저장되었습니다.')
     } catch (error) {
       setSaveError(resolveErrorMessage(error, 'AI 매매 대상 설정을 저장하지 못했습니다.'))
     } finally {
@@ -255,8 +255,7 @@ function BotConfigEditor({ initialConfig }: { initialConfig: NormalizedBotConfig
       <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-4 text-sm text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
         <p className="font-semibold">AI 자동매매 대상</p>
         <p className="mt-2 leading-6">
-          이 화면에서는 AI가 분석하고 주문 후보로 삼을 종목과 기본 배분만 관리합니다. 과거 그리드 전략과
-          기술지표 세부값은 화면에서 제외했고, 저장 시 봇 실행 모드는 항상 AI로 고정됩니다.
+          AI가 분석하고 주문 후보로 삼을 종목과 기본 배분을 관리합니다.
         </p>
       </div>
 
@@ -304,7 +303,7 @@ function BotConfigEditor({ initialConfig }: { initialConfig: NormalizedBotConfig
 
       <footer className="flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          저장 payload에는 `trade_mode: ai`가 함께 포함됩니다.
+          저장한 심볼과 배분은 다음 분석 주기부터 반영됩니다.
         </p>
         <button
           type="submit"
@@ -331,10 +330,7 @@ function BotConfigForm() {
   return (
     <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="border-b border-gray-200 pb-5 dark:border-gray-700">
-        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-emerald-600 dark:text-emerald-300">
-          AI Trading Scope
-        </p>
-        <div className="mt-3 flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">AI 매매 대상 설정</h2>
           <InfoTooltip
             title="AI 매매 대상 설정"
@@ -342,7 +338,7 @@ function BotConfigForm() {
           />
         </div>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
-          그리드 방식과 레거시 기술지표 입력은 제거하고, AI 운용에 직접 필요한 대상 종목만 조정합니다.
+          AI가 사용할 대상 종목과 기본 배분을 조정합니다.
         </p>
       </header>
 

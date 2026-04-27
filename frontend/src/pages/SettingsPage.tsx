@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react'
 import InfoTooltip from '../components/common/InfoTooltip'
 import BotConfigForm from '../components/trading/BotConfigForm'
 import { useSystemConfigs, useUpdateSystemConfigs } from '../hooks/useSystemConfigs'
-import type { SystemConfigItem, SystemConfigUpdateItem, TradingMode } from '../services/api'
+import type { SystemConfigItem, SystemConfigUpdateItem } from '../services/api'
 
 interface AiRuntimeDraft {
   autonomousAiIntervalMinutes: string
@@ -27,7 +27,6 @@ const AUTONOMOUS_AI_INTERVAL_MINUTES_KEY = 'autonomous_ai_interval_minutes'
 const MAX_ALLOCATION_PCT_KEY = 'max_allocation_pct'
 const HARD_TAKE_PROFIT_PCT_KEY = 'hard_take_profit_pct'
 const HARD_STOP_LOSS_PCT_KEY = 'hard_stop_loss_pct'
-const TRADING_MODE_KEY = 'trading_mode'
 const AI_BRIEFING_TIME_KEY = 'ai_briefing_time'
 const AI_MIN_CONFIDENCE_TRADE_KEY = 'ai_min_confidence_trade'
 const AI_ANALYSIS_MAX_AGE_MINUTES_KEY = 'ai_analysis_max_age_minutes'
@@ -104,106 +103,6 @@ function NoticeMessage({ notice }: { notice: NoticeState }) {
     >
       {notice.message}
     </div>
-  )
-}
-
-function TradingModePanel() {
-  const systemConfigsQuery = useSystemConfigs()
-  const updateSystemConfigsMutation = useUpdateSystemConfigs()
-  const [notice, setNotice] = useState<NoticeState | null>(null)
-
-  const tradingModeValue = findConfigValue(systemConfigsQuery.data, TRADING_MODE_KEY, 'live').trim().toLowerCase()
-  const tradingMode: TradingMode = tradingModeValue === 'paper' ? 'paper' : 'live'
-
-  const handleTradingModeChange = async (nextMode: TradingMode) => {
-    if (nextMode === tradingMode) {
-      return
-    }
-
-    try {
-      await updateSystemConfigsMutation.mutateAsync([
-        {
-          config_key: TRADING_MODE_KEY,
-          config_value: nextMode,
-        },
-      ])
-      setNotice({
-        type: 'success',
-        message:
-          nextMode === 'paper'
-            ? '모의투자 모드로 전환했습니다. 이후 주문은 가상 잔고 기준으로 시뮬레이션됩니다.'
-            : '실전투자 모드로 전환했습니다. 이후 주문은 실 계좌 기준으로 집행됩니다.',
-      })
-    } catch (error) {
-      setNotice({
-        type: 'error',
-        message: resolveErrorMessage(error, '거래 모드를 저장하지 못했습니다.'),
-      })
-    }
-  }
-
-  return (
-    <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <header className="border-b border-gray-200 pb-5 dark:border-gray-700">
-        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-emerald-600 dark:text-emerald-300">
-          Execution Mode
-        </p>
-        <div className="mt-3 flex items-center gap-2">
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">실전/모의투자 모드</h2>
-          <InfoTooltip
-            title="실전/모의투자 모드"
-            content="Live는 실제 거래소 계좌를 사용하고, Paper는 가상 KRW 자본금과 paper 포지션만 사용하는 시뮬레이션 모드입니다."
-          />
-        </div>
-        <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
-          주문 실행 환경만 전환합니다. 그리드 전략 선택이나 모의 계좌 초기화 같은 관리자 기능은 설정 화면에서
-          제외했습니다.
-        </p>
-      </header>
-
-      <div className="mt-6 space-y-5">
-        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-            Current Mode
-          </div>
-          <div className="mt-2 text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {tradingMode === 'paper' ? 'Paper (모의투자)' : 'Live (실전)'}
-          </div>
-          <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
-            현재 저장값: <span className="font-semibold">{tradingMode}</span>
-          </p>
-        </div>
-
-        <div className="inline-flex w-full rounded-xl bg-gray-50 p-1 ring-1 ring-gray-200 dark:bg-gray-700/40 dark:ring-gray-700">
-          <button
-            type="button"
-            onClick={() => void handleTradingModeChange('live')}
-            disabled={systemConfigsQuery.isLoading || updateSystemConfigsMutation.isPending}
-            className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
-              tradingMode === 'live'
-                ? 'bg-emerald-500 text-white shadow-sm'
-                : 'text-gray-600 hover:bg-white hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
-            } disabled:cursor-not-allowed disabled:opacity-70`}
-          >
-            Live
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleTradingModeChange('paper')}
-            disabled={systemConfigsQuery.isLoading || updateSystemConfigsMutation.isPending}
-            className={`flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition ${
-              tradingMode === 'paper'
-                ? 'bg-emerald-500 text-white shadow-sm'
-                : 'text-gray-600 hover:bg-white hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
-            } disabled:cursor-not-allowed disabled:opacity-70`}
-          >
-            Paper
-          </button>
-        </div>
-
-        {notice && <NoticeMessage notice={notice} />}
-      </div>
-    </section>
   )
 }
 
@@ -538,25 +437,17 @@ function SettingsPage() {
   return (
     <div className="flex h-full min-h-0 flex-col gap-6">
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-emerald-600 dark:text-emerald-300">
-          AI Settings
-        </p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-          AI 자동매매 설정
+        <h1 className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+          설정
         </h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
-          그리드 방식과 관리자용 placeholder를 걷어내고, 실제 운용 중 직접 조정할 AI 설정만 남긴 화면입니다.
+          자동매매에 필요한 종목, 배분, 운용 기준을 조정합니다.
         </p>
       </section>
 
-      <div className="grid min-h-0 flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="min-h-0 space-y-6 overflow-y-auto pr-1">
-          <BotConfigForm />
-          <AiRuntimeSettingsPanel />
-        </div>
-        <aside className="min-h-0 xl:sticky xl:top-0 xl:self-start">
-          <TradingModePanel />
-        </aside>
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
+        <BotConfigForm />
+        <AiRuntimeSettingsPanel />
       </div>
     </div>
   )
