@@ -35,7 +35,7 @@ export interface GridParams {
   grid_order_krw: number
   grid_sell_pct: number
   grid_cooldown_seconds: number
-  trade_mode: string
+  trade_mode?: string
 }
 
 export interface BotConfig {
@@ -44,6 +44,7 @@ export interface BotConfig {
   strategy?: StrategyParams
   risk?: RiskParams
   schedule?: ScheduleParams
+  trade_mode?: string
   grid?: GridParams
 }
 
