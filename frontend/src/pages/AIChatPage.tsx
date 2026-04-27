@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, ChevronRight, Loader2, Menu, MessageSquare, Plus, SendHorizontal, Trash2, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Loader2, MessageSquare, Plus, SendHorizontal, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
+import AIBankerPortfolioSnapshot from '../components/common/AIBankerPortfolioSnapshot'
 import { SYSTEM_CONFIGS_QUERY_KEY, useSystemConfigs } from '../hooks/useSystemConfigs'
 import {
   approveChatConfigChange,
@@ -867,31 +868,7 @@ function AIChatPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-6">
-      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-emerald-600 dark:text-emerald-300">
-              AI Banker Chat
-            </p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-              AI 뱅커
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm text-gray-600 dark:text-gray-300">
-              포트폴리오, 주문, AI 분석, 시스템 설정을 대화형으로 조회하고 조정할 수 있는 멀티 에이전트
-              채팅 화면입니다.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsSidebarOpen(true)}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-gray-200 text-gray-700 transition hover:bg-gray-100 hover:text-gray-900 lg:hidden dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-700 dark:hover:text-white"
-            aria-label="세션 목록 열기"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-        </div>
-      </section>
+      <AIBankerPortfolioSnapshot onOpenSessions={() => setIsSidebarOpen(true)} />
 
       <div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="hidden min-h-0 lg:block">{sidebarContent}</aside>
@@ -918,14 +895,6 @@ function AIChatPage() {
                   응답 생성 중
                 </div>
               )}
-              <button
-                type="button"
-                onClick={() => setIsSidebarOpen(true)}
-                className="hidden h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 sm:inline-flex lg:hidden dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
-                aria-label="세션 목록 열기"
-              >
-                <Menu className="h-5 w-5" />
-              </button>
             </div>
           </header>
 
