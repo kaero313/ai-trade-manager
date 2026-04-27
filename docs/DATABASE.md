@@ -110,3 +110,9 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 - 기존 `ai_chat_messages.session_id`는 `chat_sessions.session_id`를 부모로 참조하며, 세션 삭제 시 메시지가 함께 cascade delete 됩니다.
 - 기존 `ai_chat_messages`에 존재하던 모든 distinct `session_id`는 마이그레이션 시 `surface='ai_banker'`로 백필합니다.
 - 기본 AI 뱅커 세션 목록은 `ai_banker` 세션만 조회하고, 포트폴리오 자동 브리핑/미니챗은 `portfolio` 세션으로 분리 보관합니다.
+## Phase 42.1 업데이트
+- AI 뱅커 포트폴리오 스냅샷 카드는 기존 `/api/dashboard` 응답과 기존 자산 집계 데이터를 재사용하며, 추가 테이블이나 컬럼 변경은 없습니다.
+## Phase 42.2 업데이트
+- AI 뱅커 compact 포트폴리오 바는 기존 `/api/dashboard` 응답을 그대로 재사용하며, 추가 테이블/컬럼/API 변경은 없습니다.
+## Phase 42.3 업데이트
+- AI 뱅커 상단 포트폴리오 bar는 기존 `/api/dashboard` 응답을 그대로 재사용하며, 소개 카드 제거에 따른 추가 테이블/컬럼/API 변경은 없습니다.
