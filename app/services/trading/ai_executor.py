@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_AI_MIN_CONFIDENCE_TRADE = 70
 DEFAULT_AI_ANALYSIS_MAX_AGE_MINUTES = 90
-DEFAULT_MAX_ALLOCATION_PCT = 10.0
+DEFAULT_MAX_ALLOCATION_PCT = 30.0
 DEFAULT_HARD_TAKE_PROFIT_PCT = 0.0
 DEFAULT_HARD_STOP_LOSS_PCT = 0.0
 MIN_ORDER_KRW = 5000.0
@@ -638,9 +638,37 @@ async def _execute_buy_trade(
         return
 
     fee_buffer = 0.995  # 0.5% 여유분 (업비트 수수료 0.05% 대비 충분한 버퍼)
+    if remaining_budget < MIN_ORDER_KRW:
+        logger.info(
+            "AI 매수 스킵: 남은 종목 비중 예산이 최소 주문 금액보다 작습니다. symbol=%s remaining_budget=%s min_order=%s",
+            symbol,
+            remaining_budget,
+            MIN_ORDER_KRW,
+        )
+        return
+
+    if available_krw < MIN_ORDER_KRW:
+        logger.info(
+            "AI 매수 스킵: 가용 KRW가 최소 주문 금액보다 작습니다. symbol=%s available_krw=%s min_order=%s",
+            symbol,
+            available_krw,
+            MIN_ORDER_KRW,
+        )
+        return
+
     order_amount_krw = target_budget * fee_buffer
     if order_amount_krw < MIN_ORDER_KRW:
         order_amount_krw = MIN_ORDER_KRW
+
+    if order_amount_krw > remaining_budget:
+        logger.info(
+            "AI 매수 스킵: 주문 금액이 남은 종목 비중 예산을 초과합니다. symbol=%s remaining_budget=%s order_amount=%s target_budget=%s",
+            symbol,
+            remaining_budget,
+            order_amount_krw,
+            target_budget,
+        )
+        return
 
     if order_amount_krw > available_krw:
         logger.info(
