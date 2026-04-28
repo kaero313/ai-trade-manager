@@ -51,7 +51,7 @@ function SummaryMetric({
   valueClassName?: string
 }) {
   return (
-    <div className={`${PORTFOLIO_PANEL_INTERACTIVE_CLASS_NAME} px-4 py-4 md:px-5`}>
+    <div className={`${PORTFOLIO_PANEL_INTERACTIVE_CLASS_NAME} px-4 py-4`}>
       <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
         {label}
       </p>
@@ -94,21 +94,21 @@ function PortfolioSummaryCard({
           <>
             <div>
               <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
-                총 순자산
+                총 자산
               </p>
-              <p className="mt-4 text-4xl font-semibold tracking-tight text-gray-950 sm:text-5xl dark:text-white">
+              <p className="mt-4 text-4xl font-semibold text-gray-950 sm:text-5xl dark:text-white">
                 {formatKrw(totalNetWorth)}
               </p>
             </div>
 
-            <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            <div className="mt-8 grid gap-3">
               <SummaryMetric
-                label="총 평가손익"
+                label="총 손익"
                 value={formatSignedKrw(totalPnl)}
                 valueClassName={resolvePnlTone(totalPnl)}
               />
-              <SummaryMetric label="KRW 잔고" value={formatKrw(krwBalance)} />
-              <SummaryMetric label="보유 코인 수" value={formatCoinCount(coinCount)} />
+              <SummaryMetric label="현금 잔고" value={formatKrw(krwBalance)} />
+              <SummaryMetric label="보유 종목" value={formatCoinCount(coinCount)} />
             </div>
           </>
         )}
