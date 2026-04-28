@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal, TypedDict
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
@@ -16,6 +17,8 @@ from app.core.config import settings
 from app.db.repository import get_recent_chat_messages
 from app.db.repository import save_chat_message
 from app.models.schemas import ReviewerDecision
+from app.services.ai.provider_router import AIProviderCandidate
+from app.services.ai.provider_router import AIProviderRouter
 from app.services.chat.tools import build_chat_tools
 
 SupervisorRoute = Literal["rag_agent", "quant_agent", "ops_agent", "FINISH"]
@@ -85,6 +88,7 @@ class OrchestratorState(TypedDict, total=False):
     next_agent: str
     session_id: str
     retry_count: int
+    db: AsyncSession
 
 
 class SupervisorDecision(BaseModel):
@@ -92,23 +96,65 @@ class SupervisorDecision(BaseModel):
     response: str = Field(..., min_length=1)
 
 
-def _build_chat_model() -> ChatGoogleGenerativeAI:
+def _build_chat_model(candidate: AIProviderCandidate) -> ChatGoogleGenerativeAI | ChatOpenAI:
+    if candidate.provider == "openai":
+        if not settings.OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY가 설정되지 않아 Chat Orchestrator를 실행할 수 없습니다.")
+        return ChatOpenAI(model=candidate.model, api_key=settings.OPENAI_API_KEY)
+
     if not settings.GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY 가 설정되지 않아 Chat Orchestrator 를 실행할 수 없습니다.")
 
     return ChatGoogleGenerativeAI(
-        model="gemini-3-flash-preview",
+        model=candidate.model,
         temperature=0,
         google_api_key=settings.GEMINI_API_KEY,
     )
 
 
-def build_supervisor_chain() -> object:
-    return _build_chat_model().with_structured_output(SupervisorDecision)
+def _get_state_db(state: OrchestratorState) -> AsyncSession:
+    db = state.get("db")
+    if not isinstance(db, AsyncSession):
+        raise RuntimeError("Chat Orchestrator 상태에 DB 세션이 없습니다.")
+    return db
 
 
-def build_reviewer_chain() -> object:
-    return _build_chat_model().with_structured_output(ReviewerDecision)
+async def _ainvoke_structured_model(
+    state: OrchestratorState,
+    response_model: type[BaseModel],
+    messages: list[BaseMessage],
+) -> BaseModel:
+    router = AIProviderRouter(_get_state_db(state))
+
+    async def _operation(candidate: AIProviderCandidate) -> BaseModel:
+        model = _build_chat_model(candidate).with_structured_output(response_model)
+        result = await model.ainvoke(messages)
+        if isinstance(result, BaseModel):
+            return result
+        if isinstance(result, dict):
+            return response_model.model_validate(result)
+        return response_model.model_validate(result)
+
+    routed_result = await router.execute(_operation)
+    return routed_result.value
+
+
+async def _ainvoke_tool_model(
+    state: OrchestratorState,
+    tools: list[BaseTool],
+    conversation: list[BaseMessage],
+) -> AIMessage:
+    router = AIProviderRouter(_get_state_db(state))
+
+    async def _operation(candidate: AIProviderCandidate) -> AIMessage:
+        model = _build_chat_model(candidate).bind_tools(tools)
+        response = await model.ainvoke(conversation)
+        if isinstance(response, AIMessage):
+            return response
+        return AIMessage(content=str(getattr(response, "content", "") or ""))
+
+    routed_result = await router.execute(_operation)
+    return routed_result.value
 
 
 def _increment_retry_count(state: OrchestratorState) -> int:
@@ -233,13 +279,12 @@ async def _run_worker_agent(
 
     messages = list(state.get("messages") or [])
     tools_by_name = _get_filtered_tools(session_id, allowed_tool_names)
-    bound_model = _build_chat_model().bind_tools(list(tools_by_name.values()))
-    
+
     collapsed_messages = _collapse_messages_for_gemini(messages)
     conversation: list[BaseMessage] = [SystemMessage(content=system_prompt), *collapsed_messages]
 
     for _ in range(MAX_TOOL_CALL_ROUNDS):
-        response = await bound_model.ainvoke(conversation)
+        response = await _ainvoke_tool_model(state, list(tools_by_name.values()), conversation)
         conversation.append(response)
 
         tool_calls = getattr(response, "tool_calls", None) or []
@@ -312,11 +357,12 @@ async def supervisor_node(state: OrchestratorState) -> OrchestratorState:
             HumanMessage(content="위 에이전트들의 응답과 분석 결과를 바탕으로, 사용자에게 전달할 최종 답변을 한국어로 정리해 주세요.")
         )
 
-    decision = await build_supervisor_chain().ainvoke(final_prompt_messages)
+    decision = await _ainvoke_structured_model(state, SupervisorDecision, final_prompt_messages)
+    supervisor_decision = SupervisorDecision.model_validate(decision)
 
     return {
-        "messages": [AIMessage(name="supervisor", content=decision.response)],
-        "next_agent": decision.next_agent,
+        "messages": [AIMessage(name="supervisor", content=supervisor_decision.response)],
+        "next_agent": supervisor_decision.next_agent,
     }
 
 
@@ -394,12 +440,15 @@ async def reviewer_node(state: OrchestratorState) -> OrchestratorState:
     if not content_to_review:
         content_to_review = "(내용 없음: 에이전트가 빈 응답을 반환했습니다.)"
 
-    decision: ReviewerDecision = await build_reviewer_chain().ainvoke(
+    decision_result = await _ainvoke_structured_model(
+        state,
+        ReviewerDecision,
         [
             SystemMessage(content=REVIEWER_SYSTEM_PROMPT),
             HumanMessage(content=content_to_review),
-        ]
+        ],
     )
+    decision = ReviewerDecision.model_validate(decision_result)
 
     if decision.is_passed:
         return {
@@ -525,6 +574,7 @@ async def run_chat_stream(
             "session_id": normalized_session_id,
             "messages": input_messages,
             "next_agent": "",
+            "db": db,
         },
         version="v2",
     ):
