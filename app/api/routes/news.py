@@ -2,14 +2,16 @@ import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.session import get_db
 from app.services.news_analyzer import analyze_market_sentiment
 from app.services.news_scraper import fetch_crypto_news
 
 router = APIRouter()
-SENTIMENT_CACHE_TTL_SECONDS = 900
+SENTIMENT_CACHE_TTL_SECONDS = 1800
 _SENTIMENT_CACHE_LOCK = threading.Lock()
 _SENTIMENT_CACHE: dict[str, Any] = {
     "payload": None,
@@ -93,6 +95,7 @@ async def get_news() -> NewsResponse:
 @router.get("/sentiment", response_model=SentimentResponse)
 async def get_news_sentiment(
     force_refresh: bool = Query(False, description="true면 캐시를 무시하고 강제 재분석합니다."),
+    db: AsyncSession = Depends(get_db),
 ) -> SentimentResponse:
     now_utc = datetime.now(timezone.utc)
     if not force_refresh:
@@ -105,7 +108,8 @@ async def get_news_sentiment(
     news_articles = _build_news_items(raw_items)
 
     sentiment_payload = await analyze_market_sentiment(
-        [item.model_dump() for item in news_articles]
+        [item.model_dump() for item in news_articles],
+        db,
     )
     summary = sentiment_payload.get("summary")
     if not isinstance(summary, list):
