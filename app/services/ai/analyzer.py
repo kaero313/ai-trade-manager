@@ -5,13 +5,10 @@ from app.services.ai.providers.openai import OpenAIAnalyzer
 
 class AIAnalyzerFactory:
     @staticmethod
-    def get_analyzer(provider: str) -> BaseAIAnalyzer:
+    def get_analyzer(provider: str, model: str | None = None) -> BaseAIAnalyzer:
         normalized = (provider or "").strip().lower()
 
-        if normalized == "gemini":
-            return GeminiAnalyzer()
-
         if normalized == "openai":
-            return OpenAIAnalyzer()
+            return OpenAIAnalyzer(model=model)
 
-        return OpenAIAnalyzer()
+        return GeminiAnalyzer(model=model)
