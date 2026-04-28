@@ -22,6 +22,11 @@ htmlcov/
 # Logs
 *.log
 logs/
+/sse_out.txt
+
+# Local scratch diagnostics
+/tmp_*.py
+/tmp_*.png
 
 # DB
 *.db
