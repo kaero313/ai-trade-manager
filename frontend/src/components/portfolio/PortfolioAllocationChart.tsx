@@ -2,7 +2,6 @@ import { Cell, Legend, Pie, PieChart, Tooltip } from 'recharts'
 
 import type { AssetItem } from '../../services/portfolioService'
 import {
-  PORTFOLIO_BODY_TEXT_CLASS_NAME,
   PORTFOLIO_CARD_CLASS_NAME,
   PORTFOLIO_PANEL_CLASS_NAME,
   PORTFOLIO_SECTION_LABEL_CLASS_NAME,
@@ -105,9 +104,9 @@ function ChartLoadingState() {
         <div className="h-3 w-28 rounded-full bg-gray-200 dark:bg-gray-700" />
         <div className="mt-3 h-5 w-48 rounded-full bg-gray-200 dark:bg-gray-700" />
 
-        <div className="mt-8 flex flex-col items-center justify-center gap-6 lg:flex-row lg:items-center lg:justify-between">
-          <div className="h-64 w-64 rounded-full border-[28px] border-gray-200 dark:border-gray-700" />
-          <div className="grid w-full max-w-[180px] gap-3">
+        <div className="mt-8 flex flex-col items-center justify-center gap-5">
+          <div className="h-44 w-44 rounded-full border-[22px] border-gray-200 dark:border-gray-700" />
+          <div className="grid w-full max-w-[220px] gap-3">
             <div className="h-4 rounded-full bg-gray-200 dark:bg-gray-700" />
             <div className="h-4 rounded-full bg-gray-200 dark:bg-gray-700" />
             <div className="h-4 rounded-full bg-gray-200 dark:bg-gray-700" />
@@ -121,7 +120,7 @@ function ChartLoadingState() {
 
 function ChartEmptyState() {
   return (
-    <div className={`${PORTFOLIO_PANEL_CLASS_NAME} flex min-h-[420px] items-center justify-center px-6 text-center`}>
+    <div className={`${PORTFOLIO_PANEL_CLASS_NAME} flex min-h-[320px] items-center justify-center px-6 text-center`}>
       <div>
         <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
           자산 배분 데이터를 표시할 수 없습니다
@@ -134,37 +133,25 @@ function ChartEmptyState() {
   )
 }
 
-function ChartCanvasPlaceholder() {
-  return (
-    <div className={`${PORTFOLIO_PANEL_CLASS_NAME} flex h-[420px] min-w-[560px] w-full items-center justify-center px-6 text-center`}>
-      <p className="text-sm font-medium text-gray-600 dark:text-gray-300">
-        자산 배분 차트를 불러오는 중입니다...
-      </p>
-    </div>
-  )
-}
-
 function PortfolioAllocationChart({
   items,
   isLoading,
 }: PortfolioAllocationChartProps) {
   const chartData = buildChartData(items)
   const hasData = chartData.length > 0
-  const { containerRef, width: chartWidth } = useMeasuredChartWidth({ minWidth: 560 })
+  const { containerRef, width: chartWidth } = useMeasuredChartWidth({ minWidth: 320 })
+  const resolvedChartWidth = Math.max(chartWidth || 320, 320)
 
   return (
     <section className={`${PORTFOLIO_CARD_CLASS_NAME} overflow-hidden p-6`}>
       <div>
         <header className="mb-5">
           <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
-            PORTFOLIO MIX
+            자산배분
           </p>
           <h2 className={PORTFOLIO_TITLE_CLASS_NAME}>
             자산 배분
           </h2>
-          <p className={PORTFOLIO_BODY_TEXT_CLASS_NAME}>
-            평가금액 기준으로 현재 포트폴리오 비중을 확인합니다.
-          </p>
         </header>
 
         {isLoading ? <ChartLoadingState /> : null}
@@ -172,41 +159,37 @@ function PortfolioAllocationChart({
 
         {!isLoading && hasData ? (
           <div className="-mx-2 overflow-x-auto px-2">
-            <div ref={containerRef} className="h-[420px] min-w-[560px] w-full">
-              {chartWidth > 0 ? (
-                <PieChart width={chartWidth} height={420}>
-                  <Pie
-                    data={chartData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="34%"
-                    cy="50%"
-                    innerRadius={80}
-                    outerRadius={140}
-                    paddingAngle={2}
-                    stroke="#ffffff"
-                    strokeWidth={2}
-                  >
-                    {chartData.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                  <Legend
-                    layout="vertical"
-                    align="right"
-                    verticalAlign="middle"
-                    iconType="circle"
-                    wrapperStyle={{ paddingLeft: '20px' }}
-                    formatter={(value, _entry, index) => {
-                      const item = chartData[index]
-                      return `${value} (${item.percent.toFixed(1)}%)`
-                    }}
-                  />
-                </PieChart>
-              ) : (
-                <ChartCanvasPlaceholder />
-              )}
+            <div ref={containerRef} className="h-[320px] min-w-[320px] w-full">
+              <PieChart width={resolvedChartWidth} height={320}>
+                <Pie
+                  data={chartData}
+                  dataKey="value"
+                  nameKey="name"
+                  cx="50%"
+                  cy="42%"
+                  innerRadius={58}
+                  outerRadius={98}
+                  paddingAngle={2}
+                  stroke="#ffffff"
+                  strokeWidth={2}
+                >
+                  {chartData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+                <Legend
+                  layout="horizontal"
+                  align="center"
+                  verticalAlign="bottom"
+                  iconType="circle"
+                  wrapperStyle={{ paddingTop: '12px' }}
+                  formatter={(value, _entry, index) => {
+                    const item = chartData[index]
+                    return `${value} (${item.percent.toFixed(1)}%)`
+                  }}
+                />
+              </PieChart>
             </div>
           </div>
         ) : null}
