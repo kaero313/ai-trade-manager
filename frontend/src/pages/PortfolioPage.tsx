@@ -205,7 +205,14 @@ function PortfolioPage() {
         className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]"
       >
         <div className="min-h-[360px]">
-          <PortfolioAiBriefing sessionId={sessionId} />
+          <PortfolioAiBriefing
+            items={portfolioItems}
+            snapshots={snapshots}
+            totalNetWorth={totalNetWorth}
+            totalPnl={totalPnl}
+            aiAnalysisMap={aiAnalysisMap}
+            isPortfolioLoading={isLoading}
+          />
         </div>
         <div className="h-[560px] min-h-0 xl:h-[420px]">
           <PortfolioMiniChat sessionId={sessionId} onCreateSession={handleCreateSession} />

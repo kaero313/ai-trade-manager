@@ -45,6 +45,14 @@ export interface PortfolioSnapshotItem {
   created_at: string
 }
 
+export interface PortfolioBriefingResponse {
+  provider: string
+  model: string
+  report: string
+  fallback: boolean
+  error?: string | null
+}
+
 export interface AIAnalysisItem {
   symbol: string
   decision: 'BUY' | 'SELL' | 'HOLD'
@@ -72,6 +80,13 @@ export async function fetchPortfolioSnapshots(limit?: number): Promise<Portfolio
     params: { limit },
   })
   return response.data.snapshots
+}
+
+export async function fetchPortfolioBriefing(): Promise<PortfolioBriefingResponse> {
+  const response = await apiClient.get<PortfolioBriefingResponse>('/portfolio/briefing', {
+    timeout: 60000,
+  })
+  return response.data
 }
 
 export async function fetchLatestAnalysisBatch(
