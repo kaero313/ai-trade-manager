@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import inspect
 import logging
 import re
 from dataclasses import dataclass
@@ -12,10 +11,10 @@ from html import unescape
 from typing import Any
 
 import httpx
-from openai import AsyncOpenAI
 from opensearchpy.helpers import async_bulk
 
 from app.core.config import settings
+from app.services.ai.providers.gemini import AIProviderRateLimitError, GeminiAnalyzer
 from app.services.rag.opensearch_client import (
     EMBEDDING_DIMENSION,
     INDEX_NAME,
@@ -30,7 +29,7 @@ NAVER_NEWS_ENDPOINT = "https://openapi.naver.com/v1/search/news.json"
 CRYPTO_PANIC_FETCH_LIMIT = 10
 NAVER_FETCH_LIMIT = 10
 MARKET_NEWS_TTL_DAYS = 28
-EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_MODEL = "gemini-embedding-001"
 NEWS_HTTP_TIMEOUT = 10.0
 NAVER_NEWS_QUERIES = (
     "\ube44\ud2b8\ucf54\uc778",
@@ -257,33 +256,29 @@ async def _generate_embeddings(documents: list[RawNewsDocument]) -> dict[str, li
     if not documents:
         return {}
 
-    if not settings.OPENAI_API_KEY:
-        logger.warning("OPENAI_API_KEY is missing. Documents will be indexed without embeddings.")
+    if not settings.GEMINI_API_KEY:
+        logger.warning("GEMINI_API_KEY가 없어 문서를 임베딩 없이 인덱싱합니다.")
         return {}
 
-    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    texts = [f"{document.title}\n\n{document.content}" for document in documents]
+    analyzer = GeminiAnalyzer()
     try:
-        response = await client.embeddings.create(
-            model=EMBEDDING_MODEL,
-            input=[f"{document.title}\n\n{document.content}" for document in documents],
+        embedding_values = await analyzer.generate_embeddings(
+            texts,
+            task_type="RETRIEVAL_DOCUMENT",
         )
+    except AIProviderRateLimitError:
+        raise
     except Exception:
-        logger.exception("Embedding generation failed. Documents will be indexed without embeddings.")
+        logger.exception("Gemini 임베딩 생성 실패. 문서를 임베딩 없이 인덱싱합니다.")
         return {}
-    finally:
-        close_client = getattr(client, "close", None)
-        if callable(close_client):
-            close_result = close_client()
-            if inspect.isawaitable(close_result):
-                await close_result
 
     embeddings: dict[str, list[float]] = {}
-    for item in response.data:
-        if not isinstance(item.embedding, list) or len(item.embedding) != EMBEDDING_DIMENSION:
-            logger.warning("Unexpected embedding dimension received: index=%s", item.index)
+    for index, embedding in enumerate(embedding_values):
+        if len(embedding) != EMBEDDING_DIMENSION:
+            logger.warning("예상과 다른 Gemini 임베딩 차원입니다: index=%s", index)
             continue
-        document = documents[item.index]
-        embeddings[_build_document_id(document)] = item.embedding
+        embeddings[_build_document_id(documents[index])] = embedding
 
     return embeddings
 
@@ -365,7 +360,13 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
 
         documents = _deduplicate_documents([*cryptopanic_documents, *naver_documents])
         stats["fetched"] = len(documents)
-        embeddings = await _generate_embeddings(documents)
+        try:
+            embeddings = await _generate_embeddings(documents)
+        except AIProviderRateLimitError as exc:
+            stats["errors"] += 1
+            logger.warning("Gemini 임베딩 쿨다운으로 market_news ingestion을 중단합니다: %s", exc)
+            return stats
+
         indexed_count, bulk_errors = await _bulk_upsert_documents(documents, embeddings)
         stats["indexed"] = indexed_count
         if bulk_errors:
