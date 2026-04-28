@@ -109,10 +109,29 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
   - `created_at` (DateTime, AutoNow)
 - 기존 `ai_chat_messages.session_id`는 `chat_sessions.session_id`를 부모로 참조하며, 세션 삭제 시 메시지가 함께 cascade delete 됩니다.
 - 기존 `ai_chat_messages`에 존재하던 모든 distinct `session_id`는 마이그레이션 시 `surface='ai_banker'`로 백필합니다.
-- 기본 AI 뱅커 세션 목록은 `ai_banker` 세션만 조회하고, 포트폴리오 자동 브리핑/미니챗은 `portfolio` 세션으로 분리 보관합니다.
+- 기본 AI 뱅커 세션 목록은 `ai_banker` 세션만 조회하고, 포트폴리오 미니챗은 `portfolio` 세션으로 분리 보관합니다.
 ## Phase 42.1 업데이트
 - AI 뱅커 포트폴리오 스냅샷 카드는 기존 `/api/dashboard` 응답과 기존 자산 집계 데이터를 재사용하며, 추가 테이블이나 컬럼 변경은 없습니다.
 ## Phase 42.2 업데이트
 - AI 뱅커 compact 포트폴리오 바는 기존 `/api/dashboard` 응답을 그대로 재사용하며, 추가 테이블/컬럼/API 변경은 없습니다.
 ## Phase 42.3 업데이트
 - AI 뱅커 상단 포트폴리오 bar는 기존 `/api/dashboard` 응답을 그대로 재사용하며, 소개 카드 제거에 따른 추가 테이블/컬럼/API 변경은 없습니다.
+
+## Phase 42.4 업데이트
+- PostgreSQL 스키마 변경은 없습니다.
+- OpenSearch 3.5.0의 `market_news` 인덱스는 재수집 가능한 RAG 캐시성 벡터 저장소로 운영합니다.
+- `market_news.embedding`은 `knn_vector`, `dimension=1536`, `method=hnsw`, `engine=lucene`, `space_type=cosinesimil` 매핑을 사용합니다.
+- `system_configs.max_allocation_pct` 기본값은 `30`이며, 기존 기본값 `10`은 시드 실행 시 `30`으로 보정합니다.
+
+## Phase 42.5 업데이트
+- PostgreSQL 스키마 변경은 없습니다.
+- AI provider fallback은 기존 `system_configs` 테이블의 JSON 문자열 설정으로 관리합니다.
+- 신규 키:
+  - `ai_provider_priority`: provider 우선순위 배열. 기본값 `["gemini","openai"]`.
+  - `ai_provider_settings`: provider별 `enabled`, `model` 설정. 기본 모델은 `gemini-3-flash-preview`, `gpt-5-mini`.
+  - `ai_provider_status`: provider별 `blocked_until`, `reason`, `last_error_at`, `last_error`, `last_success_at` 상태.
+- `blocked_until`이 미래인 provider는 백엔드 라우터에서 자동 스킵되며, 만료 후 다음 요청부터 다시 우선순위 평가 대상이 됩니다.
+
+## Phase 42.6 업데이트
+- 포트폴리오 자동 브리핑은 `/api/portfolio/briefing` 전용 REST API에서 즉시 생성하며, 별도 채팅 세션이나 메시지를 저장하지 않습니다.
+- 새 테이블/컬럼은 없고, AI provider fallback 상태는 기존 `system_configs.ai_provider_status`를 그대로 사용합니다.

@@ -15,14 +15,17 @@ from app.models.schemas import AIAnalysisResponse
 from app.schemas.portfolio import AssetItem
 from app.schemas.portfolio import PortfolioSummary
 from app.services.ai.analyzer import AIAnalyzerFactory
-from app.services.ai.providers.gemini import GeminiAnalyzer
 from app.services.ai.providers.gemini import AIProviderRateLimitError
+from app.services.ai.providers.gemini import GeminiAnalyzer
+from app.services.ai.provider_router import AIProviderRouter
+from app.services.ai.provider_router import AIProviderUnavailableError
 from app.services.brokers.factory import BrokerFactory
 from app.services.indicators import IndicatorCalculator
 from app.services.market.sentiment_fetcher import get_cached_market_sentiment
 from app.services.market.sentiment_fetcher import get_or_refresh_market_sentiment
 from app.services.portfolio.aggregator import PortfolioService
 from app.services.rag.opensearch_client import INDEX_NAME
+from app.services.rag.opensearch_client import ensure_market_news_index
 from app.services.rag.opensearch_client import get_opensearch_client
 
 logger = logging.getLogger(__name__)
@@ -243,6 +246,31 @@ def _build_market_news_query(terms: Sequence[str], size: int) -> dict[str, Any]:
     }
 
 
+def _build_market_news_query_text(symbol: str, terms: Sequence[str]) -> str:
+    candidates = [symbol, *_extract_market_names(None, symbol), *terms]
+    deduped: list[str] = []
+    for item in candidates:
+        normalized = str(item or "").strip()
+        if normalized and normalized not in deduped:
+            deduped.append(normalized)
+    return " ".join(deduped)
+
+
+def _build_market_news_knn_query(query_embedding: list[float], size: int) -> dict[str, Any]:
+    return {
+        "size": size,
+        "_source": ["title", "content", "source", "link", "published_at"],
+        "query": {
+            "knn": {
+                "embedding": {
+                    "vector": query_embedding,
+                    "k": size,
+                }
+            }
+        },
+    }
+
+
 async def _resolve_market_metadata(symbol: str) -> dict[str, Any] | None:
     normalized_symbol = _normalize_symbol(symbol)
     if not normalized_symbol:
@@ -282,9 +310,32 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
 
     try:
         try:
-            if not await client.indices.exists(index=INDEX_NAME):
+            if not await ensure_market_news_index():
                 logger.info("RAG 뉴스 인덱스 미존재. RSS 뉴스 폴백으로 전환합니다: index=%s", INDEX_NAME)
                 raise RuntimeError("market_news index missing")
+
+            try:
+                query_text = _build_market_news_query_text(symbol, terms)
+                query_embedding = await _get_gemini_analyzer().generate_embedding(
+                    query_text,
+                    task_type="RETRIEVAL_QUERY",
+                )
+                knn_response = await client.search(
+                    index=INDEX_NAME,
+                    body=_build_market_news_knn_query(query_embedding, NEWS_RESULT_LIMIT),
+                )
+                knn_hits = knn_response.get("hits", {}).get("hits", [])
+                normalized_knn_hits = [
+                    _normalize_news_hit(hit)
+                    for hit in (knn_hits if isinstance(knn_hits, list) else [])
+                    if isinstance(hit, dict)
+                ]
+                if normalized_knn_hits:
+                    return {"items": normalized_knn_hits[:NEWS_RESULT_LIMIT], "error": None}
+            except AIProviderRateLimitError as exc:
+                logger.warning("Gemini 뉴스 쿼리 임베딩 제한으로 OpenSearch 텍스트 검색으로 전환합니다: %s", exc)
+            except Exception as exc:
+                logger.debug("OpenSearch k-NN 뉴스 검색 실패. 텍스트 검색으로 전환합니다: %s", exc)
 
             response = await client.search(
                 index=INDEX_NAME,
@@ -318,7 +369,7 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
 
         # OpenSearch 결과가 없거나 실패한 경우 -> RSS 실시간 뉴스 폴백
         import asyncio
-        
+
         # 동기 함수인 fetch_crypto_news를 이벤트 루프 블로킹 우회용 스레드로 실행 (Async-First 원칙 준수)
         rss_payload = await asyncio.to_thread(fetch_crypto_news)
         rss_items = rss_payload.get("items") or []
@@ -328,6 +379,7 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
             normalized_rss = [
                 {
                     "title": item.get("title"),
+                    "summary": item.get("summary") or item.get("title"),
                     "content": item.get("summary") or item.get("title"),
                     "source": "RSS_FEED",
                     "published_at": rss_payload.get("analysis_completed_at"),
@@ -751,15 +803,18 @@ async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisRespon
     system_prompt = build_analysis_system_prompt(custom_persona_prompt, self_correction_feedback)
 
     try:
-        analyzer = _get_gemini_analyzer()
-        analysis = await analyzer.generate_structured_analysis(
+        routed_result = await AIProviderRouter(db).generate_structured_analysis(
             system_prompt=system_prompt,
             user_prompt=_build_analysis_user_prompt(normalized_symbol, context_text),
             response_model=AIAnalysisResponse,
         )
+        analysis = routed_result.value
     except AIProviderRateLimitError as exc:
         logger.warning("AI 구조화 분석 quota 초과: symbol=%s error=%s", normalized_symbol, exc)
         raise
+    except AIProviderUnavailableError as exc:
+        logger.warning("AI provider 전체 사용 불가로 HOLD fallback을 사용합니다: symbol=%s error=%s", normalized_symbol, exc)
+        analysis = _build_fallback_analysis()
     except Exception as exc:
         logger.error("AI 구조화 분석 실패: symbol=%s error=%s", normalized_symbol, exc, exc_info=True)
         analysis = _build_fallback_analysis()

@@ -25,6 +25,7 @@ from app.services.market.sentiment_fetcher import refresh_market_sentiment_cache
 from app.services.portfolio.aggregator import PortfolioService
 from app.services.rag.ingestion import run_market_news_ingestion_job
 from app.services.ai.providers.gemini import AIProviderRateLimitError
+from app.services.bot_service import update_bot_runtime_status
 from app.services.trading.accuracy_worker import update_ai_analysis_accuracy
 from app.services.trading.ai_analyst import execute_ai_analysis
 from app.services.trading.ai_executor import execute_hard_tp_sl_check
@@ -39,7 +40,7 @@ MARKET_SENTIMENT_REFRESH_JOB_ID = "market_sentiment_refresh"
 AUTONOMOUS_AI_ANALYST_JOB_ID = "autonomous_ai_analyst_watchlist"
 AI_ACCURACY_CHECK_JOB_ID = "ai_accuracy_check"
 PORTFOLIO_SNAPSHOT_JOB_ID = "portfolio_snapshot_hourly"
-DEFAULT_PROVIDER = "openai"
+DEFAULT_PROVIDER = "auto"
 
 DEFAULT_NEWS_INTERVAL_HOURS = 4
 DEFAULT_SENTIMENT_INTERVAL_MINUTES = 5
@@ -437,6 +438,11 @@ async def autonomous_ai_analyst_job() -> None:
                         symbol,
                         exc,
                     )
+                    await update_bot_runtime_status(
+                        db,
+                        latest_action="Gemini 분석 제한으로 AI 루프 조기 중단",
+                        last_error=str(exc),
+                    )
                     break
                 except Exception:
                     logger.error(
@@ -471,9 +477,8 @@ async def daily_ai_briefing(force_refresh_news: bool = False, provider: str = DE
     from app.services.slack_bot import slack_bot
 
     try:
-        sentiment = await get_news_sentiment(force_refresh=force_refresh_news)
-
         async with AsyncSessionLocal() as db:
+            sentiment = await get_news_sentiment(force_refresh=force_refresh_news, db=db)
             portfolio_payload = await analyze_portfolio(provider=provider, db=db)
 
         report = str(portfolio_payload.get("report") or "").strip()
