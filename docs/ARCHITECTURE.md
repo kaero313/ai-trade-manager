@@ -26,7 +26,7 @@ graph TD
         Worker["Trading Worker Engine"]
         Bot["Slack & AI Control Bot"]
         Scheduler["APScheduler (AsyncIO)"]
-        VectorDB["ChromaDB (RAG)"]
+        VectorDB["OpenSearch 3.5.0 (RAG Vector DB)"]
 
         API -->|Async Session| DB[("PostgreSQL")]
         Worker -->|Async Session| DB
@@ -101,14 +101,14 @@ graph TD
         Reviewer -->|반려| Quant
     end
     
-    RAG -->|벡터 검색| ChromaDB["ChromaDB"]
+    RAG -->|벡터 검색| OpenSearch["OpenSearch market_news"]
     Quant -->|시세 조회| Upbit["Upbit API"]
     Supervisor -->|최종 답변| User
 ```
 
 ### 3.1. 에이전트 구성
 - **Supervisor:** 사용자 질문을 분류하여 적절한 전문 에이전트로 라우팅. 최종 답변 종합.
-- **RAG Agent:** ChromaDB 벡터 DB에서 과거 뉴스/분석 문서를 검색하여 근거 기반 답변 작성.
+- **RAG Agent:** OpenSearch 3.5.0 `market_news` 인덱스에서 Gemini 임베딩 기반 kNN 검색을 수행해 뉴스 문맥을 제공.
 - **Quant Agent:** 실시간 시세, 기술지표(RSI, MACD, BB), 호가, 체결 내역을 분석하는 도구(Tool) 보유.
 - **Reviewer Agent (Phase 40):** RAG/Quant의 답변을 검수. 할루시네이션 검출 + 투자 면책 조항 강제. 최대 2회 재작업 지시(순환형 Self-Correction Loop).
 
@@ -128,7 +128,7 @@ ai-trade-manager/
 │   ├── db/               # 비동기 세션, 커넥션 풀, Repository 함수
 │   ├── models/           # SQLAlchemy 2.0 도메인 ORM 모델 및 Pydantic 스키마
 │   └── services/         # 실제 비즈니스 로직 (Service Layer)
-│       ├── ai/           # LLM 연동 분석기 (OpenAI/Gemini)
+│       ├── ai/           # LLM 연동 분석기 (Gemini/OpenAI provider router)
 │       ├── backtesting/  # 과거 데이터 기반 시뮬레이션 엔진
 │       ├── brokers/      # 거래소 통신 클라이언트 (Upbit)
 │       ├── chat/         # LangGraph 멀티에이전트 오케스트레이터
@@ -157,7 +157,7 @@ ai-trade-manager/
 ## Phase 42 업데이트
 - AI 채팅 세션 메타데이터를 `chat_sessions` 테이블로 분리하고, 각 세션에 `surface`(`ai_banker` 또는 `portfolio`)를 부여했습니다.
 - AI 뱅커 메인 화면은 `ai_banker` 세션만 생성·조회합니다.
-- 포트폴리오 자동 브리핑과 포트폴리오 미니챗은 `portfolio` 세션을 공유하지만, AI 뱅커 세션 목록에는 노출되지 않습니다.
+- 포트폴리오 미니챗은 `portfolio` 세션을 사용하지만, AI 뱅커 세션 목록에는 노출되지 않습니다.
 - `ai_chat_messages`는 계속 메시지 본문을 저장하되, 모든 메시지는 `chat_sessions.session_id`를 부모로 참조합니다.
 ## Phase 42.1 업데이트
 - AI 뱅커 화면 상단에 기존 `/api/dashboard` 요약 데이터를 재사용한 포트폴리오 스냅샷 카드와 질문 유도 칩을 추가했습니다.
@@ -167,3 +167,22 @@ ai-trade-manager/
 - AI 뱅커 상단 소개 카드(`AI Banker Chat`, 설명 문구)는 제거하고, 그 자리를 얕은 포트폴리오 요약 bar로 대체했습니다.
 - AI 뱅커 화면 구조는 `상단 포트폴리오 bar + 좌측 세션 목록 + 우측 대화`로 정리했습니다.
 - 포트폴리오 요약은 기존 `/api/dashboard` 데이터를 재사용하며, `총 자산`, `KRW 잔고`, `상위 보유 종목 3개`만 읽기 전용으로 노출합니다.
+
+## Phase 42.4 업데이트
+- RAG 벡터 저장소는 OpenSearch 3.5.0의 `market_news` 인덱스를 유지합니다.
+- `embedding` 필드는 `knn_vector`, `dimension=1536`, `method=hnsw`, `engine=lucene`, `space_type=cosinesimil` 조합을 사용합니다.
+- 뉴스 파이프라인은 `뉴스 수집 -> Gemini 임베딩 -> OpenSearch 저장 -> kNN 검색 -> Gemini 분석` 순서로 동작하며, kNN 실패 시 텍스트 검색과 RSS 폴백으로 전환합니다.
+- 런타임 LLM provider는 `SystemConfig`의 AI provider 우선순위에 따라 Gemini/OpenAI 자동 fallback을 사용합니다.
+- AI 매수 기본 종목 비중 한도는 `max_allocation_pct=30`으로 운영합니다.
+
+## Phase 42.5 업데이트
+- AI 텍스트 생성 경로는 공통 `AIProviderRouter`를 통해 실행됩니다.
+- `ai_provider_priority`, `ai_provider_settings`, `ai_provider_status` SystemConfig JSON 값으로 provider 순서, 모델명, 쿼터 차단 상태를 관리합니다.
+- Gemini 일일 쿼터 소진은 Pacific time 자정까지 차단 상태로 저장하고, OpenAI rate limit은 응답 reset 힌트 또는 기본 쿨다운을 사용합니다.
+- 포트폴리오 브리핑, AI 채팅, `/api/ai/analyze`, 뉴스 감성 분석, 트레이딩 구조화 분석은 같은 우선순위 fallback을 공유합니다.
+- RAG 임베딩은 OpenSearch 벡터 차원 호환성을 위해 기존 Gemini embedding 경로를 유지합니다.
+
+## Phase 42.6 업데이트
+- 포트폴리오 상단 자동 브리핑은 LangGraph 채팅 세션을 생성하지 않고 `/api/portfolio/briefing` 전용 REST API를 호출합니다.
+- `/api/portfolio/briefing`은 현재 포트폴리오, 기간 손익 스냅샷, 최근 AI 판단, 캐시된 시장 심리를 하나의 compact prompt로 묶어 `AIProviderRouter`에 단일 호출합니다.
+- 포트폴리오 미니챗은 기존 LangGraph/SSE 채팅 경로를 유지해 사용자의 후속 질문만 멀티에이전트로 처리합니다.
