@@ -16,12 +16,34 @@ interface AiRuntimeDraft {
   aiMinConfidenceTrade: string
   aiAnalysisMaxAgeMinutes: string
   aiCustomPersonaPrompt: string
+  aiProviderPriority: AiProviderName[]
+  aiProviderSettings: AiProviderSettings
+  aiProviderStatus: AiProviderStatus
 }
 
 interface NoticeState {
   type: 'success' | 'error' | 'info'
   message: string
 }
+
+type AiProviderName = 'gemini' | 'openai'
+
+interface AiProviderConfig {
+  enabled: boolean
+  model: string
+}
+
+type AiProviderSettings = Record<AiProviderName, AiProviderConfig>
+
+interface AiProviderStatusItem {
+  blocked_until?: string
+  reason?: string
+  last_error_at?: string
+  last_error?: string
+  last_success_at?: string
+}
+
+type AiProviderStatus = Partial<Record<AiProviderName, AiProviderStatusItem>>
 
 const AUTONOMOUS_AI_INTERVAL_MINUTES_KEY = 'autonomous_ai_interval_minutes'
 const MAX_ALLOCATION_PCT_KEY = 'max_allocation_pct'
@@ -31,8 +53,17 @@ const AI_BRIEFING_TIME_KEY = 'ai_briefing_time'
 const AI_MIN_CONFIDENCE_TRADE_KEY = 'ai_min_confidence_trade'
 const AI_ANALYSIS_MAX_AGE_MINUTES_KEY = 'ai_analysis_max_age_minutes'
 const AI_CUSTOM_PERSONA_PROMPT_KEY = 'ai_custom_persona_prompt'
+const AI_PROVIDER_PRIORITY_KEY = 'ai_provider_priority'
+const AI_PROVIDER_SETTINGS_KEY = 'ai_provider_settings'
+const AI_PROVIDER_STATUS_KEY = 'ai_provider_status'
 
 const AUTONOMOUS_AI_INTERVAL_OPTIONS = ['15', '30', '60', '120', '240']
+const AI_PROVIDERS: AiProviderName[] = ['gemini', 'openai']
+const DEFAULT_AI_PROVIDER_PRIORITY: AiProviderName[] = ['gemini', 'openai']
+const DEFAULT_AI_PROVIDER_SETTINGS: AiProviderSettings = {
+  gemini: { enabled: true, model: 'gemini-3-flash-preview' },
+  openai: { enabled: true, model: 'gpt-5-mini' },
+}
 
 const PERSONA_PRESETS = [
   {
@@ -77,6 +108,52 @@ function findConfigValue(items: SystemConfigItem[] | undefined, configKey: strin
   return items?.find((item) => item.config_key === configKey)?.config_value ?? fallback
 }
 
+function parseJsonConfig<T>(rawValue: string, fallback: T): T {
+  try {
+    const parsed = JSON.parse(rawValue) as unknown
+    return parsed as T
+  } catch {
+    return fallback
+  }
+}
+
+function normalizeProviderPriority(rawValue: string): AiProviderName[] {
+  const parsed = parseJsonConfig<unknown>(rawValue, DEFAULT_AI_PROVIDER_PRIORITY)
+  const priority = Array.isArray(parsed)
+    ? parsed.filter((item): item is AiProviderName => AI_PROVIDERS.includes(item as AiProviderName))
+    : DEFAULT_AI_PROVIDER_PRIORITY
+  const deduped = priority.filter((provider, index) => priority.indexOf(provider) === index)
+  return [...deduped, ...AI_PROVIDERS.filter((provider) => !deduped.includes(provider))]
+}
+
+function normalizeProviderSettings(rawValue: string): AiProviderSettings {
+  const parsed = parseJsonConfig<Partial<Record<AiProviderName, Partial<AiProviderConfig>>>>(
+    rawValue,
+    DEFAULT_AI_PROVIDER_SETTINGS,
+  )
+
+  return AI_PROVIDERS.reduce((acc, provider) => {
+    const providerSettings = parsed[provider] ?? {}
+    acc[provider] = {
+      enabled: providerSettings.enabled ?? DEFAULT_AI_PROVIDER_SETTINGS[provider].enabled,
+      model: String(providerSettings.model ?? DEFAULT_AI_PROVIDER_SETTINGS[provider].model),
+    }
+    return acc
+  }, {} as AiProviderSettings)
+}
+
+function normalizeProviderStatus(rawValue: string): AiProviderStatus {
+  const parsed = parseJsonConfig<AiProviderStatus>(rawValue, {})
+  if (!parsed || typeof parsed !== 'object') {
+    return {}
+  }
+  return parsed
+}
+
+function stringifyJson(value: unknown): string {
+  return JSON.stringify(value)
+}
+
 function buildAiRuntimeDraft(items: SystemConfigItem[] | undefined): AiRuntimeDraft {
   return {
     autonomousAiIntervalMinutes: findConfigValue(items, AUTONOMOUS_AI_INTERVAL_MINUTES_KEY, '15'),
@@ -87,6 +164,13 @@ function buildAiRuntimeDraft(items: SystemConfigItem[] | undefined): AiRuntimeDr
     aiMinConfidenceTrade: findConfigValue(items, AI_MIN_CONFIDENCE_TRADE_KEY, '70'),
     aiAnalysisMaxAgeMinutes: findConfigValue(items, AI_ANALYSIS_MAX_AGE_MINUTES_KEY, '90'),
     aiCustomPersonaPrompt: findConfigValue(items, AI_CUSTOM_PERSONA_PROMPT_KEY, ''),
+    aiProviderPriority: normalizeProviderPriority(
+      findConfigValue(items, AI_PROVIDER_PRIORITY_KEY, stringifyJson(DEFAULT_AI_PROVIDER_PRIORITY)),
+    ),
+    aiProviderSettings: normalizeProviderSettings(
+      findConfigValue(items, AI_PROVIDER_SETTINGS_KEY, stringifyJson(DEFAULT_AI_PROVIDER_SETTINGS)),
+    ),
+    aiProviderStatus: normalizeProviderStatus(findConfigValue(items, AI_PROVIDER_STATUS_KEY, '{}')),
   }
 }
 
@@ -103,6 +187,66 @@ function NoticeMessage({ notice }: { notice: NoticeState }) {
     >
       {notice.message}
     </div>
+  )
+}
+
+function formatDateTime(value: string | undefined): string {
+  if (!value) {
+    return ''
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function resolveProviderStatusLabel(status: AiProviderStatusItem | undefined): {
+  tone: 'ready' | 'blocked' | 'error' | 'idle'
+  label: string
+} {
+  const blockedUntil = status?.blocked_until ? new Date(status.blocked_until) : null
+  if (blockedUntil && blockedUntil.getTime() > Date.now()) {
+    return {
+      tone: 'blocked',
+      label: `차단 중 · ${formatDateTime(status?.blocked_until)}까지`,
+    }
+  }
+  if (status?.last_error_at) {
+    return {
+      tone: 'error',
+      label: `최근 오류 · ${formatDateTime(status.last_error_at)}`,
+    }
+  }
+  if (status?.last_success_at) {
+    return {
+      tone: 'ready',
+      label: `정상 · ${formatDateTime(status.last_success_at)}`,
+    }
+  }
+  return { tone: 'idle', label: '대기' }
+}
+
+function ProviderStatusBadge({ status }: { status: AiProviderStatusItem | undefined }) {
+  const resolved = resolveProviderStatusLabel(status)
+  const toneClass =
+    resolved.tone === 'blocked'
+      ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200'
+      : resolved.tone === 'error'
+        ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200'
+        : resolved.tone === 'ready'
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+          : 'border-gray-200 bg-white text-gray-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
+      {resolved.label}
+    </span>
   )
 }
 
@@ -127,6 +271,37 @@ function AiRuntimeSettingsPanel() {
         [key]: value,
       }
     })
+  }
+
+  const setProviderPriority = (provider: AiProviderName, nextRank: number) => {
+    const others = draft.aiProviderPriority.filter((item) => item !== provider)
+    const nextPriority = [...others]
+    nextPriority.splice(nextRank - 1, 0, provider)
+    setDraftValue('aiProviderPriority', nextPriority)
+  }
+
+  const setProviderEnabled = (provider: AiProviderName, enabled: boolean) => {
+    setDraftValue('aiProviderSettings', {
+      ...draft.aiProviderSettings,
+      [provider]: {
+        ...draft.aiProviderSettings[provider],
+        enabled,
+      },
+    })
+  }
+
+  const setProviderModel = (provider: AiProviderName, model: string) => {
+    setDraftValue('aiProviderSettings', {
+      ...draft.aiProviderSettings,
+      [provider]: {
+        ...draft.aiProviderSettings[provider],
+        model,
+      },
+    })
+  }
+
+  const clearProviderStatus = () => {
+    setDraftValue('aiProviderStatus', {})
   }
 
   const handleSave = async () => {
@@ -178,6 +353,24 @@ function AiRuntimeSettingsPanel() {
       updates.push({
         config_key: AI_CUSTOM_PERSONA_PROMPT_KEY,
         config_value: draft.aiCustomPersonaPrompt,
+      })
+    }
+    if (stringifyJson(draft.aiProviderPriority) !== stringifyJson(serverDraft.aiProviderPriority)) {
+      updates.push({
+        config_key: AI_PROVIDER_PRIORITY_KEY,
+        config_value: stringifyJson(draft.aiProviderPriority),
+      })
+    }
+    if (stringifyJson(draft.aiProviderSettings) !== stringifyJson(serverDraft.aiProviderSettings)) {
+      updates.push({
+        config_key: AI_PROVIDER_SETTINGS_KEY,
+        config_value: stringifyJson(draft.aiProviderSettings),
+      })
+    }
+    if (stringifyJson(draft.aiProviderStatus) !== stringifyJson(serverDraft.aiProviderStatus)) {
+      updates.push({
+        config_key: AI_PROVIDER_STATUS_KEY,
+        config_value: stringifyJson(draft.aiProviderStatus),
       })
     }
 
@@ -235,6 +428,90 @@ function AiRuntimeSettingsPanel() {
 
         {!systemConfigsQuery.isLoading && !systemConfigsQuery.isError && (
           <>
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-gray-700 dark:bg-gray-700/30">
+              <div className="flex flex-col gap-3 border-b border-gray-200 pb-4 dark:border-gray-700 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI Provider</h3>
+                    <InfoTooltip
+                      title="AI Provider 우선순위"
+                      content="한도에 도달한 provider는 SystemConfig 상태에 기록되고, 해제 시각 전까지 다음 순위 provider를 먼저 사용합니다."
+                    />
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                    API 키는 환경변수에서만 읽고, 여기서는 호출 순서와 모델명만 관리합니다.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={clearProviderStatus}
+                  className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                >
+                  차단 상태 초기화
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                {AI_PROVIDERS.map((provider) => {
+                  const providerSettings = draft.aiProviderSettings[provider]
+                  const rank = draft.aiProviderPriority.indexOf(provider) + 1
+                  return (
+                    <div
+                      key={provider}
+                      className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800 lg:grid-cols-[130px_120px_minmax(180px,1fr)_auto]"
+                    >
+                      <div className="flex items-center justify-between gap-3 lg:block">
+                        <div className="text-sm font-semibold uppercase text-gray-900 dark:text-gray-100">
+                          {provider}
+                        </div>
+                        <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300 lg:mt-3">
+                          <input
+                            type="checkbox"
+                            checked={providerSettings.enabled}
+                            onChange={(event) => setProviderEnabled(provider, event.target.checked)}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          사용
+                        </label>
+                      </div>
+
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-semibold text-gray-500 dark:text-gray-400">
+                          우선순위
+                        </span>
+                        <select
+                          value={rank}
+                          onChange={(event) => setProviderPriority(provider, Number(event.target.value))}
+                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                        >
+                          {AI_PROVIDERS.map((_, index) => (
+                            <option key={index + 1} value={index + 1}>
+                              {index + 1}순위
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-semibold text-gray-500 dark:text-gray-400">
+                          모델명
+                        </span>
+                        <input
+                          value={providerSettings.model}
+                          onChange={(event) => setProviderModel(provider, event.target.value)}
+                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                        />
+                      </label>
+
+                      <div className="flex min-w-0 items-end">
+                        <ProviderStatusBadge status={draft.aiProviderStatus[provider]} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
                 <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
