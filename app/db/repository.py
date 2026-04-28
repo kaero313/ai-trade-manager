@@ -31,6 +31,19 @@ MARKET_SENTIMENT_SNAPSHOT_KEY = "market_sentiment_snapshot"
 AI_MIN_CONFIDENCE_TRADE_KEY = "ai_min_confidence_trade"
 AI_ANALYSIS_MAX_AGE_MINUTES_KEY = "ai_analysis_max_age_minutes"
 AI_CUSTOM_PERSONA_PROMPT_KEY = "ai_custom_persona_prompt"
+AI_PROVIDER_PRIORITY_KEY = "ai_provider_priority"
+AI_PROVIDER_SETTINGS_KEY = "ai_provider_settings"
+AI_PROVIDER_STATUS_KEY = "ai_provider_status"
+
+DEFAULT_AI_PROVIDER_PRIORITY_VALUE = json.dumps(["gemini", "openai"], ensure_ascii=False)
+DEFAULT_AI_PROVIDER_SETTINGS_VALUE = json.dumps(
+    {
+        "gemini": {"enabled": True, "model": "gemini-3-flash-preview"},
+        "openai": {"enabled": True, "model": "gpt-5-mini"},
+    },
+    ensure_ascii=False,
+)
+DEFAULT_AI_PROVIDER_STATUS_VALUE = "{}"
 
 SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     {
@@ -60,7 +73,7 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     },
     {
         "config_key": MAX_ALLOCATION_PCT_KEY,
-        "config_value": "10",
+        "config_value": "30",
         "description": "종목당 베팅 최대 한도: 총 KRW 자산 대비 %",
     },
     {
@@ -97,6 +110,21 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
         "config_key": AI_CUSTOM_PERSONA_PROMPT_KEY,
         "config_value": "",
         "description": "AI 커스텀 매매 페르소나 프롬프트",
+    },
+    {
+        "config_key": AI_PROVIDER_PRIORITY_KEY,
+        "config_value": DEFAULT_AI_PROVIDER_PRIORITY_VALUE,
+        "description": "AI provider 자동 전환 우선순위(JSON 배열)",
+    },
+    {
+        "config_key": AI_PROVIDER_SETTINGS_KEY,
+        "config_value": DEFAULT_AI_PROVIDER_SETTINGS_VALUE,
+        "description": "AI provider별 사용 여부와 모델명(JSON 객체)",
+    },
+    {
+        "config_key": AI_PROVIDER_STATUS_KEY,
+        "config_value": DEFAULT_AI_PROVIDER_STATUS_VALUE,
+        "description": "AI provider별 쿼터 차단/성공 상태(JSON 객체)",
     },
 )
 
@@ -199,6 +227,7 @@ async def bulk_upsert_system_configs(
 async def seed_system_configs_if_empty(db: AsyncSession) -> None:
     result = await db.execute(select(SystemConfigORM.config_key))
     existing_keys = set(result.scalars().all())
+    should_commit = False
 
     missing_configs = [
         SystemConfigORM(
@@ -209,11 +238,22 @@ async def seed_system_configs_if_empty(db: AsyncSession) -> None:
         for item in SYSTEM_CONFIG_SEEDS
         if item["config_key"] not in existing_keys
     ]
-    if not missing_configs:
-        return
 
-    db.add_all(missing_configs)
-    await db.commit()
+    if missing_configs:
+        db.add_all(missing_configs)
+        should_commit = True
+
+    if MAX_ALLOCATION_PCT_KEY in existing_keys:
+        max_allocation_config = await get_system_config(db, MAX_ALLOCATION_PCT_KEY)
+        if (
+            max_allocation_config is not None
+            and str(max_allocation_config.config_value).strip() == "10"
+        ):
+            max_allocation_config.config_value = "30"
+            should_commit = True
+
+    if should_commit:
+        await db.commit()
 
 
 def normalize_bot_config_payload(raw_payload: Any) -> dict[str, Any]:
