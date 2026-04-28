@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.models.domain import AIAnalysisLog, Asset, OrderHistory, Position
 from app.models.schemas import AIAnalysisLogItem, AIPerformanceSummary, AITradeRecord
-from app.services.ai.analyzer import AIAnalyzerFactory
 from app.services.ai.formatter import format_portfolio_for_llm
+from app.services.ai.provider_router import AIProviderRouter
 from app.services.portfolio.aggregator import PortfolioService
 from app.services.trading.ai_analyst import execute_ai_analysis
 
@@ -43,16 +43,17 @@ def _build_recent_trade(order: OrderHistory, asset: Asset, analysis: AIAnalysisL
 
 
 @router.get("/analyze")
-async def analyze_portfolio(provider: str = "openai", db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+async def analyze_portfolio(provider: str = "auto", db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     portfolio = await PortfolioService(db).get_aggregated_portfolio()
     portfolio_str = format_portfolio_for_llm(portfolio)
-    resolved_provider = (provider or "openai").strip().lower()
-    if resolved_provider not in {"openai", "gemini"}:
-        resolved_provider = "openai"
+    requested_provider = (provider or "auto").strip().lower()
+    preferred_provider = requested_provider if requested_provider in {"gemini", "openai"} else None
 
-    analyzer = AIAnalyzerFactory.get_analyzer(resolved_provider)
-    report = await analyzer.generate_report(portfolio_str)
-    return {"provider": resolved_provider, "report": report}
+    result = await AIProviderRouter(db).generate_report(
+        portfolio_str,
+        preferred_provider=preferred_provider,
+    )
+    return {"provider": result.provider, "model": result.model, "report": result.value}
 
 
 @router.get("/latest-analysis", response_model=AIAnalysisLogItem | None)
