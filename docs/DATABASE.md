@@ -54,7 +54,7 @@
 ### 3.4. `bot_configs` (봇 설정)
 매매 알고리즘의 파라미터 모음집. 프론트엔드 UI에서 실시간 수정 가능.
 *   `id`: (PK) 고유 번호
-*   `config_json`: (JSON) 전략, 리스크, 그리드, 스케줄 등 동적 설정
+*   `config_json`: (JSON) AI 매매 대상, 전략, 리스크, 스케줄 등 동적 설정
 *   `is_active`: (Boolean) 설정 프로필 작동 여부
 
 ### 3.5. `system_configs` (시스템 설정) [Phase 14 추가]
