@@ -2,17 +2,30 @@ import { apiClient } from './api'
 
 export type BacktestTimeframe = '60m' | '240m' | 'days'
 
+export interface BacktestStrategy {
+  ema_fast: number
+  ema_slow: number
+  rsi_period: number
+  rsi_min: number
+  trailing_stop_pct: number
+}
+
+export interface BacktestPolicy {
+  min_confidence: number
+  max_allocation_pct: number
+  take_profit_pct: number
+  stop_loss_pct: number
+  cooldown_minutes: number
+}
+
 export interface BacktestRunRequest {
   market: string
   start_date: string
   end_date: string
   timeframe: BacktestTimeframe
   initial_balance: number
-  grid_upper_bound: number
-  grid_lower_bound: number
-  grid_order_krw: number
-  grid_sell_pct: number
-  grid_cooldown_seconds: number
+  strategy: BacktestStrategy
+  policy: BacktestPolicy
 }
 
 export interface BacktestSummary {
@@ -60,6 +73,20 @@ export interface BacktestTrade {
   fee: number
   krw_balance: number
   coin_balance: number
+  reason?: string | null
+  confidence?: number | null
+  recommended_weight?: number | null
+}
+
+export interface BacktestEquityPoint {
+  time: number
+  equity: number
+  pnl_pct: number
+}
+
+export interface BacktestDrawdownPoint {
+  time: number
+  drawdown_pct: number
 }
 
 export interface BacktestMeta {
@@ -74,12 +101,22 @@ export interface BacktestMeta {
   position_qty: number
 }
 
+export interface BacktestAiBriefing {
+  content: string
+  provider: string | null
+  model: string | null
+  fallback: boolean
+}
+
 export interface BacktestRunResponse {
   summary: BacktestSummary
   candles: BacktestCandle[]
   markers: BacktestMarker[]
   trades: BacktestTrade[]
+  equity_curve: BacktestEquityPoint[]
+  drawdown_curve: BacktestDrawdownPoint[]
   meta: BacktestMeta
+  ai_briefing: BacktestAiBriefing
 }
 
 export async function runBacktest(payload: BacktestRunRequest): Promise<BacktestRunResponse> {
