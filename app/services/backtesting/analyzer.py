@@ -9,6 +9,8 @@ SELL_COLOR = "#3b82f6"
 def analyze_backtest_result(backtest_result: dict[str, Any]) -> dict[str, Any]:
     candles = _normalize_candles(backtest_result.get("candles"))
     trades = _normalize_trades(backtest_result.get("trades"))
+    equity_curve = _normalize_equity_curve(backtest_result.get("equity_curve"))
+    drawdown_curve = _normalize_drawdown_curve(backtest_result.get("drawdown_curve"))
     initial_balance = _to_float(backtest_result.get("initial_balance"))
     final_balance = _to_float(backtest_result.get("final_balance"))
 
@@ -16,7 +18,7 @@ def analyze_backtest_result(backtest_result: dict[str, Any]) -> dict[str, Any]:
     if initial_balance > 0:
         total_return_pct = ((final_balance - initial_balance) / initial_balance) * 100.0
 
-    max_drawdown_pct = _calculate_max_drawdown_pct(initial_balance, trades)
+    max_drawdown_pct = _calculate_max_drawdown_pct(initial_balance, trades, drawdown_curve)
     win_rate = _calculate_win_rate(trades)
     markers = _build_markers(trades)
 
@@ -44,7 +46,11 @@ def analyze_backtest_result(backtest_result: dict[str, Any]) -> dict[str, Any]:
         "candles": candles,
         "markers": markers,
         "trades": trades,
+        "equity_curve": equity_curve,
+        "drawdown_curve": drawdown_curve,
         "meta": meta,
+        "strategy": backtest_result.get("strategy") if isinstance(backtest_result.get("strategy"), dict) else {},
+        "policy": backtest_result.get("policy") if isinstance(backtest_result.get("policy"), dict) else {},
     }
 
 
@@ -101,6 +107,9 @@ def _normalize_trades(raw_trades: Any) -> list[dict[str, Any]]:
             "fee": _to_float(item.get("fee")),
             "krw_balance": _to_float(item.get("krw_balance")),
             "coin_balance": _to_float(item.get("coin_balance")),
+            "reason": str(item.get("reason") or "").strip() or None,
+            "confidence": _to_optional_int(item.get("confidence")),
+            "recommended_weight": _to_optional_int(item.get("recommended_weight")),
             "_parsed_timestamp": parsed_timestamp,
         }
         normalized.append(row)
@@ -116,7 +125,51 @@ def _normalize_trades(raw_trades: Any) -> list[dict[str, Any]]:
     return normalized
 
 
-def _calculate_max_drawdown_pct(initial_balance: float, trades: list[dict[str, Any]]) -> float:
+def _normalize_equity_curve(raw_points: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_points, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for item in raw_points:
+        if not isinstance(item, dict):
+            continue
+        point = {
+            "time": int(item.get("time") or 0),
+            "equity": _to_float(item.get("equity")),
+            "pnl_pct": _to_float(item.get("pnl_pct")),
+        }
+        if point["time"] > 0:
+            normalized.append(point)
+    normalized.sort(key=lambda item: int(item["time"]))
+    return normalized
+
+
+def _normalize_drawdown_curve(raw_points: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw_points, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for item in raw_points:
+        if not isinstance(item, dict):
+            continue
+        point = {
+            "time": int(item.get("time") or 0),
+            "drawdown_pct": _to_float(item.get("drawdown_pct")),
+        }
+        if point["time"] > 0:
+            normalized.append(point)
+    normalized.sort(key=lambda item: int(item["time"]))
+    return normalized
+
+
+def _calculate_max_drawdown_pct(
+    initial_balance: float,
+    trades: list[dict[str, Any]],
+    drawdown_curve: list[dict[str, Any]],
+) -> float:
+    if drawdown_curve:
+        return max(_to_float(point.get("drawdown_pct")) for point in drawdown_curve)
+
     equity_curve: list[float] = []
     if initial_balance > 0:
         equity_curve.append(initial_balance)
@@ -249,5 +302,14 @@ def _to_optional_float(value: Any) -> float | None:
         return None
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
     except (TypeError, ValueError):
         return None
