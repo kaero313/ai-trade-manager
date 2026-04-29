@@ -6,7 +6,6 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -96,7 +95,7 @@ class SupervisorDecision(BaseModel):
     response: str = Field(..., min_length=1)
 
 
-def _build_chat_model(candidate: AIProviderCandidate) -> ChatGoogleGenerativeAI | ChatOpenAI:
+def _build_chat_model(candidate: AIProviderCandidate) -> Any:
     if candidate.provider == "openai":
         if not settings.OPENAI_API_KEY:
             raise RuntimeError("OPENAI_API_KEY가 설정되지 않아 Chat Orchestrator를 실행할 수 없습니다.")
@@ -104,6 +103,13 @@ def _build_chat_model(candidate: AIProviderCandidate) -> ChatGoogleGenerativeAI 
 
     if not settings.GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY 가 설정되지 않아 Chat Orchestrator 를 실행할 수 없습니다.")
+
+    try:
+        from langchain_google_genai import ChatGoogleGenerativeAI
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "langchain-google-genai 패키지가 없어 Gemini 채팅 모델을 초기화할 수 없습니다."
+        ) from exc
 
     return ChatGoogleGenerativeAI(
         model=candidate.model,
