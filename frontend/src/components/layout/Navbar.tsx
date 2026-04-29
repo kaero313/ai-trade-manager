@@ -45,12 +45,16 @@ function resolveNavLinkClassName({ isActive }: { isActive: boolean }): string {
 }
 
 function renderNavLinks() {
-  return NAV_ITEMS.map(({ to, label, end, icon: Icon }) => (
-    <NavLink key={to} to={to} end={end} className={resolveNavLinkClassName}>
-      {Icon ? <Icon className="h-4 w-4" /> : null}
-      <span>{label}</span>
-    </NavLink>
-  ))
+  return NAV_ITEMS.map(({ to, label, end, icon: Icon }) => {
+    const visibleLabel = to === '/laboratory' ? '정책 검증' : label
+
+    return (
+      <NavLink key={to} to={to} end={end} className={resolveNavLinkClassName}>
+        {Icon ? <Icon className="h-4 w-4" /> : null}
+        <span>{visibleLabel}</span>
+      </NavLink>
+    )
+  })
 }
 
 function Navbar({ aiStatus, totalNetWorth, totalPnl, isPortfolioLoading, portfolioError }: NavbarProps) {
