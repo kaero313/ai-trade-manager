@@ -1,8 +1,7 @@
 from datetime import datetime
-from typing import Any
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.domain import ChatSessionSurface
 
@@ -29,15 +28,6 @@ class ScheduleParams(BaseModel):
     end_hour: int | None = None
 
 
-class GridParams(BaseModel):
-    target_coin: str = "BTC"
-    grid_upper_bound: float = 100000000.0
-    grid_lower_bound: float = 80000000.0
-    grid_order_krw: float = 10000.0
-    grid_sell_pct: float = 100.0
-    grid_cooldown_seconds: int = 60
-
-
 class BotConfig(BaseModel):
     symbols: list[str] = Field(default_factory=lambda: ["KRW-BTC"])
     allocation_pct_per_symbol: list[float] = Field(default_factory=lambda: [1.0])
@@ -45,28 +35,6 @@ class BotConfig(BaseModel):
     risk: RiskParams = RiskParams()
     schedule: ScheduleParams = ScheduleParams()
     trade_mode: str = "ai"
-    grid: GridParams = Field(default_factory=GridParams)
-
-    @model_validator(mode="before")
-    @classmethod
-    def lift_trade_mode_to_root(cls, raw_value: Any) -> Any:
-        if not isinstance(raw_value, dict):
-            return raw_value
-
-        payload = dict(raw_value)
-        raw_grid = payload.get("grid")
-        grid = dict(raw_grid) if isinstance(raw_grid, dict) else {}
-        root_trade_mode = str(payload.get("trade_mode") or "").strip()
-        nested_trade_mode = str(grid.get("trade_mode") or "").strip()
-
-        if not root_trade_mode and nested_trade_mode:
-            payload["trade_mode"] = nested_trade_mode
-
-        if "trade_mode" in grid:
-            grid.pop("trade_mode", None)
-            payload["grid"] = grid
-
-        return payload
 
 
 class BotStatus(BaseModel):
