@@ -28,16 +28,6 @@ export interface ScheduleParams {
   end_hour: number | null
 }
 
-export interface GridParams {
-  target_coin: string
-  grid_upper_bound: number
-  grid_lower_bound: number
-  grid_order_krw: number
-  grid_sell_pct: number
-  grid_cooldown_seconds: number
-  trade_mode?: string
-}
-
 export interface BotConfig {
   symbols?: string[]
   allocation_pct_per_symbol?: number[]
@@ -45,7 +35,6 @@ export interface BotConfig {
   risk?: RiskParams
   schedule?: ScheduleParams
   trade_mode?: string
-  grid?: GridParams
 }
 
 export interface BotStatus {

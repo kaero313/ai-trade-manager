@@ -10,7 +10,6 @@ import { getBotConfig, updateBotConfig, type BotConfig } from '../../services/ap
 type StrategyConfig = NonNullable<BotConfig['strategy']>
 type RiskConfig = NonNullable<BotConfig['risk']>
 type ScheduleConfig = NonNullable<BotConfig['schedule']>
-type GridConfig = NonNullable<BotConfig['grid']>
 
 interface NormalizedBotConfig {
   symbols: string[]
@@ -18,7 +17,6 @@ interface NormalizedBotConfig {
   strategy: StrategyConfig
   risk: RiskConfig
   schedule: ScheduleConfig
-  grid: GridConfig
 }
 
 interface BotConfigDraft {
@@ -49,14 +47,6 @@ const DEFAULT_BOT_CONFIG: NormalizedBotConfig = {
     enabled: true,
     start_hour: null,
     end_hour: null,
-  },
-  grid: {
-    target_coin: 'BTC',
-    grid_upper_bound: 100000000,
-    grid_lower_bound: 80000000,
-    grid_order_krw: 10000,
-    grid_sell_pct: 100,
-    grid_cooldown_seconds: 60,
   },
 }
 
@@ -110,15 +100,6 @@ function normalizeBotConfig(config: BotConfig | undefined): NormalizedBotConfig 
       enabled: config?.schedule?.enabled ?? DEFAULT_BOT_CONFIG.schedule.enabled,
       start_hour: config?.schedule?.start_hour ?? DEFAULT_BOT_CONFIG.schedule.start_hour,
       end_hour: config?.schedule?.end_hour ?? DEFAULT_BOT_CONFIG.schedule.end_hour,
-    },
-    grid: {
-      target_coin: config?.grid?.target_coin ?? DEFAULT_BOT_CONFIG.grid.target_coin,
-      grid_upper_bound: config?.grid?.grid_upper_bound ?? DEFAULT_BOT_CONFIG.grid.grid_upper_bound,
-      grid_lower_bound: config?.grid?.grid_lower_bound ?? DEFAULT_BOT_CONFIG.grid.grid_lower_bound,
-      grid_order_krw: config?.grid?.grid_order_krw ?? DEFAULT_BOT_CONFIG.grid.grid_order_krw,
-      grid_sell_pct: config?.grid?.grid_sell_pct ?? DEFAULT_BOT_CONFIG.grid.grid_sell_pct,
-      grid_cooldown_seconds:
-        config?.grid?.grid_cooldown_seconds ?? DEFAULT_BOT_CONFIG.grid.grid_cooldown_seconds,
     },
   }
 }
@@ -187,7 +168,6 @@ function buildBotConfigUpdate(draft: BotConfigDraft, baseConfig: NormalizedBotCo
     risk: baseConfig.risk,
     schedule: baseConfig.schedule,
     trade_mode: 'ai',
-    grid: baseConfig.grid,
   }
 }
 
