@@ -1,10 +1,9 @@
 import { AlertTriangle } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 
 import { useSystemConfigs } from '../../hooks/useSystemConfigs'
+import { usePortfolioSummary } from '../../hooks/usePortfolioSummary'
 import AiCoreStatus from '../trading/AiCoreStatus'
-import { getPortfolioSummary } from '../../services/portfolioService'
-import type { PortfolioSummary } from '../../services/portfolioService'
 import Navbar from './Navbar'
 
 interface LayoutProps {
@@ -15,85 +14,47 @@ const TRADING_MODE_KEY = 'trading_mode'
 
 function Layout({ children }: LayoutProps) {
   const systemConfigsQuery = useSystemConfigs()
-  const [portfolioSummary, setPortfolioSummary] = useState<PortfolioSummary | null>(null)
-  const [portfolioErrorCode, setPortfolioErrorCode] = useState<string | null>(null)
-  const [isPortfolioLoading, setIsPortfolioLoading] = useState(true)
+  const portfolioSummaryQuery = usePortfolioSummary()
+  const lastPortfolioWarningRef = useRef<string | null>(null)
 
   useEffect(() => {
-    let isMounted = true
-    let isPolling = false
-    let pollingIntervalId: number | undefined
+    const warningKey = portfolioSummaryQuery.isError
+      ? portfolioSummaryQuery.error instanceof Error
+        ? portfolioSummaryQuery.error.message
+        : 'PORTFOLIO_FETCH_FAILED'
+      : portfolioSummaryQuery.data?.is_stale && portfolioSummaryQuery.data.error
+        ? portfolioSummaryQuery.data.error
+        : null
 
-    const loadPortfolioInitial = async () => {
-      setIsPortfolioLoading(true)
-
-      try {
-        const summary = await getPortfolioSummary()
-        if (!isMounted) {
-          return
-        }
-        setPortfolioSummary(summary)
-        setPortfolioErrorCode(summary.error ?? null)
-      } catch (error) {
-        console.warn('[Layout polling] portfolio refresh failed', error)
-        if (!isMounted) {
-          return
-        }
-        setPortfolioErrorCode('PORTFOLIO_FETCH_FAILED')
-      } finally {
-        if (isMounted) {
-          setIsPortfolioLoading(false)
-        }
-      }
+    if (warningKey === null) {
+      lastPortfolioWarningRef.current = null
+      return
     }
 
-    const refreshPortfolioSilent = async () => {
-      if (isPolling) {
-        return
-      }
-
-      isPolling = true
-      try {
-        const summary = await getPortfolioSummary()
-        if (!isMounted) {
-          return
-        }
-        setPortfolioSummary(summary)
-        setPortfolioErrorCode(summary.error ?? null)
-      } catch (error) {
-        console.warn('[Layout polling] portfolio refresh failed', error)
-        if (!isMounted) {
-          return
-        }
-        setPortfolioErrorCode('PORTFOLIO_FETCH_FAILED')
-      } finally {
-        isPolling = false
-      }
+    if (lastPortfolioWarningRef.current !== warningKey) {
+      console.warn('[Layout polling] portfolio refresh degraded', warningKey)
+      lastPortfolioWarningRef.current = warningKey
     }
+  }, [
+    portfolioSummaryQuery.data?.error,
+    portfolioSummaryQuery.data?.is_stale,
+    portfolioSummaryQuery.error,
+    portfolioSummaryQuery.isError,
+  ])
 
-    const bootstrap = async () => {
-      await loadPortfolioInitial()
-      if (!isMounted) {
-        return
-      }
-
-      pollingIntervalId = window.setInterval(() => {
-        void refreshPortfolioSilent()
-      }, 10000)
-    }
-
-    void bootstrap()
-
-    return () => {
-      isMounted = false
-      if (pollingIntervalId !== undefined) {
-        window.clearInterval(pollingIntervalId)
-      }
-    }
-  }, [])
-
+  const portfolioSummary = portfolioSummaryQuery.data ?? null
   const totalNetWorth = portfolioSummary?.total_net_worth ?? 0
   const totalPnl = portfolioSummary?.total_pnl ?? 0
+  const isPortfolioLoading = portfolioSummaryQuery.isLoading
+  const portfolioErrorCode =
+    portfolioSummaryQuery.isError && portfolioSummary === null
+      ? 'PORTFOLIO_FETCH_FAILED'
+      : portfolioSummary?.error ?? null
+  const isPortfolioStale =
+    Boolean(portfolioSummary?.is_stale) ||
+    (portfolioSummaryQuery.isError && portfolioSummary !== null)
+  const portfolioUpdatedAt = portfolioSummary?.updated_at ?? null
+  const portfolioSource = portfolioSummary?.source ?? null
   const isPaperTradingMode = useMemo(() => {
     const tradingModeValue =
       systemConfigsQuery.data?.find((item) => item.config_key === TRADING_MODE_KEY)?.config_value ?? 'live'
@@ -109,6 +70,9 @@ function Layout({ children }: LayoutProps) {
         totalPnl={totalPnl}
         isPortfolioLoading={isPortfolioLoading}
         portfolioError={portfolioErrorCode}
+        portfolioIsStale={isPortfolioStale}
+        portfolioUpdatedAt={portfolioUpdatedAt}
+        portfolioSource={portfolioSource}
       />
       <main className="mx-auto flex-1 min-h-0 w-full max-w-full overflow-y-auto px-4 pb-10 pt-28 sm:px-6 lg:px-8 lg:pt-24">
         {isPaperTradingMode && (
