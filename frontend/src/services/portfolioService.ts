@@ -16,6 +16,9 @@ export interface PortfolioSummary {
   total_pnl: number
   items: AssetItem[]
   error?: string | null
+  source: 'live' | 'snapshot' | 'empty'
+  is_stale: boolean
+  updated_at: string | null
 }
 
 export interface OrderHistoryItem {
@@ -66,7 +69,9 @@ interface PortfolioSnapshotListResponse {
 }
 
 export async function getPortfolioSummary(): Promise<PortfolioSummary> {
-  const { data } = await apiClient.get<PortfolioSummary>('/dashboard')
+  const { data } = await apiClient.get<PortfolioSummary>('/dashboard', {
+    timeout: 6000,
+  })
   return data
 }
 
