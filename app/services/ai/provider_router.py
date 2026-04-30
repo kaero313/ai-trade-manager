@@ -197,6 +197,93 @@ def resolve_provider_candidates(
     return candidates
 
 
+def resolve_provider_runtime_status(
+    *,
+    priority_value: Any,
+    settings_value: Any,
+    status_value: Any,
+    now: datetime | None = None,
+    preferred_provider: str | None = None,
+    available_providers: Mapping[str, bool] | None = None,
+) -> dict[str, Any]:
+    current = normalize_utc(now or utc_now())
+    priority = _normalize_priority(priority_value)
+    provider_settings = _normalize_settings(settings_value)
+    provider_status = _normalize_status(status_value)
+    availability = available_providers or {
+        provider: _has_valid_api_key(provider) for provider in SUPPORTED_AI_PROVIDERS
+    }
+    candidates = resolve_provider_candidates(
+        priority_value=priority,
+        settings_value=provider_settings,
+        status_value=provider_status,
+        now=current,
+        preferred_provider=preferred_provider,
+        available_providers=availability,
+    )
+    candidate_providers = [candidate.provider for candidate in candidates]
+    active_provider = candidate_providers[0] if candidate_providers else None
+    candidate_models = {candidate.provider: candidate.model for candidate in candidates}
+
+    providers: list[dict[str, Any]] = []
+    for rank, provider in enumerate(priority, start=1):
+        current_settings = provider_settings.get(provider, {})
+        current_status = provider_status.get(provider, {})
+        enabled = bool(current_settings.get("enabled", True))
+        api_key_configured = bool(availability.get(provider))
+        blocked_until = _parse_datetime(current_status.get("blocked_until"))
+        is_blocked = blocked_until is not None and blocked_until > current
+        is_candidate = provider in candidate_providers
+        provider_model = str(
+            candidate_models.get(provider)
+            or current_settings.get("model")
+            or DEFAULT_PROVIDER_MODELS[provider]
+        ).strip()
+        skip_reason: str | None = None
+        status = "ready"
+
+        if not enabled:
+            status = "disabled"
+            skip_reason = "설정에서 비활성화됨"
+        elif not api_key_configured:
+            status = "missing_key"
+            skip_reason = f"{provider.upper()} API 키가 환경변수에 없음"
+        elif is_blocked:
+            status = "blocked"
+            skip_reason = "쿼터 또는 rate limit으로 일시 차단됨"
+        elif provider == active_provider:
+            status = "active"
+        elif is_candidate:
+            status = "fallback_ready"
+        elif current_status.get("last_error_at"):
+            status = "error"
+            skip_reason = "최근 호출 오류 확인 필요"
+
+        providers.append(
+            {
+                "provider": provider,
+                "rank": rank,
+                "enabled": enabled,
+                "model": provider_model,
+                "api_key_configured": api_key_configured,
+                "status": status,
+                "is_candidate": is_candidate,
+                "skip_reason": skip_reason,
+                "blocked_until": _serialize_datetime(blocked_until) if blocked_until else None,
+                "reason": current_status.get("reason"),
+                "last_error_at": current_status.get("last_error_at"),
+                "last_error": str(current_status.get("last_error") or "")[:300] or None,
+                "last_success_at": current_status.get("last_success_at"),
+            }
+        )
+
+    return {
+        "generated_at": _serialize_datetime(current),
+        "active_provider": active_provider,
+        "providers": providers,
+    }
+
+
 class AIProviderRouter:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
@@ -226,6 +313,15 @@ class AIProviderRouter:
     async def get_candidates(self, preferred_provider: str | None = None) -> list[AIProviderCandidate]:
         priority_value, settings_value, status_value = await self._load_config_values()
         return resolve_provider_candidates(
+            priority_value=priority_value,
+            settings_value=settings_value,
+            status_value=status_value,
+            preferred_provider=preferred_provider,
+        )
+
+    async def get_runtime_status(self, preferred_provider: str | None = None) -> dict[str, Any]:
+        priority_value, settings_value, status_value = await self._load_config_values()
+        return resolve_provider_runtime_status(
             priority_value=priority_value,
             settings_value=settings_value,
             status_value=status_value,

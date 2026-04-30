@@ -108,6 +108,36 @@ class SystemConfigUpdateItem(BaseModel):
     config_value: str = Field(...)
 
 
+class AIProviderRuntimeStatusItem(BaseModel):
+    provider: Literal["gemini", "openai"]
+    rank: int = Field(..., ge=1)
+    enabled: bool
+    model: str
+    api_key_configured: bool
+    status: Literal[
+        "active",
+        "fallback_ready",
+        "ready",
+        "blocked",
+        "disabled",
+        "missing_key",
+        "error",
+    ]
+    is_candidate: bool
+    skip_reason: str | None = None
+    blocked_until: str | None = None
+    reason: str | None = None
+    last_error_at: str | None = None
+    last_error: str | None = None
+    last_success_at: str | None = None
+
+
+class AIProviderRuntimeStatusResponse(BaseModel):
+    generated_at: str
+    active_provider: Literal["gemini", "openai"] | None = None
+    providers: list[AIProviderRuntimeStatusItem]
+
+
 class ChatSessionCreateRequest(BaseModel):
     surface: ChatSessionSurface = ChatSessionSurface.AI_BANKER
 
