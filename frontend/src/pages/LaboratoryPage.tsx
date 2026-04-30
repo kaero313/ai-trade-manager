@@ -29,7 +29,6 @@ import {
   CartesianGrid,
   Line,
   LineChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -83,6 +82,7 @@ const POLICY_PRESETS = {
 
 type PolicyPresetKey = keyof typeof POLICY_PRESETS
 type ResultTab = 'price' | 'equity' | 'drawdown' | 'trades'
+const CURVE_CHART_HEIGHT = 360
 
 interface LaboratoryFormState {
   market: string
@@ -316,6 +316,40 @@ function PriceChart({
   return <div ref={containerRef} className="h-[420px] w-full" />
 }
 
+function useMeasuredWidth() {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [width, setWidth] = useState(0)
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) {
+      return
+    }
+
+    const updateWidth = (nextWidth: number) => {
+      const measuredWidth = Math.floor(nextWidth)
+      if (measuredWidth > 0) {
+        setWidth(measuredWidth)
+      }
+    }
+
+    updateWidth(container.getBoundingClientRect().width)
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (entry) {
+        updateWidth(entry.contentRect.width)
+      }
+    })
+    resizeObserver.observe(container)
+
+    return () => {
+      resizeObserver.disconnect()
+    }
+  }, [])
+
+  return { containerRef, width }
+}
+
 function CurveChart({
   data,
   mode,
@@ -327,45 +361,31 @@ function CurveChart({
 }) {
   const stroke = mode === 'equity' ? '#10b981' : '#ef4444'
   const tickColor = isDarkMode ? '#9ca3af' : '#6b7280'
+  const { containerRef, width } = useMeasuredWidth()
 
   if (data.length === 0) {
     return (
-      <div className="flex h-[360px] items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+      <div className="flex h-[360px] min-w-0 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
         표시할 곡선 데이터가 없습니다.
+      </div>
+    )
+  }
+
+  if (width <= 0) {
+    return (
+      <div
+        ref={containerRef}
+        className="flex h-[360px] min-w-0 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+      >
+        차트 영역을 준비 중입니다.
       </div>
     )
   }
 
   if (mode === 'drawdown') {
     return (
-      <div className="h-[360px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? '#374151' : '#e5e7eb'} />
-            <XAxis
-              dataKey="time"
-              tickFormatter={formatDateLabel}
-              tick={{ fill: tickColor, fontSize: 12 }}
-            />
-            <YAxis
-              tickFormatter={(value) => `${Number(value).toFixed(1)}%`}
-              tick={{ fill: tickColor, fontSize: 12 }}
-            />
-            <Tooltip
-              labelFormatter={(value) => formatDateLabel(Number(value))}
-              formatter={(value) => [`${Number(value).toFixed(2)}%`, '드로다운']}
-            />
-            <Area type="monotone" dataKey="value" stroke={stroke} fill="#fee2e2" />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-    )
-  }
-
-  return (
-    <div className="h-[360px]">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
+      <div ref={containerRef} className="h-[360px] min-w-0 overflow-hidden">
+        <AreaChart width={width} height={CURVE_CHART_HEIGHT} data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? '#374151' : '#e5e7eb'} />
           <XAxis
             dataKey="time"
@@ -373,16 +393,38 @@ function CurveChart({
             tick={{ fill: tickColor, fontSize: 12 }}
           />
           <YAxis
-            tickFormatter={(value) => formatCompactKrw(Number(value))}
+            tickFormatter={(value) => `${Number(value).toFixed(1)}%`}
             tick={{ fill: tickColor, fontSize: 12 }}
           />
           <Tooltip
             labelFormatter={(value) => formatDateLabel(Number(value))}
-            formatter={(value) => [formatKrw(Number(value)), '자산']}
+            formatter={(value) => [`${Number(value).toFixed(2)}%`, '드로다운']}
           />
-          <Line type="monotone" dataKey="value" stroke={stroke} strokeWidth={2} dot={false} />
-        </LineChart>
-      </ResponsiveContainer>
+          <Area type="monotone" dataKey="value" stroke={stroke} fill="#fee2e2" />
+        </AreaChart>
+      </div>
+    )
+  }
+
+  return (
+    <div ref={containerRef} className="h-[360px] min-w-0 overflow-hidden">
+      <LineChart width={width} height={CURVE_CHART_HEIGHT} data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? '#374151' : '#e5e7eb'} />
+        <XAxis
+          dataKey="time"
+          tickFormatter={formatDateLabel}
+          tick={{ fill: tickColor, fontSize: 12 }}
+        />
+        <YAxis
+          tickFormatter={(value) => formatCompactKrw(Number(value))}
+          tick={{ fill: tickColor, fontSize: 12 }}
+        />
+        <Tooltip
+          labelFormatter={(value) => formatDateLabel(Number(value))}
+          formatter={(value) => [formatKrw(Number(value)), '자산']}
+        />
+        <Line type="monotone" dataKey="value" stroke={stroke} strokeWidth={2} dot={false} />
+      </LineChart>
     </div>
   )
 }
