@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import AiInsightBriefing from '../components/trading/AiInsightBriefing'
@@ -12,20 +13,23 @@ import MarketSearchBar from '../components/trading/MarketSearchBar'
 import PortfolioChart from '../components/trading/PortfolioChart'
 import RecentOrders from '../components/trading/RecentOrders'
 import WatchlistSidebar from '../components/trading/Watchlist'
-import { fetchOrders, getPortfolioSummary } from '../services/portfolioService'
-import type { AssetItem, OrderHistoryItem, PortfolioSummary } from '../services/portfolioService'
+import { usePortfolioSummary } from '../hooks/usePortfolioSummary'
+import { fetchOrders } from '../services/portfolioService'
+import type { AssetItem } from '../services/portfolioService'
 
 function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [macroTab, setMacroTab] = useState<'sentiment' | 'news'>('sentiment')
   const [rightPanelTab, setRightPanelTab] = useState<'portfolio' | 'performance'>('portfolio')
-  const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
-  const [portfolioErrorCode, setPortfolioErrorCode] = useState<string | null>(null)
-  const [orders, setOrders] = useState<OrderHistoryItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [isOrdersLoading, setIsOrdersLoading] = useState(true)
-  const [, setErrorMessage] = useState<string | null>(null)
-  const [ordersErrorMessage, setOrdersErrorMessage] = useState<string | null>(null)
+  const portfolioSummaryQuery = usePortfolioSummary()
+  const ordersQuery = useQuery({
+    queryKey: ['dashboard-orders'],
+    queryFn: fetchOrders,
+    refetchInterval: (query) => (query.state.status === 'error' ? 30000 : 15000),
+    refetchIntervalInBackground: true,
+    placeholderData: (previousData) => previousData,
+    retry: 1,
+  })
 
   const selectedSymbol = searchParams.get('symbol')
   const setSelectedSymbol = (symbol: string) => {
@@ -34,102 +38,14 @@ function DashboardPage() {
     setSearchParams(nextParams, { replace: true })
   }
 
-  useEffect(() => {
-    let isMounted = true
-    let isPolling = false
-    let pollingIntervalId: number | undefined
-
-    const loadDashboardInitial = async () => {
-      setIsLoading(true)
-      setIsOrdersLoading(true)
-      setErrorMessage(null)
-      setOrdersErrorMessage(null)
-
-      const [portfolioResult, ordersResult] = await Promise.allSettled([
-        getPortfolioSummary(),
-        fetchOrders(),
-      ])
-
-      if (!isMounted) {
-        return
-      }
-
-      if (portfolioResult.status === 'fulfilled') {
-        setPortfolio(portfolioResult.value)
-        setPortfolioErrorCode(portfolioResult.value.error ?? null)
-      }
-      if (ordersResult.status === 'fulfilled') {
-        setOrders(ordersResult.value)
-      }
-
-      if (portfolioResult.status === 'rejected') {
-        setPortfolioErrorCode('PORTFOLIO_FETCH_FAILED')
-        setErrorMessage('대시보드 데이터를 불러오지 못했습니다.')
-      }
-
-      if (ordersResult.status === 'rejected') {
-        setOrdersErrorMessage('최근 체결 내역을 불러오지 못했습니다.')
-      }
-
-      setIsLoading(false)
-      setIsOrdersLoading(false)
-    }
-
-    const refreshDashboardSilent = async () => {
-      if (isPolling) {
-        return
-      }
-
-      isPolling = true
-      try {
-        const [portfolioResult, ordersResult] = await Promise.allSettled([
-          getPortfolioSummary(),
-          fetchOrders(),
-        ])
-
-        if (!isMounted) {
-          return
-        }
-
-        if (portfolioResult.status === 'fulfilled') {
-          setPortfolio(portfolioResult.value)
-          setPortfolioErrorCode(portfolioResult.value.error ?? null)
-        } else {
-          setPortfolioErrorCode('PORTFOLIO_FETCH_FAILED')
-          console.warn('[Dashboard polling] portfolio refresh failed', portfolioResult.reason)
-        }
-
-        if (ordersResult.status === 'fulfilled') {
-          setOrders(ordersResult.value)
-        } else {
-          console.warn('[Dashboard polling] orders refresh failed', ordersResult.reason)
-        }
-      } finally {
-        isPolling = false
-      }
-    }
-
-    const bootstrap = async () => {
-      await loadDashboardInitial()
-      if (!isMounted) {
-        return
-      }
-
-      pollingIntervalId = window.setInterval(() => {
-        void refreshDashboardSilent()
-      }, 10000)
-    }
-
-    void bootstrap()
-
-    return () => {
-      isMounted = false
-      if (pollingIntervalId !== undefined) {
-        window.clearInterval(pollingIntervalId)
-      }
-    }
-  }, [])
-
+  const portfolio = portfolioSummaryQuery.data ?? null
+  const portfolioErrorCode =
+    portfolioSummaryQuery.isError && portfolio === null
+      ? 'PORTFOLIO_FETCH_FAILED'
+      : portfolio?.error ?? null
+  const orders = ordersQuery.data ?? []
+  const ordersErrorMessage =
+    ordersQuery.isError && orders.length === 0 ? '최근 체결 내역을 불러오지 못했습니다.' : null
   const assets: AssetItem[] = portfolio?.items ?? []
 
   return (
@@ -220,14 +136,18 @@ function DashboardPage() {
           </div>
           <div className="min-h-[250px]">
             {rightPanelTab === 'portfolio' ? (
-              <PortfolioChart items={assets} isLoading={isLoading} />
+              <PortfolioChart items={assets} isLoading={portfolioSummaryQuery.isLoading} />
             ) : (
               <AiPerformanceWidget />
             )}
           </div>
         </div>
         <div className="min-h-[200px] pr-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-          <RecentOrders orders={orders} isLoading={isOrdersLoading} errorMessage={ordersErrorMessage} />
+          <RecentOrders
+            orders={orders}
+            isLoading={ordersQuery.isLoading}
+            errorMessage={ordersErrorMessage}
+          />
         </div>
       </div>
     </div>
