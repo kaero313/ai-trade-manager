@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 from app.services.ai.provider_router import resolve_provider_candidates
+from app.services.ai.provider_router import resolve_provider_runtime_status
 from app.services.ai.providers.base import resolve_provider_block_until
 
 
@@ -86,3 +87,59 @@ def test_gemini_daily_quota_blocks_until_next_pacific_midnight() -> None:
     blocked_until = resolve_provider_block_until("gemini", error, now=now)
 
     assert blocked_until == datetime(2026, 4, 28, 7, 0, tzinfo=UTC)
+
+
+def test_runtime_status_explains_active_and_fallback_candidates() -> None:
+    now = datetime(2026, 4, 28, 3, 0, tzinfo=UTC)
+
+    payload = resolve_provider_runtime_status(
+        priority_value=["gemini", "openai"],
+        settings_value=_settings(),
+        status_value={},
+        now=now,
+        available_providers={"gemini": True, "openai": True},
+    )
+
+    assert payload["active_provider"] == "gemini"
+    assert [item["status"] for item in payload["providers"]] == ["active", "fallback_ready"]
+    assert [item["is_candidate"] for item in payload["providers"]] == [True, True]
+
+
+def test_runtime_status_explains_skipped_provider_reason() -> None:
+    now = datetime(2026, 4, 28, 3, 0, tzinfo=UTC)
+
+    payload = resolve_provider_runtime_status(
+        priority_value=["gemini", "openai"],
+        settings_value=_settings(),
+        status_value={
+            "gemini": {
+                "blocked_until": (now + timedelta(hours=1)).isoformat(),
+                "reason": "daily_quota",
+            }
+        },
+        now=now,
+        available_providers={"gemini": True, "openai": True},
+    )
+
+    providers = payload["providers"]
+    assert payload["active_provider"] == "openai"
+    assert providers[0]["status"] == "blocked"
+    assert providers[0]["skip_reason"] == "쿼터 또는 rate limit으로 일시 차단됨"
+    assert providers[1]["status"] == "active"
+
+
+def test_runtime_status_marks_missing_api_key() -> None:
+    now = datetime(2026, 4, 28, 3, 0, tzinfo=UTC)
+
+    payload = resolve_provider_runtime_status(
+        priority_value=["gemini", "openai"],
+        settings_value=_settings(),
+        status_value={},
+        now=now,
+        available_providers={"gemini": False, "openai": True},
+    )
+
+    providers = payload["providers"]
+    assert payload["active_provider"] == "openai"
+    assert providers[0]["status"] == "missing_key"
+    assert providers[0]["api_key_configured"] is False
