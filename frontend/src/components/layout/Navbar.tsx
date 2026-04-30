@@ -10,6 +10,9 @@ interface NavbarProps {
   totalPnl: number
   isPortfolioLoading: boolean
   portfolioError: string | null
+  portfolioIsStale: boolean
+  portfolioUpdatedAt: string | null
+  portfolioSource: 'live' | 'snapshot' | 'empty' | null
 }
 
 interface NavItem {
@@ -36,6 +39,22 @@ function formatSignedKrw(value: number): string {
   return `${sign}${formatKrw(Math.abs(value))}`
 }
 
+function formatUpdatedAt(value: string | null): string | null {
+  if (!value) {
+    return null
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+
+  return date.toLocaleTimeString('ko-KR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function resolveNavLinkClassName({ isActive }: { isActive: boolean }): string {
   return `inline-flex items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-[13px] transition-colors sm:px-3 sm:text-sm ${
     isActive
@@ -57,15 +76,34 @@ function renderNavLinks() {
   })
 }
 
-function Navbar({ aiStatus, totalNetWorth, totalPnl, isPortfolioLoading, portfolioError }: NavbarProps) {
-  const hasPortfolioError = portfolioError !== null
-  const pnlTextColor = hasPortfolioError
+function Navbar({
+  aiStatus,
+  totalNetWorth,
+  totalPnl,
+  isPortfolioLoading,
+  portfolioError,
+  portfolioIsStale,
+  portfolioUpdatedAt,
+  portfolioSource,
+}: NavbarProps) {
+  const isPortfolioUnavailable =
+    portfolioSource === 'empty' || (portfolioError !== null && portfolioSource === null)
+  const updatedAtLabel = formatUpdatedAt(portfolioUpdatedAt)
+  const pnlTextColor = isPortfolioUnavailable
     ? 'text-gray-500 dark:text-gray-400'
     : totalPnl >= 0
       ? 'text-emerald-600 dark:text-emerald-400'
       : 'text-rose-600 dark:text-rose-400'
-  const totalNetWorthLabel = isPortfolioLoading ? '...' : hasPortfolioError ? '조회 불가' : formatKrw(totalNetWorth)
-  const totalPnlLabel = isPortfolioLoading ? '...' : hasPortfolioError ? '-' : formatSignedKrw(totalPnl)
+  const totalNetWorthLabel = isPortfolioLoading
+    ? '...'
+    : isPortfolioUnavailable
+      ? '조회 불가'
+      : formatKrw(totalNetWorth)
+  const totalPnlLabel = isPortfolioLoading
+    ? '...'
+    : isPortfolioUnavailable
+      ? '-'
+      : formatSignedKrw(totalPnl)
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-gray-200 bg-white/95 text-gray-900 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100">
@@ -106,13 +144,21 @@ function Navbar({ aiStatus, totalNetWorth, totalPnl, isPortfolioLoading, portfol
           <div className="hidden items-center gap-4 xl:flex">
             <span className="whitespace-nowrap text-xs font-semibold text-gray-600 dark:text-gray-300">
               총 자산:{' '}
-              <span className={hasPortfolioError ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100'}>
+              <span className={isPortfolioUnavailable ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100'}>
                 {totalNetWorthLabel}
               </span>
             </span>
             <span className={`whitespace-nowrap text-xs font-semibold ${pnlTextColor}`}>
               총 수익: {totalPnlLabel}
             </span>
+            {portfolioIsStale && !isPortfolioUnavailable && (
+              <span
+                className="whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+                title={portfolioError ?? undefined}
+              >
+                지연{updatedAtLabel ? ` · ${updatedAtLabel}` : ''}
+              </span>
+            )}
           </div>
         </div>
 
