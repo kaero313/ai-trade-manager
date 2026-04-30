@@ -1,4 +1,5 @@
-import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
+import { useEffect, useRef, useState } from 'react'
+import { Cell, Legend, Pie, PieChart, Tooltip } from 'recharts'
 
 import type { AssetItem } from '../../services/portfolioService'
 
@@ -35,6 +36,41 @@ const COLORS = [
   '#a3e635', // 라임 초록
   '#64748b', // 슬레이트 회색
 ]
+
+const CHART_HEIGHT = 320
+const MIN_CHART_WIDTH = 240
+
+function useMeasuredWidth() {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [width, setWidth] = useState(0)
+
+  useEffect(() => {
+    const node = ref.current
+    if (!node) {
+      return
+    }
+
+    let frameId = 0
+    const measure = () => {
+      window.cancelAnimationFrame(frameId)
+      frameId = window.requestAnimationFrame(() => {
+        const nextWidth = Math.floor(node.getBoundingClientRect().width)
+        setWidth((previousWidth) => (previousWidth === nextWidth ? previousWidth : nextWidth))
+      })
+    }
+
+    measure()
+    const resizeObserver = new ResizeObserver(measure)
+    resizeObserver.observe(node)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      resizeObserver.disconnect()
+    }
+  }, [])
+
+  return [ref, width] as const
+}
 
 function formatKrw(value: number): string {
   return `₩${new Intl.NumberFormat('ko-KR').format(Math.round(value))}`
@@ -87,6 +123,8 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
 function PortfolioChart({ items, isLoading }: PortfolioChartProps) {
   const chartData = buildChartData(items)
   const hasData = chartData.length > 0
+  const [chartContainerRef, measuredWidth] = useMeasuredWidth()
+  const chartWidth = measuredWidth > 0 ? Math.max(MIN_CHART_WIDTH, measuredWidth) : 0
 
   return (
     <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
@@ -108,9 +146,9 @@ function PortfolioChart({ items, isLoading }: PortfolioChartProps) {
       )}
 
       {!isLoading && hasData && (
-        <div className="h-80 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
+        <div ref={chartContainerRef} className="h-80 w-full">
+          {chartWidth > 0 && (
+            <PieChart width={chartWidth} height={CHART_HEIGHT}>
               <Pie
                 data={chartData}
                 dataKey="value"
@@ -137,7 +175,7 @@ function PortfolioChart({ items, isLoading }: PortfolioChartProps) {
                 }}
               />
             </PieChart>
-          </ResponsiveContainer>
+          )}
         </div>
       )}
     </section>
