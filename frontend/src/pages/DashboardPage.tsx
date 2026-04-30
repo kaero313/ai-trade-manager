@@ -39,13 +39,18 @@ function DashboardPage() {
   }
 
   const portfolio = portfolioSummaryQuery.data ?? null
+  const hasPortfolioRefreshError = portfolioSummaryQuery.isError || portfolioSummaryQuery.isRefetchError
   const portfolioErrorCode =
-    portfolioSummaryQuery.isError && portfolio === null
+    hasPortfolioRefreshError && portfolio === null
       ? 'PORTFOLIO_FETCH_FAILED'
-      : portfolio?.error ?? null
+      : portfolio?.error ?? (hasPortfolioRefreshError ? 'PORTFOLIO_FETCH_FAILED' : null)
+  const portfolioIsStale =
+    Boolean(portfolio?.is_stale) || (hasPortfolioRefreshError && portfolio !== null)
   const orders = ordersQuery.data ?? []
+  const ordersHasRefreshError = ordersQuery.isError || ordersQuery.isRefetchError
+  const ordersUpdatedAt = ordersQuery.dataUpdatedAt > 0 ? ordersQuery.dataUpdatedAt : null
   const ordersErrorMessage =
-    ordersQuery.isError && orders.length === 0 ? '최근 체결 내역을 불러오지 못했습니다.' : null
+    ordersHasRefreshError && orders.length === 0 ? '최근 체결 내역을 불러오지 못했습니다.' : null
   const assets: AssetItem[] = portfolio?.items ?? []
 
   return (
@@ -136,7 +141,14 @@ function DashboardPage() {
           </div>
           <div className="min-h-[250px]">
             {rightPanelTab === 'portfolio' ? (
-              <PortfolioChart items={assets} isLoading={portfolioSummaryQuery.isLoading} />
+              <PortfolioChart
+                items={assets}
+                isLoading={portfolioSummaryQuery.isLoading}
+                source={portfolio?.source ?? null}
+                isStale={portfolioIsStale}
+                updatedAt={portfolio?.updated_at ?? null}
+                errorCode={portfolioErrorCode}
+              />
             ) : (
               <AiPerformanceWidget />
             )}
@@ -147,6 +159,8 @@ function DashboardPage() {
             orders={orders}
             isLoading={ordersQuery.isLoading}
             errorMessage={ordersErrorMessage}
+            isStale={ordersHasRefreshError && orders.length > 0}
+            updatedAt={ordersUpdatedAt}
           />
         </div>
       </div>

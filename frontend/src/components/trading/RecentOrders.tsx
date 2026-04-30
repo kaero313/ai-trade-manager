@@ -4,6 +4,8 @@ interface RecentOrdersProps {
   orders: OrderHistoryItem[]
   isLoading: boolean
   errorMessage?: string | null
+  isStale?: boolean
+  updatedAt?: number | null
 }
 
 function formatKrw(value: number): string {
@@ -32,6 +34,24 @@ function formatExecutedAt(value: string): string {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
 }
 
+function formatUpdatedAt(value?: number | null): string | null {
+  if (!value) {
+    return null
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+
+  return date.toLocaleString('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function resolveSideStyle(side: string): { label: string; className: string } {
   const normalized = side.toLowerCase()
   if (normalized === 'buy' || normalized === 'bid') {
@@ -52,17 +72,40 @@ function resolveSideStyle(side: string): { label: string; className: string } {
   }
 }
 
-function RecentOrders({ orders, isLoading, errorMessage }: RecentOrdersProps) {
+function RecentOrders({
+  orders,
+  isLoading,
+  errorMessage,
+  isStale = false,
+  updatedAt = null,
+}: RecentOrdersProps) {
+  const updatedAtLabel = formatUpdatedAt(updatedAt)
+
   return (
     <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <header className="border-b border-gray-200 px-5 py-4 dark:border-gray-700">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Orders</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">최근 체결된 매매 내역입니다.</p>
+      <header className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Orders</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">
+            {updatedAtLabel ? `마지막 정상 조회 ${updatedAtLabel}` : '최근 체결된 매매 내역입니다.'}
+          </p>
+        </div>
+        {isStale && (
+          <span className="inline-flex shrink-0 items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            지연
+          </span>
+        )}
       </header>
 
       {errorMessage && (
         <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-700">
           {errorMessage}
+        </div>
+      )}
+
+      {isStale && !errorMessage && (
+        <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          최근 체결 새로고침에 실패해 마지막 정상 조회값을 유지하고 있습니다.
         </div>
       )}
 

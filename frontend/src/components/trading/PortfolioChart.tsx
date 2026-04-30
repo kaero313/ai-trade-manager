@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { Cell, Legend, Pie, PieChart, Tooltip } from 'recharts'
 
-import type { AssetItem } from '../../services/portfolioService'
+import type { AssetItem, PortfolioSummary } from '../../services/portfolioService'
 
 interface PortfolioChartProps {
   items: AssetItem[]
   isLoading: boolean
+  source: PortfolioSummary['source'] | null
+  isStale: boolean
+  updatedAt: string | null
+  errorCode?: string | null
 }
 
 interface ChartDatum {
@@ -39,6 +43,15 @@ const COLORS = [
 
 const CHART_HEIGHT = 320
 const MIN_CHART_WIDTH = 240
+
+type StatusTone = 'success' | 'warning' | 'danger' | 'neutral'
+
+interface PortfolioStatusView {
+  label: string
+  tone: StatusTone
+  description: string
+  notice: string | null
+}
 
 function useMeasuredWidth() {
   const ref = useRef<HTMLDivElement | null>(null)
@@ -74,6 +87,108 @@ function useMeasuredWidth() {
 
 function formatKrw(value: number): string {
   return `₩${new Intl.NumberFormat('ko-KR').format(Math.round(value))}`
+}
+
+function formatUpdatedAt(value: string | null): string | null {
+  if (!value) {
+    return null
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+
+  return date.toLocaleString('ko-KR', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function resolveErrorMessage(errorCode?: string | null): string {
+  if (errorCode === 'PORTFOLIO_FETCH_TIMEOUT') {
+    return '실시간 자산 조회가 지연되어 마지막 스냅샷을 표시하고 있습니다.'
+  }
+  if (errorCode === 'UPBIT_KEY_MISSING') {
+    return 'Upbit API 키가 없어 실시간 자산을 조회할 수 없습니다.'
+  }
+  if (errorCode) {
+    return '실시간 자산 조회에 실패해 마지막 정상값을 유지하고 있습니다.'
+  }
+  return '최신 자산 조회가 지연되어 마지막 정상값을 유지하고 있습니다.'
+}
+
+function resolveStatusClassName(tone: StatusTone): string {
+  if (tone === 'success') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200'
+  }
+  if (tone === 'warning') {
+    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'
+  }
+  if (tone === 'danger') {
+    return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200'
+  }
+  return 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-600 dark:bg-gray-700/40 dark:text-gray-300'
+}
+
+function resolvePortfolioStatus({
+  source,
+  isStale,
+  updatedAt,
+  errorCode,
+}: {
+  source: PortfolioSummary['source'] | null
+  isStale: boolean
+  updatedAt: string | null
+  errorCode?: string | null
+}): PortfolioStatusView {
+  const updatedAtLabel = formatUpdatedAt(updatedAt)
+  const suffix = updatedAtLabel ? ` 마지막 갱신 ${updatedAtLabel}` : ' 마지막 갱신 없음'
+
+  if (source === 'live' && !isStale) {
+    return {
+      label: '실시간',
+      tone: 'success',
+      description: `실시간 자산 기준입니다.${suffix}`,
+      notice: null,
+    }
+  }
+
+  if (source === 'snapshot') {
+    return {
+      label: '스냅샷',
+      tone: 'warning',
+      description: `저장된 마지막 자산 스냅샷 기준입니다.${suffix}`,
+      notice: resolveErrorMessage(errorCode),
+    }
+  }
+
+  if (source === 'empty') {
+    return {
+      label: '조회 불가',
+      tone: 'danger',
+      description: '실시간 자산과 스냅샷을 모두 불러오지 못했습니다.',
+      notice: resolveErrorMessage(errorCode),
+    }
+  }
+
+  if (isStale) {
+    return {
+      label: '지연',
+      tone: 'warning',
+      description: `마지막 정상 조회값을 표시하고 있습니다.${suffix}`,
+      notice: resolveErrorMessage(errorCode),
+    }
+  }
+
+  return {
+    label: '대기',
+    tone: 'neutral',
+    description: '자산 조회를 준비하고 있습니다.',
+    notice: null,
+  }
 }
 
 function buildChartData(items: AssetItem[]): ChartDatum[] {
@@ -120,18 +235,45 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
   )
 }
 
-function PortfolioChart({ items, isLoading }: PortfolioChartProps) {
+function PortfolioChart({
+  items,
+  isLoading,
+  source,
+  isStale,
+  updatedAt,
+  errorCode = null,
+}: PortfolioChartProps) {
   const chartData = buildChartData(items)
   const hasData = chartData.length > 0
   const [chartContainerRef, measuredWidth] = useMeasuredWidth()
   const chartWidth = measuredWidth > 0 ? Math.max(MIN_CHART_WIDTH, measuredWidth) : 0
+  const status = resolvePortfolioStatus({ source, isStale, updatedAt, errorCode })
 
   return (
     <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <header className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Portfolio Allocation</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">보유 자산 평가금액 비중</p>
+      <header className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Portfolio Allocation</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">{status.description}</p>
+        </div>
+        <span
+          className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${resolveStatusClassName(
+            status.tone,
+          )}`}
+        >
+          {status.label}
+        </span>
       </header>
+
+      {status.notice && (
+        <div
+          className={`mb-4 rounded-xl border px-3 py-2.5 text-sm font-medium ${resolveStatusClassName(
+            status.tone,
+          )}`}
+        >
+          {status.notice}
+        </div>
+      )}
 
       {isLoading && (
         <div className="flex h-72 items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-300">
