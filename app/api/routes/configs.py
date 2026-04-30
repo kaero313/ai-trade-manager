@@ -16,8 +16,10 @@ from app.db.repository import bulk_upsert_system_configs
 from app.db.repository import list_system_configs
 from app.db.session import get_db
 from app.models.domain import OrderHistory, Position, SystemConfig
+from app.models.schemas import AIProviderRuntimeStatusResponse
 from app.models.schemas import SystemConfigItem
 from app.models.schemas import SystemConfigUpdateItem
+from app.services.ai.provider_router import AIProviderRouter
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -83,6 +85,14 @@ async def update_system_configs(
         )
         for config in configs
     ]
+
+
+@router.get("/ai/providers/status", response_model=AIProviderRuntimeStatusResponse)
+async def get_ai_provider_runtime_status(
+    db: AsyncSession = Depends(get_db),
+) -> AIProviderRuntimeStatusResponse:
+    payload = await AIProviderRouter(db).get_runtime_status()
+    return AIProviderRuntimeStatusResponse.model_validate(payload)
 
 
 @router.post("/paper/reset")

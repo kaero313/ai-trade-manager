@@ -97,6 +97,37 @@ export interface SystemConfigUpdateItem {
   config_value: string
 }
 
+export type AiProviderRuntimeStatusKind =
+  | 'active'
+  | 'fallback_ready'
+  | 'ready'
+  | 'blocked'
+  | 'disabled'
+  | 'missing_key'
+  | 'error'
+
+export interface AiProviderRuntimeStatusItem {
+  provider: 'gemini' | 'openai'
+  rank: number
+  enabled: boolean
+  model: string
+  api_key_configured: boolean
+  status: AiProviderRuntimeStatusKind
+  is_candidate: boolean
+  skip_reason: string | null
+  blocked_until: string | null
+  reason: string | null
+  last_error_at: string | null
+  last_error: string | null
+  last_success_at: string | null
+}
+
+export interface AiProviderRuntimeStatusResponse {
+  generated_at: string
+  active_provider: 'gemini' | 'openai' | null
+  providers: AiProviderRuntimeStatusItem[]
+}
+
 export interface PaperTradingResetResponse {
   message: string
   deleted_order_history_count: number
@@ -231,6 +262,13 @@ export async function updateSystemConfigs(
   items: SystemConfigUpdateItem[],
 ): Promise<SystemConfigItem[]> {
   const { data } = await apiClient.put<SystemConfigItem[]>('/system/configs', items)
+  return data
+}
+
+export async function getAiProviderRuntimeStatus(): Promise<AiProviderRuntimeStatusResponse> {
+  const { data } = await apiClient.get<AiProviderRuntimeStatusResponse>(
+    '/system/ai/providers/status',
+  )
   return data
 }
 
