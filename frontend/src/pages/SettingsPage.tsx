@@ -4,8 +4,16 @@ import { useMemo, useState } from 'react'
 
 import InfoTooltip from '../components/common/InfoTooltip'
 import BotConfigForm from '../components/trading/BotConfigForm'
-import { useSystemConfigs, useUpdateSystemConfigs } from '../hooks/useSystemConfigs'
-import type { SystemConfigItem, SystemConfigUpdateItem } from '../services/api'
+import {
+  useAiProviderRuntimeStatus,
+  useSystemConfigs,
+  useUpdateSystemConfigs,
+} from '../hooks/useSystemConfigs'
+import type {
+  AiProviderRuntimeStatusItem,
+  SystemConfigItem,
+  SystemConfigUpdateItem,
+} from '../services/api'
 
 interface AiRuntimeDraft {
   autonomousAiIntervalMinutes: string
@@ -190,7 +198,7 @@ function NoticeMessage({ notice }: { notice: NoticeState }) {
   )
 }
 
-function formatDateTime(value: string | undefined): string {
+function formatDateTime(value: string | null | undefined): string {
   if (!value) {
     return ''
   }
@@ -204,6 +212,44 @@ function formatDateTime(value: string | undefined): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function resolveRuntimeStatusLabel(status: AiProviderRuntimeStatusItem['status']): string {
+  if (status === 'active') {
+    return '다음 요청 1순위'
+  }
+  if (status === 'fallback_ready') {
+    return 'Fallback 후보'
+  }
+  if (status === 'blocked') {
+    return '차단 중'
+  }
+  if (status === 'disabled') {
+    return '비활성'
+  }
+  if (status === 'missing_key') {
+    return 'API 키 없음'
+  }
+  if (status === 'error') {
+    return '오류 확인'
+  }
+  return '대기'
+}
+
+function resolveRuntimeStatusClassName(status: AiProviderRuntimeStatusItem['status']): string {
+  if (status === 'active') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+  }
+  if (status === 'fallback_ready') {
+    return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200'
+  }
+  if (status === 'blocked') {
+    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200'
+  }
+  if (status === 'missing_key' || status === 'error') {
+    return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200'
+  }
+  return 'border-gray-200 bg-white text-gray-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'
 }
 
 function resolveProviderStatusLabel(status: AiProviderStatusItem | undefined): {
@@ -250,13 +296,74 @@ function ProviderStatusBadge({ status }: { status: AiProviderStatusItem | undefi
   )
 }
 
+function ProviderRuntimeInsight({
+  runtimeStatus,
+  status,
+}: {
+  runtimeStatus: AiProviderRuntimeStatusItem | undefined
+  status: AiProviderStatusItem | undefined
+}) {
+  if (!runtimeStatus) {
+    return (
+      <div className="space-y-2">
+        <ProviderStatusBadge status={status} />
+        <p className="text-xs text-gray-500 dark:text-gray-400">실행 상태를 확인하는 중입니다.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-w-0 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${resolveRuntimeStatusClassName(
+            runtimeStatus.status,
+          )}`}
+        >
+          {resolveRuntimeStatusLabel(runtimeStatus.status)}
+        </span>
+        <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">
+          키 {runtimeStatus.api_key_configured ? '설정됨' : '없음'}
+        </span>
+      </div>
+
+      <div className="space-y-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+        <p>실행 모델: {runtimeStatus.model}</p>
+        {runtimeStatus.skip_reason && <p>제외 사유: {runtimeStatus.skip_reason}</p>}
+        {runtimeStatus.reason && <p>차단 사유: {runtimeStatus.reason}</p>}
+        {runtimeStatus.blocked_until && <p>재시도 가능: {formatDateTime(runtimeStatus.blocked_until)}</p>}
+        {runtimeStatus.last_success_at && <p>마지막 성공: {formatDateTime(runtimeStatus.last_success_at)}</p>}
+        {runtimeStatus.last_error_at && <p>최근 오류: {formatDateTime(runtimeStatus.last_error_at)}</p>}
+        {runtimeStatus.last_error && (
+          <p className="line-clamp-2 break-words text-rose-600 dark:text-rose-300">
+            {runtimeStatus.last_error}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function AiRuntimeSettingsPanel() {
   const systemConfigsQuery = useSystemConfigs()
+  const aiProviderRuntimeStatusQuery = useAiProviderRuntimeStatus()
   const updateSystemConfigsMutation = useUpdateSystemConfigs()
   const [draftPatch, setDraftPatch] = useState<Partial<AiRuntimeDraft>>({})
   const [notice, setNotice] = useState<NoticeState | null>(null)
   const serverDraft = useMemo(() => buildAiRuntimeDraft(systemConfigsQuery.data), [systemConfigsQuery.data])
   const draft = useMemo(() => ({ ...serverDraft, ...draftPatch }), [serverDraft, draftPatch])
+  const runtimeStatusByProvider = useMemo(() => {
+    const entries = aiProviderRuntimeStatusQuery.data?.providers.map((item) => [item.provider, item])
+    return new Map<AiProviderName, AiProviderRuntimeStatusItem>(
+      (entries ?? []) as Array<[AiProviderName, AiProviderRuntimeStatusItem]>,
+    )
+  }, [aiProviderRuntimeStatusQuery.data?.providers])
+  const activeProvider = aiProviderRuntimeStatusQuery.data?.active_provider ?? null
+  const candidateProviders =
+    aiProviderRuntimeStatusQuery.data?.providers
+      .filter((item) => item.is_candidate)
+      .map((item) => item.provider.toUpperCase())
+      .join(' → ') ?? ''
 
   const setDraftValue = <K extends keyof AiRuntimeDraft>(key: K, value: AiRuntimeDraft[K]) => {
     setDraftPatch((current) => {
@@ -302,6 +409,7 @@ function AiRuntimeSettingsPanel() {
 
   const clearProviderStatus = () => {
     setDraftValue('aiProviderStatus', {})
+    setNotice({ type: 'info', message: '차단 상태 초기화가 대기 중입니다. 저장하면 즉시 반영됩니다.' })
   }
 
   const handleSave = async () => {
@@ -451,14 +559,32 @@ function AiRuntimeSettingsPanel() {
                 </button>
               </div>
 
+              <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
+                {aiProviderRuntimeStatusQuery.isError ? (
+                  <p>Provider 실행 상태를 불러오지 못했습니다. 저장된 설정값은 계속 표시됩니다.</p>
+                ) : (
+                  <div className="grid gap-1">
+                    <p className="font-semibold">
+                      다음 AI 요청 시작점:{' '}
+                      {activeProvider ? activeProvider.toUpperCase() : '사용 가능한 provider 없음'}
+                    </p>
+                    <p>
+                      현재 fallback 후보:{' '}
+                      {candidateProviders || '환경변수 키, 사용 여부, 차단 상태를 확인해야 합니다.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="mt-4 grid gap-3">
                 {AI_PROVIDERS.map((provider) => {
                   const providerSettings = draft.aiProviderSettings[provider]
                   const rank = draft.aiProviderPriority.indexOf(provider) + 1
+                  const runtimeStatus = runtimeStatusByProvider.get(provider)
                   return (
                     <div
                       key={provider}
-                      className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800 lg:grid-cols-[130px_120px_minmax(180px,1fr)_auto]"
+                      className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800 lg:grid-cols-[130px_120px_minmax(180px,1fr)_minmax(220px,1fr)]"
                     >
                       <div className="flex items-center justify-between gap-3 lg:block">
                         <div className="text-sm font-semibold uppercase text-gray-900 dark:text-gray-100">
@@ -503,8 +629,14 @@ function AiRuntimeSettingsPanel() {
                         />
                       </label>
 
-                      <div className="flex min-w-0 items-end">
-                        <ProviderStatusBadge status={draft.aiProviderStatus[provider]} />
+                      <div className="min-w-0">
+                        <span className="mb-1 block text-xs font-semibold text-gray-500 dark:text-gray-400">
+                          실행 상태
+                        </span>
+                        <ProviderRuntimeInsight
+                          runtimeStatus={runtimeStatus}
+                          status={draft.aiProviderStatus[provider]}
+                        />
                       </div>
                     </div>
                   )
