@@ -175,7 +175,9 @@ async function buildStreamError(response: Response): Promise<Error> {
 }
 
 export async function getBotStatus(): Promise<BotStatus> {
-  const { data } = await apiClient.get<BotStatus>('/status')
+  const { data } = await apiClient.get<BotStatus>('/status', {
+    timeout: 6000,
+  })
   return data
 }
 
