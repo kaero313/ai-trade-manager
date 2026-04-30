@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -17,3 +19,6 @@ class PortfolioSummary(BaseModel):
     total_pnl: float = Field(...)
     items: list[AssetItem] = Field(...)
     error: str | None = Field(default=None)
+    source: Literal["live", "snapshot", "empty"] = Field(default="live")
+    is_stale: bool = Field(default=False)
+    updated_at: str | None = Field(default=None)
