@@ -69,9 +69,10 @@ function AiCoreStatus() {
   const botStatusQuery = useQuery({
     queryKey: ['bot-status'],
     queryFn: getBotStatus,
-    refetchInterval: 4000,
+    refetchInterval: (query) => (query.state.status === 'error' ? 30000 : 15000),
     refetchIntervalInBackground: true,
     placeholderData: (previousData) => previousData,
+    retry: 1,
   })
 
   const isActive = botStatusQuery.data?.running ?? false
