@@ -135,3 +135,12 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 ## Phase 42.6 업데이트
 - 포트폴리오 자동 브리핑은 `/api/portfolio/briefing` 전용 REST API에서 즉시 생성하며, 별도 채팅 세션이나 메시지를 저장하지 않습니다.
 - 새 테이블/컬럼은 없고, AI provider fallback 상태는 기존 `system_configs.ai_provider_status`를 그대로 사용합니다.
+
+## Phase 42.7 업데이트
+- 스키마 변경은 없습니다.
+- `system_configs.live_buy_enabled`는 live 모드 AI 신규 BUY 허용 여부를 관리합니다. 기본값은 `false`이며 SELL/TP/SL 청산은 차단하지 않습니다.
+- `system_configs.ai_max_buy_weight_pct`는 AI 신규 매수 1회 실행 비중 상한입니다. 기본값은 `40`입니다.
+- `system_configs.ai_min_confidence_trade` 기본값은 과확신 BUY를 줄이기 위해 `85`로 상향합니다.
+- `order_history.price`는 체결 단가, `order_history.qty`는 체결 수량을 저장해야 합니다. Upbit 시장가 매수의 `price` 요청값은 주문 KRW 금액이므로 체결가로 저장하지 않습니다.
+- live 주문 기록 시 `positions`의 `avg_entry_price`, `quantity`, `status`를 함께 갱신해 성과 집계의 기준 단위를 보정합니다.
+- 2026-04-30 07:00 UTC 이전의 `qty≈1`, `price=5,000~100,000 KRW` AI 매수 기록은 레거시 주문금액 기록으로 간주해 AI 성과 집계에서 제외합니다.

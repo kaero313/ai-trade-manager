@@ -186,3 +186,12 @@ ai-trade-manager/
 - 포트폴리오 상단 자동 브리핑은 LangGraph 채팅 세션을 생성하지 않고 `/api/portfolio/briefing` 전용 REST API를 호출합니다.
 - `/api/portfolio/briefing`은 현재 포트폴리오, 기간 손익 스냅샷, 최근 AI 판단, 캐시된 시장 심리를 하나의 compact prompt로 묶어 `AIProviderRouter`에 단일 호출합니다.
 - 포트폴리오 미니챗은 기존 LangGraph/SSE 채팅 경로를 유지해 사용자의 후속 질문만 멀티에이전트로 처리합니다.
+
+## Phase 42.7 업데이트
+- AI 자율매매 실행부는 `live_buy_enabled=false`를 기본값으로 사용해 live 모드 신규 BUY를 차단합니다. 기존 보유분의 SELL, TP/SL 청산 로직은 유지합니다.
+- AI가 `recommended_weight=100`을 반환하더라도 실행부는 `ai_max_buy_weight_pct` 상한을 적용해 신규 매수 예산을 제한합니다.
+- 자동 체결 최소 확신도 기본값은 `ai_min_confidence_trade=85`로 상향해 낮은 확신도 신호가 live 주문으로 이어지지 않게 합니다.
+- Upbit 시장가 매수(`side=bid`, `ord_type=price`) 응답의 `price`는 주문 KRW 금액이므로 체결가로 사용하지 않습니다. 주문 상세의 체결 목록 VWAP 또는 현재가 fallback으로 `order_history.price`를 기록합니다.
+- live 체결 기록 시 `positions.quantity`, `positions.avg_entry_price`, `positions.status`를 함께 갱신해 로컬 성과 집계 단위가 실제 체결 단위와 맞도록 유지합니다.
+- 2026-04-30 07:00 UTC 이전의 의심 시장가 매수 기록은 체결 단위가 혼재된 레거시 데이터로 보고 AI 실현손익/최근 AI 체결 집계에서 제외합니다.
+- AI 분석 프롬프트에는 커스텀 페르소나보다 우선하는 리스크 안전 규칙을 추가해 단일 RSI 조건이나 단편 뉴스만으로 고확신 BUY/100% 비중을 강제하지 못하게 했습니다.

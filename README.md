@@ -101,3 +101,9 @@ Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구
 - **Docs Curator:** 포트폴리오 가치가 큰 작업에서 README/아키텍처/DB/운영 문서를 동기화
 
 상세 운영 규칙과 Codex 앱 실행 계약 템플릿은 [개발 운영 워크플로우](docs/DEVELOPMENT_WORKFLOW.md)에 정리되어 있습니다.
+
+## 운영 안전 설정
+- `live_buy_enabled=false`가 기본값입니다. live 모드에서 AI 신규 BUY는 잠기며, 기존 보유분 SELL과 TP/SL 청산은 계속 동작합니다.
+- `ai_max_buy_weight_pct=40` 기본값으로 AI가 100% 매수 비중을 제안해도 실행부에서 1회 신규 매수 비중을 제한합니다.
+- `ai_min_confidence_trade=85` 기본값으로 낮은 확신도 자동 체결을 차단합니다.
+- Upbit 시장가 매수 응답의 `price`는 주문 KRW 금액이므로 체결 단가로 저장하지 않고, 주문 상세 체결 VWAP 또는 현재가 fallback을 사용합니다.
