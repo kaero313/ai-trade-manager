@@ -31,6 +31,8 @@ MARKET_SENTIMENT_SNAPSHOT_KEY = "market_sentiment_snapshot"
 AI_MIN_CONFIDENCE_TRADE_KEY = "ai_min_confidence_trade"
 AI_ANALYSIS_MAX_AGE_MINUTES_KEY = "ai_analysis_max_age_minutes"
 AI_CUSTOM_PERSONA_PROMPT_KEY = "ai_custom_persona_prompt"
+LIVE_BUY_ENABLED_KEY = "live_buy_enabled"
+AI_MAX_BUY_WEIGHT_PCT_KEY = "ai_max_buy_weight_pct"
 AI_PROVIDER_PRIORITY_KEY = "ai_provider_priority"
 AI_PROVIDER_SETTINGS_KEY = "ai_provider_settings"
 AI_PROVIDER_STATUS_KEY = "ai_provider_status"
@@ -110,6 +112,16 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
         "config_key": AI_CUSTOM_PERSONA_PROMPT_KEY,
         "config_value": "",
         "description": "AI 커스텀 매매 페르소나 프롬프트",
+    },
+    {
+        "config_key": LIVE_BUY_ENABLED_KEY,
+        "config_value": "false",
+        "description": "live 모드 AI 신규 매수 허용 여부",
+    },
+    {
+        "config_key": AI_MAX_BUY_WEIGHT_PCT_KEY,
+        "config_value": "40",
+        "description": "AI 신규 매수 1회 실행 비중 상한(%)",
     },
     {
         "config_key": AI_PROVIDER_PRIORITY_KEY,

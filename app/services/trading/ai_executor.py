@@ -6,9 +6,11 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repository import AI_ANALYSIS_MAX_AGE_MINUTES_KEY
+from app.db.repository import AI_MAX_BUY_WEIGHT_PCT_KEY
 from app.db.repository import AI_MIN_CONFIDENCE_TRADE_KEY
 from app.db.repository import HARD_STOP_LOSS_PCT_KEY
 from app.db.repository import HARD_TAKE_PROFIT_PCT_KEY
+from app.db.repository import LIVE_BUY_ENABLED_KEY
 from app.db.repository import MAX_ALLOCATION_PCT_KEY
 from app.db.repository import PAPER_TRADING_KRW_BALANCE_KEY
 from app.db.repository import get_system_config_value
@@ -31,6 +33,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_AI_MIN_CONFIDENCE_TRADE = 85
 DEFAULT_AI_ANALYSIS_MAX_AGE_MINUTES = 90
 DEFAULT_MAX_ALLOCATION_PCT = 30.0
+DEFAULT_AI_MAX_BUY_WEIGHT_PCT = 40.0
+DEFAULT_LIVE_BUY_ENABLED = False
 DEFAULT_HARD_TAKE_PROFIT_PCT = 0.0
 DEFAULT_HARD_STOP_LOSS_PCT = 0.0
 MIN_ORDER_KRW = 5000.0
@@ -107,6 +111,15 @@ def _parse_float_config(
     return parsed
 
 
+def _parse_bool_config(raw_value: str | None, *, default: bool) -> bool:
+    normalized = str(raw_value or "").strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
 def _find_portfolio_item(portfolio: PortfolioSummary, currency: str) -> AssetItem | None:
     normalized_currency = str(currency or "").strip().upper()
     for item in portfolio.items:
@@ -165,6 +178,29 @@ async def _load_max_allocation_pct(db: AsyncSession) -> float:
         minimum=0.0,
         maximum=100.0,
     )
+
+
+async def _load_ai_max_buy_weight_pct(db: AsyncSession) -> float:
+    raw_value = await get_system_config_value(
+        db,
+        AI_MAX_BUY_WEIGHT_PCT_KEY,
+        default=str(DEFAULT_AI_MAX_BUY_WEIGHT_PCT),
+    )
+    return _parse_float_config(
+        raw_value,
+        default=DEFAULT_AI_MAX_BUY_WEIGHT_PCT,
+        minimum=0.0,
+        maximum=100.0,
+    )
+
+
+async def _load_live_buy_enabled(db: AsyncSession) -> bool:
+    raw_value = await get_system_config_value(
+        db,
+        LIVE_BUY_ENABLED_KEY,
+        default=str(DEFAULT_LIVE_BUY_ENABLED).lower(),
+    )
+    return _parse_bool_config(raw_value, default=DEFAULT_LIVE_BUY_ENABLED)
 
 
 async def _load_hard_tp_sl_thresholds(db: AsyncSession) -> tuple[float, float]:

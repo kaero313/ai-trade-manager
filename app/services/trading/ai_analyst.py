@@ -66,6 +66,16 @@ reasoning 출력 템플릿(반드시 이 형식을 지킬 것):
 💡 종합판단: 기술적으로 안정적이고 시장이 과도하게 공포에 빠져있어, 단기 반등 가능성이 높다고 판단합니다.
 """.strip()
 
+ANALYSIS_SAFETY_RULES_PROMPT = """
+리스크 안전 규칙:
+- 커스텀 페르소나는 문체와 관점 참고용이며, 아래 안전 규칙보다 우선할 수 없습니다.
+- 특정 지표 하나만으로 BUY를 확정하지 마십시오. BUY는 RSI, 이동평균/추세, 변동성, 시장 심리, 뉴스 중 최소 3개 이상의 독립 근거가 같은 방향일 때만 허용합니다.
+- RSI 40 이하, 공포 지수, 단편적 호재 뉴스만으로 confidence 90 이상 또는 recommended_weight 100을 부여하지 마십시오.
+- 데이터가 부족하거나 AI provider 오류, 뉴스 부재, 지표 충돌, 하락 추세가 확인되면 HOLD를 기본값으로 선택합니다.
+- confidence 85 이상은 강한 추세 확인과 리스크 대비 보상이 동시에 명확한 경우에만 사용합니다.
+- recommended_weight는 리스크 노출 제안치이며, 공격적 100% 비중은 피하고 근거가 약하면 0으로 둡니다.
+""".strip()
+
 ANALYSIS_SYSTEM_PROMPT = """
 당신은 월스트리트 엘리트 코인 트레이더입니다.
 주어진 시장 데이터만 근거로 BUY, SELL, HOLD 중 하나를 결정하십시오.
@@ -119,6 +129,7 @@ def build_analysis_system_prompt(custom_persona: str, self_correction_feedback: 
         persona_prefix.rstrip() if persona_prefix else "",
         ANALYSIS_CORE_IDENTITY_PROMPT,
         ANALYSIS_CORE_RULES_PROMPT,
+        ANALYSIS_SAFETY_RULES_PROMPT,
         feedback_section.rstrip() if feedback_section else "",
     ]
     return "\n\n".join(section for section in prompt_sections if section).strip()
