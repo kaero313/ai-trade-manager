@@ -88,6 +88,7 @@ const POLICY_PRESETS = {
 
 type PolicyPresetKey = keyof typeof POLICY_PRESETS
 type ResultTab = 'price' | 'equity' | 'drawdown' | 'trades'
+type ResultVerdictTone = 'positive' | 'warning' | 'negative' | 'neutral'
 const CURVE_CHART_HEIGHT = 360
 
 interface LaboratoryFormState {
@@ -106,6 +107,19 @@ interface LaboratoryFormState {
   takeProfitPct: string
   stopLossPct: string
   cooldownMinutes: string
+}
+
+interface ResultVerdict {
+  label: string
+  tone: ResultVerdictTone
+  title: string
+  description: string
+}
+
+interface ResultInsight {
+  label: string
+  value: string
+  description: string
 }
 
 function formatDateInput(value: Date): string {
@@ -177,6 +191,132 @@ function parseErrorMessage(error: unknown, fallback: string): string {
     return error.message
   }
   return fallback
+}
+
+function buildResultVerdict(result: BacktestRunResponse): ResultVerdict {
+  const totalReturn = result.summary.total_return_pct
+  const maxDrawdown = result.summary.max_drawdown_pct
+  const winRate = result.summary.win_rate
+  const tradeCount = result.summary.number_of_trades
+
+  if (tradeCount === 0) {
+    return {
+      label: '거래 없음',
+      tone: 'neutral',
+      title: '신호가 충분히 발생하지 않았습니다',
+      description: '현재 조건에서는 체결이 없어 정책의 수익성과 리스크를 판단하기 어렵습니다.',
+    }
+  }
+
+  if (totalReturn > 0 && maxDrawdown <= 10 && winRate >= 50) {
+    return {
+      label: '긍정적',
+      tone: 'positive',
+      title: '성과와 리스크가 균형적입니다',
+      description: '수익률, 낙폭, 승률이 모두 기본 기준을 넘어서 정책 후보로 검토할 수 있습니다.',
+    }
+  }
+
+  if (totalReturn > 0) {
+    return {
+      label: '주의',
+      tone: 'warning',
+      title: '수익은 있지만 리스크 확인이 필요합니다',
+      description: '최종 손익은 양호하지만 낙폭이나 승률 중 일부 지표가 아직 불안정합니다.',
+    }
+  }
+
+  return {
+    label: '부정적',
+    tone: 'negative',
+    title: '현재 조건에서는 성과가 부족합니다',
+    description: '손실 구간이 확인되었으므로 진입 기준이나 청산 조건을 다시 조정해야 합니다.',
+  }
+}
+
+function buildResultInsights(result: BacktestRunResponse): ResultInsight[] {
+  const totalReturn = result.summary.total_return_pct
+  const maxDrawdown = result.summary.max_drawdown_pct
+  const winRate = result.summary.win_rate
+  const tradeCount = result.summary.number_of_trades
+  const barsProcessed = result.meta.bars_processed
+
+  const coreReason =
+    tradeCount === 0
+      ? {
+          value: '체결 신호 부족',
+          description: '조건이 엄격해 실제 매수/매도까지 이어지지 않았습니다.',
+        }
+      : totalReturn > 0 && maxDrawdown <= 10
+        ? {
+            value: '수익 흐름 유지',
+            description: '자산 곡선이 초기 자본 대비 우위에 있고 낙폭도 제한적입니다.',
+          }
+        : maxDrawdown > 10
+          ? {
+              value: '낙폭 부담',
+              description: '수익보다 고점 대비 하락 구간 관리가 더 중요한 상태입니다.',
+            }
+          : {
+              value: '청산 효율 부족',
+              description: '진입 이후 수익으로 전환하거나 방어하는 힘이 약했습니다.',
+            }
+
+  const nextAction =
+    tradeCount === 0
+      ? {
+          value: '진입 조건 완화',
+          description: 'AI 확신 기준이나 RSI 기준을 낮춰 신호 발생 여부부터 확인하세요.',
+        }
+      : maxDrawdown > 10
+        ? {
+            value: '리스크 축소',
+            description: '최대 투입 비중, 손절 기준, 트레일링 스탑을 먼저 보수적으로 조정하세요.',
+          }
+        : totalReturn < 0
+          ? {
+              value: '진입 기준 강화',
+              description: '낮은 확신도 거래를 줄이고 다른 기간에서도 같은 손실이 반복되는지 확인하세요.',
+            }
+          : {
+              value: '재검증 확대',
+              description: '다른 기간과 종목에서도 비슷한 결과가 유지되는지 확인하세요.',
+            }
+
+  const confidence =
+    tradeCount === 0
+      ? {
+          value: '낮음',
+          description: `${barsProcessed}개 캔들을 처리했지만 체결 표본이 없습니다.`,
+        }
+      : barsProcessed >= 100 && tradeCount >= 4
+        ? {
+            value: '높음',
+            description: `${barsProcessed}개 캔들과 ${tradeCount}회 체결로 기본 표본을 확보했습니다.`,
+          }
+        : {
+            value: '보통',
+            description: `체결 ${tradeCount}회, 승률 ${winRate.toFixed(1)}% 기준으로 추가 검증이 필요합니다.`,
+          }
+
+  return [
+    { label: '핵심 원인', ...coreReason },
+    { label: '다음 조정', ...nextAction },
+    { label: '검증 신뢰도', ...confidence },
+  ]
+}
+
+function resolveVerdictClassName(tone: ResultVerdictTone): string {
+  if (tone === 'positive') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200'
+  }
+  if (tone === 'warning') {
+    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'
+  }
+  if (tone === 'negative') {
+    return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200'
+  }
+  return 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'
 }
 
 function buildDefaultForm(): LaboratoryFormState {
@@ -449,7 +589,7 @@ function LaboratoryPage() {
   const [marketsError, setMarketsError] = useState<string | null>(null)
   const [form, setForm] = useState<LaboratoryFormState>(() => buildDefaultForm())
   const [result, setResult] = useState<BacktestRunResponse | null>(null)
-  const [activeTab, setActiveTab] = useState<ResultTab>('price')
+  const [activeTab, setActiveTab] = useState<ResultTab>('equity')
   const [selectedPreset, setSelectedPreset] = useState<PolicyPresetKey | 'custom'>('balanced')
   const [showAdvancedPolicy, setShowAdvancedPolicy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -674,7 +814,7 @@ function LaboratoryPage() {
       setIsRunning(true)
       const response = await runBacktest(payload)
       setResult(response)
-      setActiveTab('price')
+      setActiveTab('equity')
     } catch (runError) {
       setError(parseErrorMessage(runError, '백테스트를 실행하지 못했습니다.'))
     } finally {
@@ -683,6 +823,8 @@ function LaboratoryPage() {
   }
 
   const finalPnl = result ? result.meta.final_balance - result.meta.initial_balance : 0
+  const resultVerdict = result ? buildResultVerdict(result) : null
+  const resultInsights = result ? buildResultInsights(result) : []
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-6 text-gray-950 dark:bg-gray-950 dark:text-gray-50 sm:px-6 lg:px-8">
@@ -987,30 +1129,70 @@ function LaboratoryPage() {
         </aside>
 
         <main className="min-w-0 space-y-6">
-          <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
-                  <Bot className="h-4 w-4" />
-                  AI 분석
-                </p>
-                <h2 className="mt-2 text-2xl font-bold">백테스트 브리핑</h2>
-              </div>
-              {result?.ai_briefing?.fallback && (
-                <span className="inline-flex w-fit rounded-md border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-                  로컬 요약
-                </span>
-              )}
-            </div>
-
-            <div className="mt-5 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm leading-7 text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200">
-              {result?.ai_briefing?.content ??
-                '정책 백테스트를 실행하면 AI가 성과, 리스크, 다음 조정 포인트를 요약합니다.'}
-            </div>
-          </section>
-
           {result ? (
             <>
+              <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                      <Bot className="h-4 w-4" />
+                      AI 분석
+                    </p>
+                    <h2 className="mt-2 text-2xl font-bold">검증 결과 해석</h2>
+                    {resultVerdict && (
+                      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                        {resultVerdict.title}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {result.ai_briefing.fallback && (
+                      <span className="inline-flex w-fit rounded-md border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                        로컬 요약
+                      </span>
+                    )}
+                    {resultVerdict && (
+                      <span
+                        className={`inline-flex w-fit rounded-md border px-3 py-1 text-xs font-semibold ${resolveVerdictClassName(
+                          resultVerdict.tone,
+                        )}`}
+                      >
+                        {resultVerdict.label}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {resultVerdict && (
+                  <p className="mt-4 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
+                    {resultVerdict.description}
+                  </p>
+                )}
+
+                <div className="mt-4 rounded-md border border-gray-200 bg-white p-4 text-sm leading-7 text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200">
+                  {result.ai_briefing.content}
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                  {resultInsights.map((item) => (
+                    <article
+                      key={item.label}
+                      className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950"
+                    >
+                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                        {item.label}
+                      </p>
+                      <p className="mt-2 text-base font-bold text-gray-900 dark:text-gray-100">
+                        {item.value}
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                        {item.description}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
               <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <KpiCard
                   label="총 수익률"
@@ -1047,7 +1229,10 @@ function LaboratoryPage() {
               <section className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div className="flex flex-col gap-3 border-b border-gray-200 p-4 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <h2 className="text-lg font-bold">{result.meta.market}</h2>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                      근거 확인
+                    </p>
+                    <h2 className="mt-1 text-lg font-bold">{result.meta.market}</h2>
                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                       {new Date(result.meta.start_date).toLocaleDateString('ko-KR')} -{' '}
                       {new Date(result.meta.end_date).toLocaleDateString('ko-KR')} ·{' '}
@@ -1056,15 +1241,9 @@ function LaboratoryPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-2 sm:flex">
                     <ResultTabButton
-                      active={activeTab === 'price'}
-                      icon={<BarChart3 className="h-4 w-4" />}
-                      label="가격"
-                      onClick={() => setActiveTab('price')}
-                    />
-                    <ResultTabButton
                       active={activeTab === 'equity'}
                       icon={<LineChartIcon className="h-4 w-4" />}
-                      label="자산"
+                      label="자산 곡선"
                       onClick={() => setActiveTab('equity')}
                     />
                     <ResultTabButton
@@ -1074,9 +1253,15 @@ function LaboratoryPage() {
                       onClick={() => setActiveTab('drawdown')}
                     />
                     <ResultTabButton
+                      active={activeTab === 'price'}
+                      icon={<BarChart3 className="h-4 w-4" />}
+                      label="가격/체결"
+                      onClick={() => setActiveTab('price')}
+                    />
+                    <ResultTabButton
                       active={activeTab === 'trades'}
                       icon={<Table2 className="h-4 w-4" />}
-                      label="거래"
+                      label="거래 내역"
                       onClick={() => setActiveTab('trades')}
                     />
                   </div>
@@ -1098,9 +1283,9 @@ function LaboratoryPage() {
             <section className="flex min-h-[520px] items-center justify-center rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center dark:border-gray-700 dark:bg-gray-900">
               <div>
                 <Brain className="mx-auto h-10 w-10 text-emerald-500" />
-                <h2 className="mt-4 text-xl font-bold">검증 결과 없음</h2>
+                <h2 className="mt-4 text-xl font-bold">아직 해석할 결과가 없습니다</h2>
                 <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                  좌측 정책을 조정한 뒤 백테스트를 실행하세요.
+                  좌측 조건을 고르고 실행하면 AI가 성과와 리스크를 요약합니다.
                 </p>
               </div>
             </section>
