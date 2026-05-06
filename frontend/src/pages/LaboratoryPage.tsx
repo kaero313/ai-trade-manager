@@ -53,7 +53,9 @@ const TIMEFRAME_OPTIONS: Array<{ label: string; value: BacktestTimeframe }> = [
 const POLICY_PRESETS = {
   conservative: {
     label: '보수',
+    headline: '확실한 신호만 작게 진입',
     description: '신호를 엄격하게 보고 비중을 낮춥니다.',
+    riskLabel: '손실 방어 우선',
     minConfidence: '80',
     maxAllocationPct: '20',
     takeProfitPct: '4',
@@ -62,7 +64,9 @@ const POLICY_PRESETS = {
   },
   balanced: {
     label: '균형',
+    headline: '수익과 방어를 균형 있게 검증',
     description: '기본값으로 수익과 방어를 균형 있게 봅니다.',
+    riskLabel: '표준 리스크',
     minConfidence: '70',
     maxAllocationPct: '30',
     takeProfitPct: '5',
@@ -71,7 +75,9 @@ const POLICY_PRESETS = {
   },
   aggressive: {
     label: '공격',
+    headline: '더 자주, 더 크게 진입',
     description: '신호 기준을 낮추고 더 큰 비중을 허용합니다.',
+    riskLabel: '기회 추구',
     minConfidence: '60',
     maxAllocationPct: '50',
     takeProfitPct: '8',
@@ -123,6 +129,10 @@ function formatCompactKrw(value: number): string {
 function formatPercent(value: number): string {
   const sign = value > 0 ? '+' : value < 0 ? '' : ''
   return `${sign}${value.toFixed(2)}%`
+}
+
+function formatRatioPercent(value: number): string {
+  return `${value.toFixed(1)}%`
 }
 
 function formatDateLabel(seconds: number): string {
@@ -205,6 +215,7 @@ function NumberInput({
   suffix,
   min,
   step,
+  hint,
 }: {
   label: string
   value: string
@@ -212,6 +223,7 @@ function NumberInput({
   suffix?: string
   min?: number
   step?: number
+  hint?: string
 }) {
   return (
     <label className="block">
@@ -233,6 +245,7 @@ function NumberInput({
           </span>
         )}
       </div>
+      {hint && <span className="mt-1 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">{hint}</span>}
     </label>
   )
 }
@@ -535,6 +548,34 @@ function LaboratoryPage() {
       })) ?? [],
     [result],
   )
+  const selectedPresetMeta = selectedPreset === 'custom' ? null : POLICY_PRESETS[selectedPreset]
+  const policySummaryItems = useMemo(
+    () => [
+      {
+        label: '진입 기준',
+        value: `AI 확신 ${form.minConfidence}% 이상`,
+      },
+      {
+        label: '한 번에 투입',
+        value: `최대 ${form.maxAllocationPct}%`,
+      },
+      {
+        label: '자동 청산',
+        value: `익절 ${form.takeProfitPct}% / 손절 ${form.stopLossPct}%`,
+      },
+      {
+        label: '재진입 대기',
+        value: `${form.cooldownMinutes}분`,
+      },
+    ],
+    [
+      form.cooldownMinutes,
+      form.maxAllocationPct,
+      form.minConfidence,
+      form.stopLossPct,
+      form.takeProfitPct,
+    ],
+  )
 
   const handlePreset = (presetKey: PolicyPresetKey) => {
     const preset = POLICY_PRESETS[presetKey]
@@ -755,12 +796,22 @@ function LaboratoryPage() {
           </section>
 
           <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-            <div className="mb-4 flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-gray-500" />
-              <h2 className="text-sm font-semibold">AI 정책</h2>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
+                  <h2 className="text-sm font-semibold">검증할 AI 정책</h2>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                  {selectedPresetMeta?.headline ?? '직접 조정한 사용자 지정 정책'}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+                {selectedPresetMeta?.label ?? '사용자 지정'}
+              </span>
             </div>
 
-            <div className="mb-4 grid grid-cols-3 gap-2">
+            <div className="mb-4 grid gap-2 sm:grid-cols-3">
               {(Object.keys(POLICY_PRESETS) as PolicyPresetKey[]).map((key) => (
                 <button
                   key={key}
@@ -773,19 +824,33 @@ function LaboratoryPage() {
                   }`}
                 >
                   <span className="block text-sm font-semibold">{POLICY_PRESETS[key].label}</span>
-                  <span className="mt-1 block text-xs leading-5 text-gray-500 dark:text-gray-400">
-                    {POLICY_PRESETS[key].description}
+                  <span className="mt-1 block text-xs font-medium leading-5">
+                    {POLICY_PRESETS[key].headline}
+                  </span>
+                  <span className="mt-2 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">
+                    {POLICY_PRESETS[key].riskLabel}
                   </span>
                 </button>
               ))}
             </div>
 
-            <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
-              <div className="grid grid-cols-2 gap-2">
-                <span>신뢰도 {form.minConfidence}% 이상</span>
-                <span>최대 비중 {form.maxAllocationPct}%</span>
-                <span>익절 {form.takeProfitPct}%</span>
-                <span>손절 {form.stopLossPct}%</span>
+            <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50/70 p-4 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">정책 요약</p>
+                <p className="text-xs font-medium text-emerald-700 dark:text-emerald-200">
+                  {selectedPresetMeta?.description ?? '고급 설정값을 직접 반영합니다.'}
+                </p>
+              </div>
+              <div className="mt-3 grid gap-2">
+                {policySummaryItems.map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-xs dark:bg-gray-900"
+                  >
+                    <span className="text-gray-500 dark:text-gray-400">{item.label}</span>
+                    <span className="font-semibold text-gray-900 dark:text-gray-100">{item.value}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -795,96 +860,111 @@ function LaboratoryPage() {
               className="mb-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-gray-700 dark:text-gray-200 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
             >
               <SlidersHorizontal className="h-4 w-4" />
-              {showAdvancedPolicy ? '고급 설정 닫기' : '고급 설정 열기'}
+              {showAdvancedPolicy ? '전문가 설정 닫기' : '전문가 설정 열기'}
             </button>
 
             {showAdvancedPolicy && (
-              <div className="grid grid-cols-2 gap-3">
-              <NumberInput
-                label="빠른 EMA"
-                value={form.emaFast}
-                onChange={(value) => updatePolicyField('emaFast', value)}
-                min={2}
-                step={1}
-              />
-              <NumberInput
-                label="느린 EMA"
-                value={form.emaSlow}
-                onChange={(value) => updatePolicyField('emaSlow', value)}
-                min={3}
-                step={1}
-              />
-              <NumberInput
-                label="RSI 기간"
-                value={form.rsiPeriod}
-                onChange={(value) => updatePolicyField('rsiPeriod', value)}
-                min={2}
-                step={1}
-              />
-              <NumberInput
-                label="RSI 기준"
-                value={form.rsiMin}
-                onChange={(value) => updatePolicyField('rsiMin', value)}
-                min={1}
-                step={1}
-              />
-              <NumberInput
-                label="트레일링 스탑"
-                value={form.trailingStopPct}
-                onChange={(value) =>
-                  updatePolicyField('trailingStopPct', value)
-                }
-                suffix="%"
-                min={0}
-                step={0.1}
-              />
-              <NumberInput
-                label="최소 신뢰도"
-                value={form.minConfidence}
-                onChange={(value) =>
-                  updatePolicyField('minConfidence', value)
-                }
-                suffix="%"
-                min={0}
-                step={1}
-              />
-              <NumberInput
-                label="최대 비중"
-                value={form.maxAllocationPct}
-                onChange={(value) =>
-                  updatePolicyField('maxAllocationPct', value)
-                }
-                suffix="%"
-                min={0}
-                step={1}
-              />
-              <NumberInput
-                label="익절"
-                value={form.takeProfitPct}
-                onChange={(value) =>
-                  updatePolicyField('takeProfitPct', value)
-                }
-                suffix="%"
-                min={0}
-                step={0.1}
-              />
-              <NumberInput
-                label="손절"
-                value={form.stopLossPct}
-                onChange={(value) => updatePolicyField('stopLossPct', value)}
-                suffix="%"
-                step={0.1}
-              />
-              <NumberInput
-                label="쿨다운"
-                value={form.cooldownMinutes}
-                onChange={(value) =>
-                  updatePolicyField('cooldownMinutes', value)
-                }
-                suffix="분"
-                min={0}
-                step={1}
-              />
+              <div className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950">
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    신호 판단
+                  </h3>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <NumberInput
+                      label="단기 추세 민감도"
+                      value={form.emaFast}
+                      onChange={(value) => updatePolicyField('emaFast', value)}
+                      min={2}
+                      step={1}
+                      hint="작을수록 가격 변화에 빠르게 반응합니다."
+                    />
+                    <NumberInput
+                      label="장기 추세 기준"
+                      value={form.emaSlow}
+                      onChange={(value) => updatePolicyField('emaSlow', value)}
+                      min={3}
+                      step={1}
+                      hint="단기 기준보다 커야 합니다."
+                    />
+                    <NumberInput
+                      label="침체 판단 기간"
+                      value={form.rsiPeriod}
+                      onChange={(value) => updatePolicyField('rsiPeriod', value)}
+                      min={2}
+                      step={1}
+                      hint="짧을수록 과열/침체를 민감하게 봅니다."
+                    />
+                    <NumberInput
+                      label="매수 허용 기준"
+                      value={form.rsiMin}
+                      onChange={(value) => updatePolicyField('rsiMin', value)}
+                      min={1}
+                      step={1}
+                      hint="값이 높을수록 진입이 쉬워집니다."
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    진입과 청산
+                  </h3>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <NumberInput
+                      label="고점 대비 보호폭"
+                      value={form.trailingStopPct}
+                      onChange={(value) => updatePolicyField('trailingStopPct', value)}
+                      suffix="%"
+                      min={0}
+                      step={0.1}
+                      hint="상승 후 되돌림이 커지면 매도합니다."
+                    />
+                    <NumberInput
+                      label="AI 확신 기준"
+                      value={form.minConfidence}
+                      onChange={(value) => updatePolicyField('minConfidence', value)}
+                      suffix="%"
+                      min={0}
+                      step={1}
+                      hint="낮을수록 거래가 늘어납니다."
+                    />
+                    <NumberInput
+                      label="최대 투입 비중"
+                      value={form.maxAllocationPct}
+                      onChange={(value) => updatePolicyField('maxAllocationPct', value)}
+                      suffix="%"
+                      min={0}
+                      step={1}
+                      hint="한 종목에 쓸 수 있는 최대 자본입니다."
+                    />
+                    <NumberInput
+                      label="익절 기준"
+                      value={form.takeProfitPct}
+                      onChange={(value) => updatePolicyField('takeProfitPct', value)}
+                      suffix="%"
+                      min={0}
+                      step={0.1}
+                      hint="수익이 이 값에 닿으면 매도합니다."
+                    />
+                    <NumberInput
+                      label="손절 기준"
+                      value={form.stopLossPct}
+                      onChange={(value) => updatePolicyField('stopLossPct', value)}
+                      suffix="%"
+                      step={0.1}
+                      hint="0 이하 값으로 입력합니다."
+                    />
+                    <NumberInput
+                      label="재진입 대기"
+                      value={form.cooldownMinutes}
+                      onChange={(value) => updatePolicyField('cooldownMinutes', value)}
+                      suffix="분"
+                      min={0}
+                      step={1}
+                      hint="매매 직후 쉬는 시간입니다."
+                    />
+                  </div>
+                </div>
               </div>
             )}
 
@@ -936,23 +1016,32 @@ function LaboratoryPage() {
                   label="총 수익률"
                   value={formatPercent(result.summary.total_return_pct)}
                   tone={result.summary.total_return_pct >= 0 ? 'positive' : 'negative'}
-                />
-                <KpiCard
-                  label="최종 자산"
-                  value={formatKrw(result.meta.final_balance)}
-                  tone={finalPnl >= 0 ? 'positive' : 'negative'}
-                />
-                <KpiCard
-                  label="손익"
-                  value={`${finalPnl >= 0 ? '+' : '-'}${formatKrw(Math.abs(finalPnl))}`}
-                  tone={finalPnl >= 0 ? 'positive' : 'negative'}
+                  hint="초기 자본 대비"
                 />
                 <KpiCard
                   label="최대 낙폭"
                   value={formatPercent(-result.summary.max_drawdown_pct)}
                   tone={result.summary.max_drawdown_pct <= 10 ? 'neutral' : 'negative'}
+                  hint="고점 대비 최대 하락"
                 />
-                <KpiCard label="거래 수" value={`${result.summary.number_of_trades}회`} tone="neutral" />
+                <KpiCard
+                  label="승률"
+                  value={formatRatioPercent(result.summary.win_rate)}
+                  tone={result.summary.win_rate >= 50 ? 'positive' : 'negative'}
+                  hint="수익 거래 비율"
+                />
+                <KpiCard
+                  label="거래 수"
+                  value={`${result.summary.number_of_trades}회`}
+                  tone="neutral"
+                  hint="체결 기준"
+                />
+                <KpiCard
+                  label="최종 자산"
+                  value={formatKrw(result.meta.final_balance)}
+                  tone={finalPnl >= 0 ? 'positive' : 'negative'}
+                  hint={`${finalPnl >= 0 ? '+' : '-'}${formatKrw(Math.abs(finalPnl))}`}
+                />
               </section>
 
               <section className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
@@ -1026,22 +1115,25 @@ function KpiCard({
   label,
   value,
   tone,
+  hint,
 }: {
   label: string
   value: string
   tone: 'positive' | 'negative' | 'neutral'
+  hint?: string
 }) {
   const colorClass =
     tone === 'positive'
       ? 'text-emerald-600 dark:text-emerald-300'
       : tone === 'negative'
         ? 'text-rose-600 dark:text-rose-300'
-        : 'text-gray-900 dark:text-gray-100'
+      : 'text-gray-900 dark:text-gray-100'
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
       <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">{label}</p>
       <p className={`mt-2 text-2xl font-bold ${colorClass}`}>{value}</p>
+      {hint && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{hint}</p>}
     </div>
   )
 }
