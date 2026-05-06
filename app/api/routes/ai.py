@@ -192,6 +192,9 @@ async def get_ai_performance_summary(
     position_states: dict[int, dict[str, float]] = {}
 
     for order, position, _asset, analysis in history_result.all():
+        if _is_probable_legacy_quote_amount_buy(order):
+            continue
+
         normalized_side = _normalize_order_side(order.side)
         if normalized_side is None or order.price <= 0 or order.qty <= 0:
             continue
@@ -249,6 +252,9 @@ async def get_ai_performance_summary(
 
     recent_trades: list[AITradeRecord] = []
     for order, _position, asset, analysis in recent_result.all():
+        if _is_probable_legacy_quote_amount_buy(order):
+            continue
+
         trade_record = _build_recent_trade(order, asset, analysis)
         if trade_record is not None:
             recent_trades.append(trade_record)
