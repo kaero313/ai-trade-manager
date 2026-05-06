@@ -267,20 +267,95 @@ def _parse_datetime(value: Any) -> datetime | None:
     return _normalize_datetime(parsed)
 
 
-def _resolve_order_price(order_result: dict[str, Any], fallback_price: float) -> float:
-    for key in ("price", "avg_price", "trade_price"):
+def _resolve_trade_fill(order_result: dict[str, Any]) -> tuple[float, float]:
+    trades = order_result.get("trades")
+    if not isinstance(trades, list):
+        return 0.0, 0.0
+
+    total_qty = 0.0
+    total_funds = 0.0
+    for trade in trades:
+        if not isinstance(trade, dict):
+            continue
+
+        qty = _to_float(trade.get("volume"))
+        if qty <= 0:
+            continue
+
+        funds = _to_float(trade.get("funds"))
+        if funds <= 0:
+            price = _to_float(trade.get("price"))
+            funds = price * qty if price > 0 else 0.0
+        if funds <= 0:
+            continue
+
+        total_qty += qty
+        total_funds += funds
+
+    if total_qty <= 0 or total_funds <= 0:
+        return 0.0, 0.0
+    return total_funds / total_qty, total_qty
+
+
+def _is_quote_amount_bid(order_result: dict[str, Any], side: str | None) -> bool:
+    normalized_side = str(order_result.get("side") or side or "").strip().lower()
+    normalized_order_type = str(order_result.get("ord_type") or "").strip().lower()
+    return normalized_side in {"bid", "buy"} and normalized_order_type == "price"
+
+
+def _resolve_order_price(
+    order_result: dict[str, Any],
+    fallback_price: float,
+    *,
+    side: str | None = None,
+) -> float:
+    trade_price, _trade_qty = _resolve_trade_fill(order_result)
+    if trade_price > 0:
+        return trade_price
+
+    for key in ("avg_price", "trade_price"):
         price = _to_float(order_result.get(key))
         if price > 0:
             return price
+
+    if not _is_quote_amount_bid(order_result, side):
+        price = _to_float(order_result.get("price"))
+        if price > 0:
+            return price
+
     return fallback_price
 
 
 def _resolve_order_qty(order_result: dict[str, Any], fallback_qty: float) -> float:
+    _trade_price, trade_qty = _resolve_trade_fill(order_result)
+    if trade_qty > 0:
+        return trade_qty
+
     for key in ("executed_volume", "volume"):
         qty = _to_float(order_result.get(key))
         if qty > 0:
             return qty
     return fallback_qty
+
+
+async def _resolve_order_detail(
+    broker: Any,
+    order_result: dict[str, Any],
+) -> dict[str, Any]:
+    order_uuid = str(order_result.get("uuid") or "").strip()
+    get_order = getattr(broker, "get_order", None)
+    if not order_uuid or not callable(get_order):
+        return order_result
+
+    try:
+        detail = await get_order(uuid_=order_uuid)
+    except Exception as exc:
+        logger.warning("Upbit 주문 상세 조회 실패: uuid=%s error=%s", order_uuid, exc, exc_info=True)
+        return order_result
+
+    if not isinstance(detail, dict):
+        return order_result
+    return {**order_result, **detail}
 
 
 async def _get_or_create_asset(db: AsyncSession, market: str) -> Asset:
@@ -373,7 +448,7 @@ async def _record_order_history(
     is_paper: bool = False,
     broker_name: str = "UPBIT",
 ) -> bool:
-    resolved_price = _resolve_order_price(order_result, fallback_price)
+    resolved_price = _resolve_order_price(order_result, fallback_price, side=side)
     resolved_qty = _resolve_order_qty(order_result, fallback_qty)
     if resolved_price <= 0 or resolved_qty <= 0:
         logger.warning(
@@ -600,7 +675,10 @@ async def execute_hard_tp_sl_check(db: AsyncSession) -> set[str]:
                 )
                 continue
 
-            order_result = raw_order if isinstance(raw_order, dict) else {}
+            order_result = await _resolve_order_detail(
+                broker,
+                raw_order if isinstance(raw_order, dict) else {},
+            )
             history_recorded = await _record_order_history(
                 db=db,
                 symbol=symbol,
@@ -833,8 +911,11 @@ async def _execute_buy_trade(
             logger.error("AI 시장가 매수 중 예기치 못한 오류: symbol=%s error=%s", symbol, exc, exc_info=True)
             return
 
-        order_result = raw_order if isinstance(raw_order, dict) else {}
-        fallback_price = _resolve_order_price(order_result, 0.0)
+        order_result = await _resolve_order_detail(
+            broker,
+            raw_order if isinstance(raw_order, dict) else {},
+        )
+        fallback_price = _resolve_order_price(order_result, 0.0, side="buy")
         if fallback_price <= 0:
             try:
                 fallback_price = await _resolve_current_price(symbol, None)
@@ -982,7 +1063,10 @@ async def _execute_sell_trade(
             logger.error("AI 시장가 매도 중 예기치 못한 오류: symbol=%s error=%s", symbol, exc, exc_info=True)
             return
 
-        order_result = raw_order if isinstance(raw_order, dict) else {}
+        order_result = await _resolve_order_detail(
+            broker,
+            raw_order if isinstance(raw_order, dict) else {},
+        )
         history_recorded = await _record_order_history(
             db=db,
             symbol=symbol,
