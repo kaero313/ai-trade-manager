@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +14,11 @@ from app.services.trading.ai_analyst import execute_ai_analysis
 
 router = APIRouter()
 
+LEGACY_QUOTE_AMOUNT_BUY_CUTOFF = datetime(2026, 4, 30, 7, 0, tzinfo=UTC)
+LEGACY_QUOTE_AMOUNT_MIN_KRW = 5000.0
+LEGACY_QUOTE_AMOUNT_MAX_KRW = 100000.0
+LEGACY_QUOTE_AMOUNT_QTY_TOLERANCE = 0.001
+
 
 def _normalize_symbol(symbol: str) -> str:
     return str(symbol or "").strip().upper()
@@ -24,6 +31,25 @@ def _normalize_order_side(side: str) -> str | None:
     if normalized in {"sell", "ask"}:
         return "SELL"
     return None
+
+
+def _normalize_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _is_probable_legacy_quote_amount_buy(order: OrderHistory) -> bool:
+    if _normalize_order_side(order.side) != "BUY":
+        return False
+    if order.ai_analysis_log_id is None:
+        return False
+    if _normalize_datetime(order.executed_at) >= LEGACY_QUOTE_AMOUNT_BUY_CUTOFF:
+        return False
+    return (
+        LEGACY_QUOTE_AMOUNT_MIN_KRW <= order.price <= LEGACY_QUOTE_AMOUNT_MAX_KRW
+        and abs(order.qty - 1.0) <= LEGACY_QUOTE_AMOUNT_QTY_TOLERANCE
+    )
 
 
 def _build_recent_trade(order: OrderHistory, asset: Asset, analysis: AIAnalysisLog) -> AITradeRecord | None:
