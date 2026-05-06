@@ -98,7 +98,7 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     },
     {
         "config_key": AI_MIN_CONFIDENCE_TRADE_KEY,
-        "config_value": "70",
+        "config_value": "85",
         "description": "AI 자율 체결 최소 확신도(0~100)",
     },
     {

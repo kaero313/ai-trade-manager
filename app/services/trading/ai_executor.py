@@ -28,7 +28,7 @@ from app.services.trading.paper import get_trading_mode
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_AI_MIN_CONFIDENCE_TRADE = 70
+DEFAULT_AI_MIN_CONFIDENCE_TRADE = 85
 DEFAULT_AI_ANALYSIS_MAX_AGE_MINUTES = 90
 DEFAULT_MAX_ALLOCATION_PCT = 30.0
 DEFAULT_HARD_TAKE_PROFIT_PCT = 0.0
