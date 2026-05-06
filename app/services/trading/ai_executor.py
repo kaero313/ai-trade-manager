@@ -417,6 +417,33 @@ async def _get_existing_position(
     return result.scalars().first()
 
 
+def _apply_live_position_fill(
+    position: Position,
+    *,
+    side: str,
+    price: float,
+    qty: float,
+) -> None:
+    normalized_side = str(side or "").strip().lower()
+    current_qty = max(_to_float(position.quantity), 0.0)
+    current_avg_price = max(_to_float(position.avg_entry_price), 0.0)
+
+    if normalized_side == "buy":
+        new_qty = current_qty + qty
+        total_cost = (current_qty * current_avg_price) + (qty * price)
+        position.avg_entry_price = total_cost / new_qty if new_qty > 0 else price
+        position.quantity = new_qty
+        position.status = "open"
+        return
+
+    if normalized_side != "sell":
+        return
+
+    remaining_qty = max(current_qty - qty, 0.0)
+    position.quantity = 0.0 if remaining_qty <= 1e-12 else remaining_qty
+    position.status = "closed" if position.quantity <= 1e-12 else "open"
+
+
 async def _get_or_create_paper_cash_config(db: AsyncSession) -> SystemConfig:
     result = await db.execute(
         select(SystemConfig).where(SystemConfig.config_key == PAPER_TRADING_KRW_BALANCE_KEY)
@@ -465,6 +492,13 @@ async def _record_order_history(
     try:
         asset = await _get_or_create_asset(db, symbol)
         position = await _get_or_create_position(db, asset.id, resolved_price, is_paper=is_paper)
+        if not is_paper:
+            _apply_live_position_fill(
+                position,
+                side=side,
+                price=resolved_price,
+                qty=resolved_qty,
+            )
         db.add(
             OrderHistory(
                 position_id=position.id,
@@ -922,7 +956,7 @@ async def _execute_buy_trade(
             except Exception as exc:
                 logger.warning("AI 매수 체결가 보정 실패: symbol=%s error=%s", symbol, exc, exc_info=True)
                 fallback_price = 0.0
-        fallback_qty = order_amount_krw / fallback_price if fallback_price > 0 else 0.0
+        fallback_qty = (order_amount_krw * 0.9995) / fallback_price if fallback_price > 0 else 0.0
         history_recorded = await _record_order_history(
             db=db,
             symbol=symbol,
