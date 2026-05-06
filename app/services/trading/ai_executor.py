@@ -134,7 +134,7 @@ def _available_amount(item: AssetItem | None) -> float:
     return max(_to_float(item.balance) - _to_float(item.locked), 0.0)
 
 
-def _resolve_weighted_amount(total_amount: float, recommended_weight: int) -> float:
+def _resolve_weighted_amount(total_amount: float, recommended_weight: int | float) -> float:
     weight_ratio = max(0.0, min(float(recommended_weight), 100.0)) / 100.0
     return total_amount * weight_ratio
 
@@ -649,6 +649,7 @@ async def _execute_buy_trade(
 
     total_krw = max(_to_float(portfolio.total_net_worth), 0.0)
     max_allocation_pct = await _load_max_allocation_pct(db)
+    max_buy_weight_pct = await _load_ai_max_buy_weight_pct(db)
     max_budget = total_krw * (max_allocation_pct / 100.0)
     current_position_value = max(_to_float(target_item.total_value) if target_item is not None else 0.0, 0.0)
     remaining_budget = max(max_budget - current_position_value, 0.0)
@@ -663,7 +664,15 @@ async def _execute_buy_trade(
         )
         return
 
-    target_budget = _resolve_weighted_amount(remaining_budget, analysis.recommended_weight)
+    effective_recommended_weight = min(float(analysis.recommended_weight), max_buy_weight_pct)
+    target_budget = _resolve_weighted_amount(remaining_budget, effective_recommended_weight)
+    if effective_recommended_weight < float(analysis.recommended_weight):
+        logger.info(
+            "AI 매수 비중 상한 적용: symbol=%s recommended_weight=%s max_buy_weight_pct=%s",
+            symbol,
+            analysis.recommended_weight,
+            max_buy_weight_pct,
+        )
     if target_budget <= 0:
         logger.info(
             "AI 매수 스킵: 계산된 목표 예산이 0 이하입니다. symbol=%s target_budget=%s remaining_budget=%s",
@@ -1064,6 +1073,15 @@ async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
 
     trading_mode = await get_trading_mode(db)
     if latest_analysis.decision == "BUY":
+        if trading_mode == "live" and not await _load_live_buy_enabled(db):
+            logger.warning(
+                "AI live 신규 매수 잠금: symbol=%s confidence=%s recommended_weight=%s",
+                normalized_symbol,
+                latest_analysis.confidence,
+                latest_analysis.recommended_weight,
+            )
+            return
+
         await _execute_buy_trade(
             db=db,
             symbol=normalized_symbol,
