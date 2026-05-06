@@ -253,7 +253,7 @@ function PortfolioChart({
     <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Portfolio Allocation</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">자산 배분</h2>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">{status.description}</p>
         </div>
         <span

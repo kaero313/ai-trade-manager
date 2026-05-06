@@ -93,7 +93,7 @@ function AiCoreStatus() {
   const badgeClassName = isActive
     ? 'bg-white/80 text-emerald-700 dark:bg-gray-900/60 dark:text-emerald-300'
     : 'bg-white/80 text-rose-700 dark:bg-gray-900/60 dark:text-rose-300'
-  const badgeText = isActive ? '● Active' : '◶ Offline'
+  const badgeText = isActive ? '● 가동' : '◶ 중지'
 
   return (
     <section

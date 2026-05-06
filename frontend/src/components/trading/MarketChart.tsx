@@ -432,7 +432,7 @@ function MarketChart({ symbol }: MarketChartProps) {
     <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Trading Chart</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">트레이딩 차트</h2>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {normalizedSymbol ? normalizedSymbol : '종목을 선택하면 차트가 표시됩니다.'}
           </p>
@@ -480,7 +480,7 @@ function MarketChart({ symbol }: MarketChartProps) {
               >
                 ✓
               </span>
-              <span>Show AI Predictive Lines</span>
+              <span>AI 예측선 보기</span>
             </button>
             <p
               className={`text-[11px] font-medium ${

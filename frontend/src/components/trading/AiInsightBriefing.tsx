@@ -255,7 +255,7 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
         <div className="flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-gray-200 bg-gray-50 p-5 dark:border-gray-700 dark:bg-gray-900/60">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">
-              Explainable AI
+              AI 판단 근거
             </p>
             <div
               className="relative mt-2 inline-flex items-center gap-2"

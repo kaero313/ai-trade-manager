@@ -85,7 +85,7 @@ function RecentOrders({
     <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4 dark:border-gray-700">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Orders</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">최근 체결</h2>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">
             {updatedAtLabel ? `마지막 정상 조회 ${updatedAtLabel}` : '최근 체결된 매매 내역입니다.'}
           </p>

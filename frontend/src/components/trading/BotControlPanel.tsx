@@ -75,7 +75,7 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
   const isError = botStatusQuery.isError
   const isActive = botStatusQuery.data?.running ?? false
   const isSubmitting = activeAction !== null
-  const badgeLabel = isError ? 'Error' : isLoading ? '확인 중' : isActive ? 'Active' : 'Inactive'
+  const badgeLabel = isError ? '오류' : isLoading ? '확인 중' : isActive ? '가동 중' : '정지'
   const badgeClassName = isError
     ? 'border border-rose-200 bg-rose-100 text-rose-700'
     : isActive
@@ -126,7 +126,7 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
     <aside className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Bot Status</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">봇 상태</h2>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">5초 주기로 실시간 상태를 자동 갱신합니다.</p>
         </div>
         <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${badgeClassName}`}>
@@ -159,7 +159,7 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
             } disabled:opacity-70`}
           >
             {activeAction === 'start' && <Loader2 className="h-4 w-4 animate-spin" />}
-            <span>{activeAction === 'start' ? '가동 중...' : '봇 가동(Start)'}</span>
+            <span>{activeAction === 'start' ? '가동 중...' : '봇 가동'}</span>
           </button>
           <button
             type="button"
@@ -172,7 +172,7 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
             } disabled:opacity-70`}
           >
             {activeAction === 'stop' && <Loader2 className="h-4 w-4 animate-spin" />}
-            <span>{activeAction === 'stop' ? '정지 중...' : '봇 정지(Stop)'}</span>
+            <span>{activeAction === 'stop' ? '정지 중...' : '봇 정지'}</span>
           </button>
         </div>
         <button

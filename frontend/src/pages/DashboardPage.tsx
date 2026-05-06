@@ -67,7 +67,7 @@ function DashboardPage() {
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
               }`}
             >
-              시장 심리(Sentiment)
+              시장 심리
             </button>
             <button
               type="button"
@@ -78,7 +78,7 @@ function DashboardPage() {
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
               }`}
             >
-              글로벌 시황 뉴스(News)
+              글로벌 뉴스
             </button>
           </div>
 

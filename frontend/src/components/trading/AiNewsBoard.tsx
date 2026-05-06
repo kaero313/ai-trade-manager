@@ -72,7 +72,7 @@ function AiNewsBoard() {
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600 dark:text-sky-300">
-              Global News
+              글로벌 뉴스
             </p>
             <h2 className="mt-2 break-words text-lg font-bold text-gray-900 dark:text-gray-100">
               글로벌 시황 뉴스

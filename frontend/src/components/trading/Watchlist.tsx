@@ -99,7 +99,7 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
   return (
     <aside className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="mb-4 shrink-0 flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Watchlist</h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">관심 종목</h2>
         <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />

@@ -135,7 +135,7 @@ function AiPerformanceWidget() {
     return (
       <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
         <header className="border-b border-gray-200 px-5 py-4 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI Performance</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI 성과</h2>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">AI 자율 체결 성과 요약</p>
         </header>
         <div className="flex h-80 items-center justify-center gap-3 px-5 py-8 text-sm text-gray-500 dark:text-gray-300">
@@ -150,7 +150,7 @@ function AiPerformanceWidget() {
     return (
       <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
         <header className="border-b border-gray-200 px-5 py-4 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI Performance</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI 성과</h2>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">AI 자율 체결 성과 요약</p>
         </header>
         <div className="p-5">
@@ -176,7 +176,7 @@ function AiPerformanceWidget() {
   return (
     <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
       <header className="border-b border-gray-200 px-5 py-4 dark:border-gray-700">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI Performance</h2>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI 성과</h2>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">AI 자율 체결 성과 요약</p>
       </header>
 

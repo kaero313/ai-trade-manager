@@ -286,7 +286,7 @@ function AiMarketSentiment() {
                 <div className="flex min-w-0 items-end justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
-                      Current Position
+                      현재 점수
                     </p>
                     <p className="mt-2 text-3xl font-black tracking-tight text-gray-900 dark:text-gray-100">
                       {sentimentScore}
@@ -294,7 +294,7 @@ function AiMarketSentiment() {
                   </div>
                   <div className="min-w-0 text-right">
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">
-                      Market Bias
+                      시장 방향
                     </p>
                     <p className="mt-2 break-words text-lg font-bold text-gray-900 dark:text-gray-100">
                       {sentimentTone.label}
