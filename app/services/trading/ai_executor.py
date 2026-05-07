@@ -27,13 +27,14 @@ from app.services.trading.paper import PAPER_BALANCE_EPSILON
 from app.services.trading.paper import PAPER_BROKER_NAME
 from app.services.trading.paper import build_paper_order_result
 from app.services.trading.paper import get_trading_mode
+from app.services.trading.entry_policy import evaluate_ai_buy_entry_gate
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_AI_MIN_CONFIDENCE_TRADE = 85
 DEFAULT_AI_ANALYSIS_MAX_AGE_MINUTES = 90
 DEFAULT_MAX_ALLOCATION_PCT = 30.0
-DEFAULT_AI_MAX_BUY_WEIGHT_PCT = 40.0
+DEFAULT_AI_MAX_BUY_WEIGHT_PCT = 30.0
 DEFAULT_LIVE_BUY_ENABLED = False
 DEFAULT_HARD_TAKE_PROFIT_PCT = 0.0
 DEFAULT_HARD_STOP_LOSS_PCT = 0.0
@@ -190,7 +191,7 @@ async def _load_ai_max_buy_weight_pct(db: AsyncSession) -> float:
         raw_value,
         default=DEFAULT_AI_MAX_BUY_WEIGHT_PCT,
         minimum=0.0,
-        maximum=100.0,
+        maximum=30.0,
     )
 
 
@@ -777,7 +778,8 @@ async def _execute_buy_trade(
         return
 
     effective_recommended_weight = min(float(analysis.recommended_weight), max_buy_weight_pct)
-    target_budget = _resolve_weighted_amount(remaining_budget, effective_recommended_weight)
+    ai_recommended_budget = _resolve_weighted_amount(total_krw, effective_recommended_weight)
+    target_budget = min(remaining_budget, ai_recommended_budget)
     if effective_recommended_weight < float(analysis.recommended_weight):
         logger.info(
             "AI 매수 비중 상한 적용: symbol=%s recommended_weight=%s max_buy_weight_pct=%s",
@@ -1191,6 +1193,29 @@ async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
 
     trading_mode = await get_trading_mode(db)
     if latest_analysis.decision == "BUY":
+        entry_gate = await evaluate_ai_buy_entry_gate(
+            db,
+            symbol=normalized_symbol,
+            analysis=latest_analysis,
+            portfolio=portfolio,
+            min_calibrated_confidence=min_confidence,
+        )
+        if not entry_gate.allowed:
+            logger.info(
+                "AI BUY 진입 게이트 스킵: symbol=%s gate=%s",
+                normalized_symbol,
+                entry_gate.to_log_dict(),
+            )
+            return
+
+        if entry_gate.shadow_mode:
+            logger.info(
+                "AI BUY shadow 후보 기록: symbol=%s gate=%s",
+                normalized_symbol,
+                entry_gate.to_log_dict(),
+            )
+            return
+
         if trading_mode == "live" and not await _load_live_buy_enabled(db):
             logger.warning(
                 "AI live 신규 매수 잠금: symbol=%s confidence=%s recommended_weight=%s",
