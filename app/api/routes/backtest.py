@@ -20,7 +20,7 @@ class BacktestStrategyRequest(BaseModel):
     ema_fast: int = Field(default=12, ge=2, le=250)
     ema_slow: int = Field(default=26, ge=3, le=400)
     rsi_period: int = Field(default=14, ge=2, le=100)
-    rsi_min: int = Field(default=50, ge=1, le=99)
+    rsi_min: int = Field(default=45, ge=1, le=99)
     trailing_stop_pct: float = Field(default=0.03, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
@@ -31,7 +31,7 @@ class BacktestStrategyRequest(BaseModel):
 
 
 class BacktestPolicyRequest(BaseModel):
-    min_confidence: int = Field(default=70, ge=0, le=100)
+    min_confidence: int = Field(default=85, ge=0, le=100)
     max_allocation_pct: float = Field(default=30.0, ge=0.0, le=100.0)
     take_profit_pct: float = Field(default=5.0, ge=0.0, le=1000.0)
     stop_loss_pct: float = Field(default=-3.0, ge=-100.0, le=0.0)

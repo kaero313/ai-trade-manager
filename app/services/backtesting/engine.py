@@ -17,13 +17,13 @@ class AIPolicyStrategyParams:
     ema_fast: int = 12
     ema_slow: int = 26
     rsi_period: int = 14
-    rsi_min: int = 50
+    rsi_min: int = 45
     trailing_stop_pct: float = 0.03
 
 
 @dataclass(frozen=True, slots=True)
 class AIPolicyConfig:
-    min_confidence: int = 70
+    min_confidence: int = 85
     max_allocation_pct: float = 30.0
     take_profit_pct: float = 5.0
     stop_loss_pct: float = -3.0
@@ -313,7 +313,7 @@ def _coerce_strategy_params(
             minimum=2,
             maximum=100,
         ),
-        rsi_min=_coerce_int(payload.get("rsi_min"), 50, minimum=1, maximum=99),
+        rsi_min=_coerce_int(payload.get("rsi_min"), 45, minimum=1, maximum=99),
         trailing_stop_pct=_coerce_float(
             payload.get("trailing_stop_pct"),
             0.03,
@@ -328,7 +328,7 @@ def _coerce_policy_config(value: Mapping[str, Any] | AIPolicyConfig | None) -> A
         return value
     payload = value if isinstance(value, Mapping) else {}
     return AIPolicyConfig(
-        min_confidence=_coerce_int(payload.get("min_confidence"), 70, minimum=0, maximum=100),
+        min_confidence=_coerce_int(payload.get("min_confidence"), 85, minimum=0, maximum=100),
         max_allocation_pct=_coerce_float(
             payload.get("max_allocation_pct"),
             30.0,
