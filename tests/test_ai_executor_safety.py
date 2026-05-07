@@ -9,6 +9,14 @@ from app.services.trading.ai_executor import _parse_bool_config
 from app.services.trading.ai_executor import _resolve_order_price
 from app.services.trading.ai_executor import _resolve_order_qty
 from app.services.trading.ai_executor import _resolve_weighted_amount
+from app.services.trading.ai_analyst import is_fallback_news_item
+from app.services.trading.entry_policy import AIConfidenceCalibration
+from app.services.trading.entry_policy import DEFAULT_MIN_CALIBRATED_CONFIDENCE
+from app.services.trading.entry_policy import DEFAULT_TRADE_EXCLUDED_SYMBOLS
+from app.services.trading.entry_policy import DEFAULT_TRADE_TARGET_SYMBOLS
+from app.services.trading.entry_policy import EntryGateConfig
+from app.services.trading.entry_policy import filter_trade_symbols
+from app.services.trading.entry_policy import score_entry_context
 
 
 def test_quote_amount_bid_uses_trade_vwap_not_order_amount() -> None:
@@ -88,3 +96,78 @@ def test_legacy_quote_amount_buy_is_excluded_only_before_cutoff() -> None:
 
     assert _is_probable_legacy_quote_amount_buy(legacy_order) is True
     assert _is_probable_legacy_quote_amount_buy(fixed_order) is False
+
+
+def test_default_trade_universe_excludes_doge() -> None:
+    config = EntryGateConfig(
+        target_symbols=DEFAULT_TRADE_TARGET_SYMBOLS,
+        excluded_symbols=DEFAULT_TRADE_EXCLUDED_SYMBOLS,
+        score_threshold=70,
+        shadow_mode=True,
+        min_success_rate_pct=45,
+        max_concurrent_positions=2,
+        min_calibrated_confidence=DEFAULT_MIN_CALIBRATED_CONFIDENCE,
+    )
+
+    assert filter_trade_symbols(["KRW-DOGE", "KRW-BTC", "KRW-XRP"], config) == [
+        "KRW-BTC",
+        "KRW-XRP",
+    ]
+
+
+def test_fallback_news_is_not_scored_as_positive_signal() -> None:
+    assert is_fallback_news_item(
+        {
+            "title": "Bitcoin volatility check fallback feed",
+            "content": "Fallback global market headline because the CryptoPanic request failed.",
+            "source": "cryptopanic",
+            "link": "dummy://cryptopanic/bitcoin-volatility-check",
+        }
+    )
+
+    config = EntryGateConfig(
+        target_symbols=DEFAULT_TRADE_TARGET_SYMBOLS,
+        excluded_symbols=DEFAULT_TRADE_EXCLUDED_SYMBOLS,
+        score_threshold=70,
+        shadow_mode=True,
+        min_success_rate_pct=45,
+        max_concurrent_positions=2,
+        min_calibrated_confidence=DEFAULT_MIN_CALIBRATED_CONFIDENCE,
+    )
+    calibration = AIConfidenceCalibration(
+        checked_count=20,
+        success_count=10,
+        success_rate_pct=50.0,
+        calibrated_confidence=90,
+    )
+    score = score_entry_context(
+        {
+            "technical": {
+                "close": 110,
+                "sma_20": 100,
+                "ema_50": 105,
+                "rsi_14": 55,
+                "bb_upper_20_2": 120,
+                "bb_lower_20_2": 90,
+                "price_vs_sma20_pct": 10,
+            },
+            "sentiment": {"score": 45},
+            "news": {
+                "items": [
+                    {
+                        "title": "KRW market fallback headline",
+                        "content": "Fallback local market headline because Naver credentials are unavailable.",
+                        "source": "naver",
+                        "link": "dummy://naver/krw-market-standby",
+                    }
+                ]
+            },
+        },
+        calibration,
+        config,
+    )
+
+    assert score.components["news"] == 0
+    assert score.real_news_count == 0
+    assert score.technical_ok is True
+    assert score.sentiment_ok is True

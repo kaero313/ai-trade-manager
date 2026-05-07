@@ -33,6 +33,12 @@ AI_ANALYSIS_MAX_AGE_MINUTES_KEY = "ai_analysis_max_age_minutes"
 AI_CUSTOM_PERSONA_PROMPT_KEY = "ai_custom_persona_prompt"
 LIVE_BUY_ENABLED_KEY = "live_buy_enabled"
 AI_MAX_BUY_WEIGHT_PCT_KEY = "ai_max_buy_weight_pct"
+AI_TRADE_TARGET_SYMBOLS_KEY = "ai_trade_target_symbols"
+AI_TRADE_EXCLUDED_SYMBOLS_KEY = "ai_trade_excluded_symbols"
+AI_ENTRY_SCORE_THRESHOLD_KEY = "ai_entry_score_threshold"
+AI_ENTRY_SHADOW_MODE_KEY = "ai_entry_shadow_mode"
+AI_CALIBRATION_MIN_SUCCESS_RATE_KEY = "ai_calibration_min_success_rate"
+AI_MAX_CONCURRENT_POSITIONS_KEY = "ai_max_concurrent_positions"
 AI_PROVIDER_PRIORITY_KEY = "ai_provider_priority"
 AI_PROVIDER_SETTINGS_KEY = "ai_provider_settings"
 AI_PROVIDER_STATUS_KEY = "ai_provider_status"
@@ -120,8 +126,38 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     },
     {
         "config_key": AI_MAX_BUY_WEIGHT_PCT_KEY,
-        "config_value": "40",
+        "config_value": "30",
         "description": "AI 신규 매수 1회 실행 비중 상한(%)",
+    },
+    {
+        "config_key": AI_TRADE_TARGET_SYMBOLS_KEY,
+        "config_value": json.dumps(["KRW-BTC", "KRW-ETH", "KRW-XRP"], ensure_ascii=False),
+        "description": "AI 자동매매 허용 종목 JSON 배열",
+    },
+    {
+        "config_key": AI_TRADE_EXCLUDED_SYMBOLS_KEY,
+        "config_value": json.dumps(["KRW-DOGE"], ensure_ascii=False),
+        "description": "AI 자동매매 제외 종목 JSON 배열",
+    },
+    {
+        "config_key": AI_ENTRY_SCORE_THRESHOLD_KEY,
+        "config_value": "70",
+        "description": "AI 신규 BUY 전 deterministic 진입 점수 최소값",
+    },
+    {
+        "config_key": AI_ENTRY_SHADOW_MODE_KEY,
+        "config_value": "true",
+        "description": "AI BUY 후보를 주문 없이 기록하는 shadow mode 여부",
+    },
+    {
+        "config_key": AI_CALIBRATION_MIN_SUCCESS_RATE_KEY,
+        "config_value": "45",
+        "description": "심볼별 과거 AI BUY 최소 적중률(%)",
+    },
+    {
+        "config_key": AI_MAX_CONCURRENT_POSITIONS_KEY,
+        "config_value": "2",
+        "description": "AI 자동매매 동시 보유 종목 수 상한",
     },
     {
         "config_key": AI_PROVIDER_PRIORITY_KEY,
@@ -263,6 +299,17 @@ async def seed_system_configs_if_empty(db: AsyncSession) -> None:
         ):
             max_allocation_config.config_value = "30"
             should_commit = True
+
+    if AI_MAX_BUY_WEIGHT_PCT_KEY in existing_keys:
+        max_buy_weight_config = await get_system_config(db, AI_MAX_BUY_WEIGHT_PCT_KEY)
+        if max_buy_weight_config is not None:
+            try:
+                max_buy_weight = float(str(max_buy_weight_config.config_value).strip())
+            except (TypeError, ValueError, AttributeError):
+                max_buy_weight = 30.0
+            if max_buy_weight > 30.0:
+                max_buy_weight_config.config_value = "30"
+                should_commit = True
 
     if should_commit:
         await db.commit()

@@ -30,6 +30,8 @@ from app.services.trading.accuracy_worker import update_ai_analysis_accuracy
 from app.services.trading.ai_analyst import execute_ai_analysis
 from app.services.trading.ai_executor import execute_hard_tp_sl_check
 from app.services.trading.ai_executor import execute_ai_trade
+from app.services.trading.entry_policy import filter_trade_symbols
+from app.services.trading.entry_policy import load_entry_gate_config
 
 logger = logging.getLogger(__name__)
 
@@ -414,6 +416,8 @@ async def autonomous_ai_analyst_job() -> None:
                 for symbol in result.scalars().all()
                 if str(symbol).strip()
             ]
+            entry_gate_config = await load_entry_gate_config(db)
+            symbols = filter_trade_symbols(symbols, entry_gate_config)
             if liquidated_symbols:
                 symbols = [
                     symbol

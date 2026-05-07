@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -280,6 +280,29 @@ def _build_market_news_knn_query(query_embedding: list[float], size: int) -> dic
             }
         },
     }
+
+
+def is_fallback_news_item(item: Mapping[str, Any]) -> bool:
+    title = str(item.get("title") or "").strip().lower()
+    summary = str(item.get("summary") or "").strip().lower()
+    content = str(item.get("content") or "").strip().lower()
+    source = str(item.get("source") or "").strip().lower()
+    link = str(item.get("link") or "").strip().lower()
+    combined = " ".join([title, summary, content, source, link])
+
+    if link.startswith("dummy://"):
+        return True
+    if "fallback" not in combined:
+        return False
+    return any(
+        marker in combined
+        for marker in (
+            "credentials are unavailable",
+            "credentials unavailable",
+            "request failed",
+            "generated to keep the rag ingestion pipeline alive",
+        )
+    )
 
 
 async def _resolve_market_metadata(symbol: str) -> dict[str, Any] | None:
