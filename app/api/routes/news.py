@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.services.news_analyzer import analyze_market_sentiment
 from app.services.news_scraper import fetch_crypto_news
+from app.services.rag.ingestion import get_configured_market_news_sources
+from app.services.rag.opensearch_client import INDEX_NAME
+from app.services.rag.opensearch_client import get_opensearch_client
 
 router = APIRouter()
 SENTIMENT_CACHE_TTL_SECONDS = 1800
@@ -36,6 +39,24 @@ class SentimentResponse(BaseModel):
     summary: list[str] = Field(default_factory=list)
     news_articles: list[NewsItem] = Field(default_factory=list)
     updated_at: datetime = Field(...)
+
+
+class RagStatusResponse(BaseModel):
+    status: str = Field(...)
+    index_exists: bool = Field(...)
+    total_documents: int = Field(...)
+    parent_documents: int = Field(...)
+    chunk_documents: int = Field(...)
+    chunked_parent_documents: int = Field(...)
+    avg_chunks_per_parent: float = Field(...)
+    real_documents: int = Field(...)
+    fallback_documents: int = Field(...)
+    embedded_documents: int = Field(...)
+    missing_embedding_documents: int = Field(...)
+    latest_published_at: str | None = Field(default=None)
+    source_breakdown: dict[str, int] = Field(default_factory=dict)
+    configured_sources: list[dict[str, Any]] = Field(default_factory=list)
+    error: str | None = Field(default=None)
 
 
 def _build_news_items(raw_items: list[Any]) -> list[NewsItem]:
@@ -79,6 +100,218 @@ def _normalize_score(raw_score: Any) -> int:
     return max(0, min(100, score))
 
 
+def _build_rag_status_query() -> dict[str, Any]:
+    fallback_filter = {
+        "bool": {
+            "should": [
+                {"wildcard": {"link": "dummy://*"}},
+                {"match_phrase": {"content": "credentials are unavailable"}},
+                {"match_phrase": {"content": "request failed"}},
+                {
+                    "match_phrase": {
+                        "content": "generated to keep the rag ingestion pipeline alive",
+                    }
+                },
+            ],
+            "minimum_should_match": 1,
+        }
+    }
+    return {
+        "size": 0,
+        "aggs": {
+            "fallback_documents": {"filter": fallback_filter},
+            "embedded_documents": {"filter": {"exists": {"field": "embedding"}}},
+            "missing_embedding_documents": {
+                "filter": {
+                    "bool": {
+                        "must_not": [
+                            {"exists": {"field": "embedding"}},
+                        ]
+                    }
+                }
+            },
+            "parent_documents": {"cardinality": {"field": "parent_id"}},
+            "chunk_documents": {"filter": {"exists": {"field": "parent_id"}}},
+            "chunked_parent_documents": {
+                "filter": {"term": {"is_chunked": True}},
+                "aggs": {
+                    "parents": {"cardinality": {"field": "parent_id"}},
+                },
+            },
+            "latest_published_at": {"max": {"field": "published_at"}},
+            "source_breakdown": {"terms": {"field": "source", "size": 20}},
+        },
+    }
+
+
+def _to_int(raw_value: Any) -> int:
+    try:
+        return int(raw_value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _extract_total_hits(response: dict[str, Any]) -> int:
+    total = response.get("hits", {}).get("total", 0)
+    if isinstance(total, dict):
+        return _to_int(total.get("value"))
+    return _to_int(total)
+
+
+def _extract_doc_count(aggregations: dict[str, Any], key: str) -> int:
+    bucket = aggregations.get(key)
+    if not isinstance(bucket, dict):
+        return 0
+    return _to_int(bucket.get("doc_count"))
+
+
+def _extract_agg_value(aggregations: dict[str, Any], key: str) -> int:
+    bucket = aggregations.get(key)
+    if not isinstance(bucket, dict):
+        return 0
+    return _to_int(bucket.get("value"))
+
+
+def _extract_nested_agg_value(aggregations: dict[str, Any], bucket_key: str, value_key: str) -> int:
+    bucket = aggregations.get(bucket_key)
+    if not isinstance(bucket, dict):
+        return 0
+    nested = bucket.get(value_key)
+    if not isinstance(nested, dict):
+        return 0
+    return _to_int(nested.get("value"))
+
+
+def _extract_source_breakdown(aggregations: dict[str, Any]) -> dict[str, int]:
+    source_bucket = aggregations.get("source_breakdown")
+    if not isinstance(source_bucket, dict):
+        return {}
+    buckets = source_bucket.get("buckets")
+    if not isinstance(buckets, list):
+        return {}
+    return {
+        str(bucket.get("key")): _to_int(bucket.get("doc_count"))
+        for bucket in buckets
+        if isinstance(bucket, dict) and bucket.get("key") is not None
+    }
+
+
+def _extract_latest_published_at(aggregations: dict[str, Any]) -> str | None:
+    latest_bucket = aggregations.get("latest_published_at")
+    if not isinstance(latest_bucket, dict):
+        return None
+    value = latest_bucket.get("value")
+    if value is None:
+        return None
+    try:
+        return datetime.fromtimestamp(float(value) / 1000, tz=timezone.utc).isoformat()
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def _resolve_rag_status(
+    *,
+    index_exists: bool,
+    total_documents: int,
+    real_documents: int,
+    fallback_documents: int,
+    missing_embedding_documents: int,
+) -> str:
+    if not index_exists or total_documents <= 0:
+        return "empty"
+    if real_documents <= 0:
+        return "degraded"
+    if fallback_documents > 0 or missing_embedding_documents > 0:
+        return "degraded"
+    return "healthy"
+
+
+async def _build_rag_status_response(client: Any | None = None) -> RagStatusResponse:
+    configured_sources = get_configured_market_news_sources()
+    search_client = client or get_opensearch_client()
+    index_exists = False
+
+    try:
+        index_exists = bool(await search_client.indices.exists(index=INDEX_NAME))
+        if not index_exists:
+            return RagStatusResponse(
+                status="empty",
+                index_exists=False,
+                total_documents=0,
+                parent_documents=0,
+                chunk_documents=0,
+                chunked_parent_documents=0,
+                avg_chunks_per_parent=0.0,
+                real_documents=0,
+                fallback_documents=0,
+                embedded_documents=0,
+                missing_embedding_documents=0,
+                source_breakdown={},
+                configured_sources=configured_sources,
+            )
+
+        response = await search_client.search(index=INDEX_NAME, body=_build_rag_status_query())
+    except Exception as exc:
+        return RagStatusResponse(
+            status="unavailable",
+            index_exists=index_exists,
+            total_documents=0,
+            parent_documents=0,
+            chunk_documents=0,
+            chunked_parent_documents=0,
+            avg_chunks_per_parent=0.0,
+            real_documents=0,
+            fallback_documents=0,
+            embedded_documents=0,
+            missing_embedding_documents=0,
+            source_breakdown={},
+            configured_sources=configured_sources,
+            error=str(exc),
+        )
+
+    aggregations = response.get("aggregations") if isinstance(response, dict) else {}
+    if not isinstance(aggregations, dict):
+        aggregations = {}
+
+    total_documents = _extract_total_hits(response)
+    fallback_documents = _extract_doc_count(aggregations, "fallback_documents")
+    embedded_documents = _extract_doc_count(aggregations, "embedded_documents")
+    missing_embedding_documents = _extract_doc_count(aggregations, "missing_embedding_documents")
+    parent_documents = _extract_agg_value(aggregations, "parent_documents")
+    chunk_documents = _extract_doc_count(aggregations, "chunk_documents")
+    chunked_parent_documents = _extract_nested_agg_value(
+        aggregations,
+        "chunked_parent_documents",
+        "parents",
+    )
+    avg_chunks_per_parent = round(chunk_documents / parent_documents, 4) if parent_documents else 0.0
+    real_documents = max(total_documents - fallback_documents, 0)
+    status = _resolve_rag_status(
+        index_exists=index_exists,
+        total_documents=total_documents,
+        real_documents=real_documents,
+        fallback_documents=fallback_documents,
+        missing_embedding_documents=missing_embedding_documents,
+    )
+
+    return RagStatusResponse(
+        status=status,
+        index_exists=index_exists,
+        total_documents=total_documents,
+        parent_documents=parent_documents,
+        chunk_documents=chunk_documents,
+        chunked_parent_documents=chunked_parent_documents,
+        avg_chunks_per_parent=avg_chunks_per_parent,
+        real_documents=real_documents,
+        fallback_documents=fallback_documents,
+        embedded_documents=embedded_documents,
+        missing_embedding_documents=missing_embedding_documents,
+        latest_published_at=_extract_latest_published_at(aggregations),
+        source_breakdown=_extract_source_breakdown(aggregations),
+        configured_sources=configured_sources,
+    )
+
+
 @router.get("/", response_model=NewsResponse)
 async def get_news() -> NewsResponse:
     payload = fetch_crypto_news()
@@ -90,6 +323,11 @@ async def get_news() -> NewsResponse:
         count=len(items),
         items=items,
     )
+
+
+@router.get("/rag/status", response_model=RagStatusResponse)
+async def get_rag_status() -> RagStatusResponse:
+    return await _build_rag_status_response()
 
 
 @router.get("/sentiment", response_model=SentimentResponse)
