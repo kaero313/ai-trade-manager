@@ -9,16 +9,19 @@ from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from html import unescape
 from typing import Any
+from urllib.parse import urlparse
 
+import feedparser
 import httpx
 from opensearchpy.helpers import async_bulk
 
 from app.core.config import settings
+from app.services.news_scraper import RSS_FEED_URLS
 from app.services.ai.providers.gemini import AIProviderRateLimitError, GeminiAnalyzer
 from app.services.rag.opensearch_client import (
     EMBEDDING_DIMENSION,
     INDEX_NAME,
-    ensure_market_news_index,
+    ensure_market_news_index_for_ingestion,
     get_opensearch_client,
 )
 
@@ -31,6 +34,11 @@ NAVER_FETCH_LIMIT = 10
 MARKET_NEWS_TTL_DAYS = 28
 EMBEDDING_MODEL = "gemini-embedding-001"
 NEWS_HTTP_TIMEOUT = 10.0
+RSS_FETCH_LIMIT_PER_FEED = 10
+RSS_FETCH_LIMIT_TOTAL = 30
+SINGLE_CHUNK_MAX_CHARS = 1200
+CHUNK_MAX_CHARS = 900
+CHUNK_OVERLAP_CHARS = 120
 NAVER_NEWS_QUERIES = (
     "\ube44\ud2b8\ucf54\uc778",
     "\uc5c5\ube44\ud2b8",
@@ -45,6 +53,21 @@ class RawNewsDocument:
     published_at: datetime
     source: str
     link: str
+
+
+@dataclass(slots=True)
+class RawNewsChunk:
+    parent_id: str
+    title: str
+    content: str
+    published_at: datetime
+    source: str
+    link: str
+    chunk_index: int
+    chunk_count: int
+    content_length: int
+    chunk_text_length: int
+    is_chunked: bool
 
 
 def _clean_text(raw: Any) -> str:
@@ -80,23 +103,133 @@ def _parse_datetime(raw: Any) -> datetime:
         return datetime.now(UTC)
 
 
+def _parse_feed_datetime(entry: Any) -> datetime:
+    for key in ("published_parsed", "updated_parsed"):
+        raw = entry.get(key) if hasattr(entry, "get") else None
+        if raw:
+            try:
+                return datetime(*raw[:6], tzinfo=UTC)
+            except (TypeError, ValueError, IndexError, OverflowError):
+                continue
+
+    for key in ("published", "updated", "created"):
+        raw = entry.get(key) if hasattr(entry, "get") else None
+        if raw:
+            return _parse_datetime(raw)
+
+    return datetime.now(UTC)
+
+
 def _build_document_id(document: RawNewsDocument) -> str:
     published_key = document.published_at.isoformat()
     unique_key = document.link or document.title
     return hashlib.sha256(f"{document.source}|{unique_key}|{published_key}".encode("utf-8")).hexdigest()
 
 
-def _serialize_document(document: RawNewsDocument, embedding: list[float] | None = None) -> dict[str, Any]:
+def _build_chunk_id(chunk: RawNewsChunk) -> str:
+    return f"{chunk.parent_id}:{chunk.chunk_index}"
+
+
+def _serialize_chunk(chunk: RawNewsChunk, embedding: list[float] | None = None) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "title": document.title,
-        "content": document.content,
-        "source": document.source,
-        "link": document.link,
-        "published_at": document.published_at.isoformat(),
+        "title": chunk.title,
+        "content": chunk.content,
+        "source": chunk.source,
+        "link": chunk.link,
+        "published_at": chunk.published_at.isoformat(),
+        "parent_id": chunk.parent_id,
+        "chunk_index": chunk.chunk_index,
+        "chunk_count": chunk.chunk_count,
+        "content_length": chunk.content_length,
+        "chunk_text_length": chunk.chunk_text_length,
+        "is_chunked": chunk.is_chunked,
     }
     if embedding:
         payload["embedding"] = embedding
     return payload
+
+
+def _is_fallback_document(document: RawNewsDocument) -> bool:
+    title = document.title.lower()
+    content = document.content.lower()
+    link = document.link.lower()
+    combined = " ".join([title, content, link])
+    if link.startswith("dummy://"):
+        return True
+    if "fallback" not in combined:
+        return False
+    return any(
+        marker in combined
+        for marker in (
+            "credentials are unavailable",
+            "credentials unavailable",
+            "request failed",
+            "generated to keep the rag ingestion pipeline alive",
+        )
+    )
+
+
+def _prefer_real_documents(documents: list[RawNewsDocument]) -> list[RawNewsDocument]:
+    real_documents = [document for document in documents if not _is_fallback_document(document)]
+    if real_documents:
+        return real_documents
+    return documents
+
+
+def _split_content_into_chunks(content: str) -> list[str]:
+    normalized = str(content or "").strip()
+    if not normalized:
+        return []
+    if len(normalized) <= SINGLE_CHUNK_MAX_CHARS:
+        return [normalized]
+
+    chunks: list[str] = []
+    start = 0
+    step = CHUNK_MAX_CHARS - CHUNK_OVERLAP_CHARS
+    while start < len(normalized):
+        end = min(start + CHUNK_MAX_CHARS, len(normalized))
+        chunk = normalized[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= len(normalized):
+            break
+        start += step
+    return chunks
+
+
+def _build_document_chunks(document: RawNewsDocument) -> list[RawNewsChunk]:
+    content = document.content.strip() or document.title.strip()
+    chunks = _split_content_into_chunks(content)
+    if not chunks:
+        chunks = [document.title.strip()]
+
+    parent_id = _build_document_id(document)
+    chunk_count = len(chunks)
+    content_length = len(content)
+    is_chunked = chunk_count > 1
+    return [
+        RawNewsChunk(
+            parent_id=parent_id,
+            title=document.title,
+            content=chunk_text,
+            published_at=document.published_at,
+            source=document.source,
+            link=document.link,
+            chunk_index=index,
+            chunk_count=chunk_count,
+            content_length=content_length,
+            chunk_text_length=len(chunk_text),
+            is_chunked=is_chunked,
+        )
+        for index, chunk_text in enumerate(chunks)
+    ]
+
+
+def _build_news_chunks(documents: list[RawNewsDocument]) -> list[RawNewsChunk]:
+    chunks: list[RawNewsChunk] = []
+    for document in documents:
+        chunks.extend(_build_document_chunks(document))
+    return chunks
 
 
 def _daily_dummy_published_at() -> datetime:
@@ -154,6 +287,59 @@ def _dummy_news_documents(source: str) -> list[RawNewsDocument]:
             link="dummy://naver/local-crypto-monitoring",
         ),
     ]
+
+
+def _rss_source_name(feed_url: str) -> str:
+    parsed = urlparse(feed_url)
+    host = parsed.netloc.lower().removeprefix("www.")
+    return f"rss:{host or 'unknown'}"
+
+
+def _rss_entry_to_document(feed_url: str, entry: Any) -> RawNewsDocument | None:
+    if not hasattr(entry, "get"):
+        return None
+
+    title = _clean_text(entry.get("title"))
+    content = _clean_text(
+        entry.get("summary")
+        or entry.get("description")
+        or entry.get("subtitle")
+        or title
+    )
+    link = _clean_text(entry.get("link"))
+    if not title or not link:
+        return None
+
+    return RawNewsDocument(
+        title=title,
+        content=content or title,
+        published_at=_parse_feed_datetime(entry),
+        source=_rss_source_name(feed_url),
+        link=link,
+    )
+
+
+async def _fetch_rss_news(client: httpx.AsyncClient) -> list[RawNewsDocument]:
+    documents: list[RawNewsDocument] = []
+    for feed_url in RSS_FEED_URLS:
+        try:
+            response = await client.get(feed_url)
+            response.raise_for_status()
+            parsed = await asyncio.to_thread(feedparser.parse, response.content)
+        except Exception:
+            logger.exception("RSS 뉴스 수집 실패: feed=%s", feed_url)
+            continue
+
+        if getattr(parsed, "bozo", False):
+            logger.warning("RSS 파싱 경고가 발생했습니다: feed=%s", feed_url)
+
+        entries = getattr(parsed, "entries", []) or []
+        for entry in entries[:RSS_FETCH_LIMIT_PER_FEED]:
+            document = _rss_entry_to_document(feed_url, entry)
+            if document is not None:
+                documents.append(document)
+
+    return _deduplicate_documents(documents)[:RSS_FETCH_LIMIT_TOTAL]
 
 
 async def _fetch_cryptopanic_news(client: httpx.AsyncClient) -> list[RawNewsDocument]:
@@ -252,15 +438,34 @@ def _deduplicate_documents(documents: list[RawNewsDocument]) -> list[RawNewsDocu
     return list(deduplicated.values())
 
 
-async def _generate_embeddings(documents: list[RawNewsDocument]) -> dict[str, list[float]]:
-    if not documents:
+def get_configured_market_news_sources() -> list[dict[str, Any]]:
+    return [
+        {
+            "source": "rss",
+            "enabled": True,
+            "feed_count": len(RSS_FEED_URLS),
+            "feeds": list(RSS_FEED_URLS),
+        },
+        {
+            "source": "cryptopanic",
+            "enabled": bool(settings.cryptopanic_api_key),
+        },
+        {
+            "source": "naver",
+            "enabled": bool(settings.naver_client_id and settings.naver_client_secret),
+        },
+    ]
+
+
+async def _generate_embeddings(chunks: list[RawNewsChunk]) -> dict[str, list[float]]:
+    if not chunks:
         return {}
 
     if not settings.GEMINI_API_KEY:
         logger.warning("GEMINI_API_KEY가 없어 문서를 임베딩 없이 인덱싱합니다.")
         return {}
 
-    texts = [f"{document.title}\n\n{document.content}" for document in documents]
+    texts = [f"{chunk.title}\n\n{chunk.content}" for chunk in chunks]
     analyzer = GeminiAnalyzer()
     try:
         embedding_values = await analyzer.generate_embeddings(
@@ -278,27 +483,27 @@ async def _generate_embeddings(documents: list[RawNewsDocument]) -> dict[str, li
         if len(embedding) != EMBEDDING_DIMENSION:
             logger.warning("예상과 다른 Gemini 임베딩 차원입니다: index=%s", index)
             continue
-        embeddings[_build_document_id(documents[index])] = embedding
+        embeddings[_build_chunk_id(chunks[index])] = embedding
 
     return embeddings
 
 
-async def _bulk_upsert_documents(
-    documents: list[RawNewsDocument],
+async def _bulk_upsert_chunks(
+    chunks: list[RawNewsChunk],
     embeddings: dict[str, list[float]],
 ) -> tuple[int, list[Any]]:
-    if not documents:
+    if not chunks:
         return 0, []
 
     actions = []
-    for document in documents:
-        document_id = _build_document_id(document)
+    for chunk in chunks:
+        chunk_id = _build_chunk_id(chunk)
         actions.append(
             {
                 "_op_type": "index",
                 "_index": INDEX_NAME,
-                "_id": document_id,
-                "_source": _serialize_document(document, embeddings.get(document_id)),
+                "_id": chunk_id,
+                "_source": _serialize_chunk(chunk, embeddings.get(chunk_id)),
             }
         )
 
@@ -309,6 +514,11 @@ async def _bulk_upsert_documents(
         raise_on_error=False,
         raise_on_exception=False,
     )
+    if success_count:
+        try:
+            await client.indices.refresh(index=INDEX_NAME)
+        except Exception:
+            logger.warning("market_news 인덱스 refresh에 실패했습니다.", exc_info=True)
     return int(success_count), list(errors)
 
 
@@ -343,7 +553,7 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
     index_ready = False
 
     try:
-        index_ready = await ensure_market_news_index()
+        index_ready = await ensure_market_news_index_for_ingestion()
         if not index_ready:
             logger.warning("market_news 인덱스 준비 실패로 ingestion 작업을 건너뜁니다.")
             return stats
@@ -353,21 +563,25 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
             follow_redirects=True,
             headers={"User-Agent": "ai-trade-manager/0.1"},
         ) as client:
-            cryptopanic_documents, naver_documents = await asyncio.gather(
+            cryptopanic_documents, naver_documents, rss_documents = await asyncio.gather(
                 _fetch_cryptopanic_news(client),
                 _fetch_naver_news(client),
+                _fetch_rss_news(client),
             )
 
-        documents = _deduplicate_documents([*cryptopanic_documents, *naver_documents])
+        documents = _deduplicate_documents(
+            _prefer_real_documents([*cryptopanic_documents, *naver_documents, *rss_documents])
+        )
         stats["fetched"] = len(documents)
+        chunks = _build_news_chunks(documents)
         try:
-            embeddings = await _generate_embeddings(documents)
+            embeddings = await _generate_embeddings(chunks)
         except AIProviderRateLimitError as exc:
             stats["errors"] += 1
             logger.warning("Gemini 임베딩 쿨다운으로 market_news ingestion을 중단합니다: %s", exc)
             return stats
 
-        indexed_count, bulk_errors = await _bulk_upsert_documents(documents, embeddings)
+        indexed_count, bulk_errors = await _bulk_upsert_chunks(chunks, embeddings)
         stats["indexed"] = indexed_count
         if bulk_errors:
             stats["errors"] += len(bulk_errors)
