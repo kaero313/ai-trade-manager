@@ -195,3 +195,23 @@ ai-trade-manager/
 - live 체결 기록 시 `positions.quantity`, `positions.avg_entry_price`, `positions.status`를 함께 갱신해 로컬 성과 집계 단위가 실제 체결 단위와 맞도록 유지합니다.
 - 2026-04-30 07:00 UTC 이전의 의심 시장가 매수 기록은 체결 단위가 혼재된 레거시 데이터로 보고 AI 실현손익/최근 AI 체결 집계에서 제외합니다.
 - AI 분석 프롬프트에는 커스텀 페르소나보다 우선하는 리스크 안전 규칙을 추가해 단일 RSI 조건이나 단편 뉴스만으로 고확신 BUY/100% 비중을 강제하지 못하게 했습니다.
+
+## Phase 43 업데이트
+- AI 자동매매의 신규 BUY 경로 앞에 `entry_policy` 게이트를 추가했습니다. AI는 단독 매수 결정권자가 아니라 최종 검토자로 동작하며, 실제 주문 전 `기술적 조건 + 변동성 + 시장심리 + 실제 뉴스/RAG + 심볼별 과거 AI BUY 적중률 보정 confidence` 점수를 통과해야 합니다.
+- 자동 분석/매매 대상은 기본적으로 `KRW-BTC`, `KRW-ETH`, `KRW-XRP`로 제한하고 `KRW-DOGE`는 제외합니다. 스케줄러 watchlist도 같은 정책으로 필터링합니다.
+- `live_buy_enabled=false`와 별개로 `ai_entry_shadow_mode=true`를 기본값으로 추가했습니다. shadow mode에서는 BUY 후보가 모든 조건을 통과해도 주문을 내지 않고 로그로만 남깁니다.
+- OpenSearch `market_news` 결과가 `dummy://` 또는 fallback 문서뿐이면 실제 뉴스 근거로 보지 않습니다. AI 분석 컨텍스트에는 뉴스 없음으로 전달되고, 진입 점수의 뉴스 항목은 0점입니다.
+- 백테스트 기본 정책은 보수형 BUY 기준에 맞춰 `min_confidence=85`, `rsi_min=45`, `take_profit_pct=5`, `stop_loss_pct=-3`, `trailing_stop_pct=0.03` 조합을 사용합니다.
+
+## Phase 44 업데이트
+- RAG 뉴스 수집 파이프라인은 CryptoPanic/Naver API 문서와 함께 RSS 피드 문서를 정식 수집 소스로 사용합니다.
+- RSS 또는 외부 API에서 실제 문서가 1건 이상 확보되면 `dummy://` fallback 문서는 OpenSearch 인덱싱 대상에서 제외합니다.
+- `/api/news/rag/status`는 `market_news` 인덱스 존재 여부, 실문서/fallback/임베딩 누락 수, 최신 발행 시각, 소스별 문서 수를 반환합니다.
+- 1차 범위에서는 기사 본문 크롤링과 청크 오버랩을 도입하지 않고, RSS 제목/요약 단위 문서를 Gemini 임베딩으로 저장합니다.
+
+## Phase 45 업데이트
+- RAG 뉴스 저장소 `market_news`는 문서 단위 저장에서 parent 기사 + chunk 문서 구조로 확장되었습니다.
+- ingestion 경로는 RSS/API 원문을 `parent_id` 기준으로 식별하고, 짧은 문서는 1청크, 긴 문서는 `900`자 최대 길이와 `120`자 overlap 기준으로 분할합니다.
+- 기존 `market_news` 매핑에 청크 필드가 없으면 ingestion 경로에서만 인덱스를 삭제/재생성합니다. 조회 경로는 인덱스를 임의 재생성하지 않습니다.
+- AI 분석의 뉴스 검색은 Gemini query embedding 기반 kNN 후보와 BM25 후보를 각각 조회한 뒤 `0.55 * vector + 0.35 * keyword + 0.10 * recency` 점수로 병합합니다.
+- 병합 결과는 `parent_id` 기준으로 중복 제거되어 같은 기사에서 여러 청크가 검색되어도 가장 높은 점수의 청크 1개만 AI 컨텍스트에 전달됩니다.

@@ -33,6 +33,21 @@ logger = logging.getLogger(__name__)
 TECHNICAL_CANDLE_COUNT = 200
 NEWS_RESULT_LIMIT = 3
 NEWS_SUMMARY_MAX_CHARS = 180
+NEWS_SEARCH_CANDIDATE_LIMIT = max(NEWS_RESULT_LIMIT * 4, 12)
+HYBRID_VECTOR_WEIGHT = 0.55
+HYBRID_KEYWORD_WEIGHT = 0.35
+HYBRID_RECENCY_WEIGHT = 0.10
+MARKET_NEWS_SOURCE_FIELDS = [
+    "title",
+    "content",
+    "source",
+    "link",
+    "published_at",
+    "parent_id",
+    "chunk_index",
+    "chunk_count",
+    "is_chunked",
+]
 DEFAULT_AUTONOMOUS_AI_INTERVAL_MINUTES = 60
 SCALPING_TIMEFRAME_THRESHOLD_MINUTES = 30
 FAST_TECHNICAL_TIMEFRAME = "15m"
@@ -76,25 +91,7 @@ ANALYSIS_SAFETY_RULES_PROMPT = """
 - recommended_weight는 리스크 노출 제안치이며, 공격적 100% 비중은 피하고 근거가 약하면 0으로 둡니다.
 """.strip()
 
-ANALYSIS_SYSTEM_PROMPT = """
-당신은 월스트리트 엘리트 코인 트레이더입니다.
-주어진 시장 데이터만 근거로 BUY, SELL, HOLD 중 하나를 결정하십시오.
-반드시 JSON 스키마에 맞는 값만 반환하십시오.
-
-규칙:
-- decision은 BUY, SELL, HOLD 중 하나만 허용됩니다.
-- confidence는 0~100 정수여야 합니다.
-- recommended_weight는 0~100 정수여야 합니다.
-- reasoning 작성 시 아래 '출력 템플릿'을 반드시 따르십시오.
-- 제공되지 않은 정보는 추측하지 마십시오.
-- 데이터가 부족하거나 근거가 충돌하면 HOLD를 선택하고 confidence를 낮게 유지하십시오.
-
-reasoning 출력 템플릿(반드시 이 형식을 지킬 것):
-📊 기술지표: (이동평균선·RSI·볼린저밴드 등 핵심 수치 1~2개를 자연어로 요약)
-🧠 시장심리: (Alternative.me 심리지수 수치와 해석을 한 줄로 요약)
-📰 뉴스: (참조한 뉴스 제목 또는 '뉴스 데이터 없음'을 한 줄로 요약)
-💡 종합판단: (위 3가지를 종합한 최종 판단 근거를 비전문가도 이해할 수 있는 쉬운 한국어 1~2문장으로 작성)
-""".strip()
+ANALYSIS_SYSTEM_PROMPT = f"{ANALYSIS_CORE_IDENTITY_PROMPT}\n\n{ANALYSIS_CORE_RULES_PROMPT}"
 
 
 def _build_persona_prefix(custom_persona: str) -> str:
@@ -251,7 +248,7 @@ def _build_market_news_query(terms: Sequence[str], size: int) -> dict[str, Any]:
 
     return {
         "size": size,
-        "_source": ["title", "content", "source", "link", "published_at"],
+        "_source": MARKET_NEWS_SOURCE_FIELDS,
         "query": query,
         "sort": sort,
     }
@@ -270,7 +267,7 @@ def _build_market_news_query_text(symbol: str, terms: Sequence[str]) -> str:
 def _build_market_news_knn_query(query_embedding: list[float], size: int) -> dict[str, Any]:
     return {
         "size": size,
-        "_source": ["title", "content", "source", "link", "published_at"],
+        "_source": MARKET_NEWS_SOURCE_FIELDS,
         "query": {
             "knn": {
                 "embedding": {
@@ -305,6 +302,107 @@ def is_fallback_news_item(item: Mapping[str, Any]) -> bool:
     )
 
 
+def _filter_real_news_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [item for item in items if not is_fallback_news_item(item)]
+
+
+def _parent_news_key(item: Mapping[str, Any]) -> str:
+    return (
+        str(item.get("parent_id") or "").strip()
+        or str(item.get("link") or "").strip()
+        or str(item.get("title") or "").strip()
+    )
+
+
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _recency_score(value: Any, *, now: datetime | None = None) -> float:
+    published_at = _parse_iso_datetime(value)
+    if published_at is None:
+        return 0.0
+    current = now or datetime.now(UTC)
+    age_days = max((current - published_at.astimezone(UTC)).total_seconds() / 86400, 0.0)
+    return max(0.0, min(1.0, 1.0 - (age_days / 7.0)))
+
+
+def _best_news_item_by_parent(
+    items: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for item in _filter_real_news_items(items):
+        parent_key = _parent_news_key(item)
+        if not parent_key:
+            continue
+        current = grouped.get(parent_key)
+        item_score = _to_float(item.get("search_score")) or 0.0
+        current_score = _to_float(current.get("search_score")) if current else None
+        if current is None or item_score > (current_score or 0.0):
+            grouped[parent_key] = item
+    return grouped
+
+
+def _normalize_search_score(score: float, max_score: float) -> float:
+    if max_score <= 0:
+        return 0.0
+    return max(0.0, min(score / max_score, 1.0))
+
+
+def _merge_hybrid_news_results(
+    vector_items: list[dict[str, Any]],
+    keyword_items: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    vector_by_parent = _best_news_item_by_parent(vector_items)
+    keyword_by_parent = _best_news_item_by_parent(keyword_items)
+    max_vector_score = max(
+        (_to_float(item.get("search_score")) or 0.0 for item in vector_by_parent.values()),
+        default=0.0,
+    )
+    max_keyword_score = max(
+        (_to_float(item.get("search_score")) or 0.0 for item in keyword_by_parent.values()),
+        default=0.0,
+    )
+
+    ranked: list[tuple[float, dict[str, Any]]] = []
+    for parent_key in set(vector_by_parent) | set(keyword_by_parent):
+        vector_item = vector_by_parent.get(parent_key)
+        keyword_item = keyword_by_parent.get(parent_key)
+        vector_score = _to_float(vector_item.get("search_score")) if vector_item else 0.0
+        keyword_score = _to_float(keyword_item.get("search_score")) if keyword_item else 0.0
+        normalized_vector = _normalize_search_score(vector_score or 0.0, max_vector_score)
+        normalized_keyword = _normalize_search_score(keyword_score or 0.0, max_keyword_score)
+        selected_item = vector_item if normalized_vector >= normalized_keyword else keyword_item
+        if selected_item is None:
+            continue
+        score = (
+            HYBRID_VECTOR_WEIGHT * normalized_vector
+            + HYBRID_KEYWORD_WEIGHT * normalized_keyword
+            + HYBRID_RECENCY_WEIGHT * _recency_score(selected_item.get("published_at"))
+        )
+        merged_item = dict(selected_item)
+        merged_item["hybrid_score"] = round(score, 6)
+        ranked.append((score, merged_item))
+
+    ranked.sort(
+        key=lambda item: (
+            item[0],
+            _parse_iso_datetime(item[1].get("published_at")) or datetime.min.replace(tzinfo=UTC),
+        ),
+        reverse=True,
+    )
+    return [item for _, item in ranked[:limit]]
+
+
 async def _resolve_market_metadata(symbol: str) -> dict[str, Any] | None:
     normalized_symbol = _normalize_symbol(symbol)
     if not normalized_symbol:
@@ -327,13 +425,21 @@ def _normalize_news_hit(hit: dict[str, Any]) -> dict[str, Any]:
 
     title = str(source.get("title") or "").strip()
     content = str(source.get("content") or "").strip()
-    return {
+    normalized = {
         "title": title or "제목 없음",
         "summary": _truncate_text(content or title),
+        "content": content,
         "source": str(source.get("source") or "").strip() or None,
         "published_at": _format_datetime(source.get("published_at")),
         "link": str(source.get("link") or "").strip() or None,
+        "parent_id": str(source.get("parent_id") or "").strip() or None,
+        "chunk_index": source.get("chunk_index"),
+        "chunk_count": source.get("chunk_count"),
+        "is_chunked": bool(source.get("is_chunked")),
+        "search_score": _to_float(hit.get("_score")) or 0.0,
     }
+    normalized["is_fallback"] = is_fallback_news_item(normalized)
+    return normalized
 
 
 async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None) -> dict[str, Any]:
@@ -345,8 +451,12 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
     try:
         try:
             if not await ensure_market_news_index():
-                logger.info("RAG 뉴스 인덱스 미존재. RSS 뉴스 폴백으로 전환합니다: index=%s", INDEX_NAME)
+                logger.info("RAG 뉴스 인덱스가 준비되지 않아 RSS 뉴스 대체 경로로 전환합니다. index=%s", INDEX_NAME)
                 raise RuntimeError("market_news index missing")
+
+            candidate_limit = NEWS_SEARCH_CANDIDATE_LIMIT
+            vector_items: list[dict[str, Any]] = []
+            keyword_items: list[dict[str, Any]] = []
 
             try:
                 query_text = _build_market_news_query_text(symbol, terms)
@@ -356,38 +466,49 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
                 )
                 knn_response = await client.search(
                     index=INDEX_NAME,
-                    body=_build_market_news_knn_query(query_embedding, NEWS_RESULT_LIMIT),
+                    body=_build_market_news_knn_query(query_embedding, candidate_limit),
                 )
                 knn_hits = knn_response.get("hits", {}).get("hits", [])
-                normalized_knn_hits = [
+                vector_items = [
                     _normalize_news_hit(hit)
                     for hit in (knn_hits if isinstance(knn_hits, list) else [])
                     if isinstance(hit, dict)
                 ]
-                if normalized_knn_hits:
-                    return {"items": normalized_knn_hits[:NEWS_RESULT_LIMIT], "error": None}
+                if vector_items and not _filter_real_news_items(vector_items):
+                    logger.info("OpenSearch k-NN 뉴스 결과가 fallback 문서뿐이라 사용자 신호에서 제외합니다.")
             except AIProviderRateLimitError as exc:
-                logger.warning("Gemini 뉴스 쿼리 임베딩 제한으로 OpenSearch 텍스트 검색으로 전환합니다: %s", exc)
+                logger.warning("Gemini 뉴스 쿼리 임베딩 제한으로 OpenSearch BM25 검색만 사용합니다. %s", exc)
             except Exception as exc:
-                logger.debug("OpenSearch k-NN 뉴스 검색 실패. 텍스트 검색으로 전환합니다: %s", exc)
+                logger.debug("OpenSearch k-NN 뉴스 검색 실패. BM25 검색으로 계속 진행합니다. %s", exc)
 
-            response = await client.search(
-                index=INDEX_NAME,
-                body=_build_market_news_query(terms, NEWS_RESULT_LIMIT),
+            try:
+                response = await client.search(
+                    index=INDEX_NAME,
+                    body=_build_market_news_query(terms, candidate_limit),
+                )
+                hits = response.get("hits", {}).get("hits", [])
+                keyword_items = [
+                    _normalize_news_hit(hit)
+                    for hit in (hits if isinstance(hits, list) else [])
+                    if isinstance(hit, dict)
+                ]
+                if keyword_items and not _filter_real_news_items(keyword_items):
+                    logger.info("OpenSearch BM25 뉴스 결과가 fallback 문서뿐이라 사용자 신호에서 제외합니다.")
+            except Exception as exc:
+                logger.debug("OpenSearch BM25 뉴스 검색 실패. 최신 뉴스 대체 검색으로 계속 진행합니다. %s", exc)
+
+            merged_items = _merge_hybrid_news_results(
+                vector_items,
+                keyword_items,
+                limit=NEWS_RESULT_LIMIT,
             )
-            hits = response.get("hits", {}).get("hits", [])
-            normalized_hits = [
-                _normalize_news_hit(hit)
-                for hit in (hits if isinstance(hits, list) else [])
-                if isinstance(hit, dict)
-            ]
-            if normalized_hits:
-                return {"items": normalized_hits[:NEWS_RESULT_LIMIT], "error": None}
+            if merged_items:
+                return {"items": merged_items, "error": None}
 
-            # 2차 검색 (폴백 쿼리)
+            # 2차 검색: 심볼/종목명 매칭이 없을 때 최신 실뉴스를 대체 컨텍스트로 사용합니다.
             fallback_response = await client.search(
                 index=INDEX_NAME,
-                body=_build_market_news_query([], NEWS_RESULT_LIMIT),
+                body=_build_market_news_query([], candidate_limit),
             )
             fallback_hits = fallback_response.get("hits", {}).get("hits", [])
             normalized_fallback = [
@@ -395,21 +516,24 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
                 for hit in (fallback_hits if isinstance(fallback_hits, list) else [])
                 if isinstance(hit, dict)
             ]
+            real_fallback = _filter_real_news_items(normalized_fallback)
+            if real_fallback:
+                return {"items": real_fallback[:NEWS_RESULT_LIMIT], "error": None}
             if normalized_fallback:
-                return {"items": normalized_fallback[:NEWS_RESULT_LIMIT], "error": None}
+                logger.info("OpenSearch match_all 뉴스 결과가 fallback 문서뿐이라 사용자 신호에서 제외합니다.")
 
         except Exception as inner_exc:
-            logger.debug("RAG 뉴스 인덱스 미존재. RSS 뉴스 폴백으로 전환합니다: %s", inner_exc)
+            logger.debug("RAG 뉴스 인덱스 조회 실패로 RSS 뉴스 대체 경로로 전환합니다. %s", inner_exc)
 
-        # OpenSearch 결과가 없거나 실패한 경우 -> RSS 실시간 뉴스 폴백
+        # OpenSearch 결과가 없거나 실패한 경우 -> RSS 실시간 뉴스 대체
         import asyncio
 
-        # 동기 함수인 fetch_crypto_news를 이벤트 루프 블로킹 우회용 스레드로 실행 (Async-First 원칙 준수)
+        # 동기 함수인 fetch_crypto_news를 이벤트 루프 차단 없이 별도 스레드로 실행합니다.
         rss_payload = await asyncio.to_thread(fetch_crypto_news)
         rss_items = rss_payload.get("items") or []
 
         if rss_items:
-            logger.info("OpenSearch 가용 데이터 없음. %d건의 RSS 뉴스를 분석 컨텍스트로 사용합니다.", len(rss_items))
+            logger.info("OpenSearch 가용 데이터가 없어 %d건의 RSS 뉴스를 분석 컨텍스트로 사용합니다.", len(rss_items))
             normalized_rss = [
                 {
                     "title": item.get("title"),
@@ -421,7 +545,10 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
                 }
                 for item in rss_items
             ]
-            return {"items": normalized_rss[:NEWS_RESULT_LIMIT], "error": "RSS_FALLBACK_USED"}
+            real_rss = _filter_real_news_items(normalized_rss)
+            if real_rss:
+                return {"items": real_rss[:NEWS_RESULT_LIMIT], "error": "RSS_FALLBACK_USED"}
+            logger.info("RSS 뉴스 결과가 fallback 문서뿐이라 사용자 신호에서 제외합니다.")
 
         return {"items": [], "error": "NO_NEWS_DATA_AVAILABLE"}
 

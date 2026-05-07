@@ -144,3 +144,23 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 - `order_history.price`는 체결 단가, `order_history.qty`는 체결 수량을 저장해야 합니다. Upbit 시장가 매수의 `price` 요청값은 주문 KRW 금액이므로 체결가로 저장하지 않습니다.
 - live 주문 기록 시 `positions`의 `avg_entry_price`, `quantity`, `status`를 함께 갱신해 성과 집계의 기준 단위를 보정합니다.
 - 2026-04-30 07:00 UTC 이전의 `qty≈1`, `price=5,000~100,000 KRW` AI 매수 기록은 레거시 주문금액 기록으로 간주해 AI 성과 집계에서 제외합니다.
+
+## Phase 43 업데이트
+- PostgreSQL 스키마 변경은 없습니다. 균형형 월 수익률 최적화 정책은 기존 `system_configs` K/V 테이블의 신규 키로 관리합니다.
+- 신규 키: `ai_trade_target_symbols` 기본값 `["KRW-BTC","KRW-ETH","KRW-XRP"]`, `ai_trade_excluded_symbols` 기본값 `["KRW-DOGE"]`, `ai_entry_score_threshold=70`, `ai_entry_shadow_mode=true`, `ai_calibration_min_success_rate=45`, `ai_max_concurrent_positions=2`.
+- `ai_max_buy_weight_pct` 기본값은 `30`으로 조정했습니다. 기존 값이 30을 초과하면 시드 보정 시 `30`으로 낮춥니다.
+- AI BUY 적중률 보정은 `ai_analysis_logs.accuracy_label`, `actual_price_diff_pct`, `accuracy_checked_at`의 기존 Phase 36 채점 데이터를 사용합니다. 별도 집계 테이블은 만들지 않습니다.
+- OpenSearch `market_news`의 dummy/fallback 문서는 DB 스키마 변경 없이 애플리케이션 레이어에서 실제 뉴스가 아닌 항목으로 필터링합니다.
+
+## Phase 44 업데이트
+- PostgreSQL 스키마 변경은 없습니다. RAG 실데이터 정상화는 OpenSearch `market_news` 수집/조회 레이어만 변경합니다.
+- `market_news`에는 RSS 기반 실제 뉴스도 기존 `title`, `content`, `source`, `link`, `published_at`, `embedding` 필드 구조로 저장합니다.
+- `/api/news/rag/status`는 OpenSearch 집계 결과를 이용해 실문서 수, fallback 문서 수, 임베딩 누락 수, 소스별 분포를 반환합니다.
+- 실제 RSS/API 문서가 수집되면 dummy/fallback 문서는 새 ingestion 대상에서 제외하며, 기존 fallback 문서는 TTL 정책으로 자연 만료됩니다.
+
+## Phase 45 업데이트
+- PostgreSQL 스키마 변경은 없습니다. RAG 2차 변경은 OpenSearch `market_news` 캐시성 인덱스의 매핑과 수집/조회 로직만 변경합니다.
+- `market_news` 청크 문서는 기존 `title`, `content`, `source`, `link`, `published_at`, `embedding`에 더해 `parent_id`, `chunk_index`, `chunk_count`, `content_length`, `chunk_text_length`, `is_chunked`를 저장합니다.
+- 청크 `_id`는 `{parent_id}:{chunk_index}` 형식으로 고정해 재수집 시 같은 기사 청크가 중복 누적되지 않도록 합니다.
+- 기존 인덱스가 청크 매핑을 지원하지 않으면 ingestion 시 자동 재생성됩니다. OpenSearch는 재수집 가능한 RAG 캐시로 취급하므로 Alembic 마이그레이션은 만들지 않습니다.
+- `/api/news/rag/status`는 실문서/fallback/임베딩 통계에 더해 parent 문서 수, chunk 문서 수, chunked parent 수, parent당 평균 청크 수를 집계합니다.

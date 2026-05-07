@@ -104,6 +104,19 @@ Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구
 
 ## 운영 안전 설정
 - `live_buy_enabled=false`가 기본값입니다. live 모드에서 AI 신규 BUY는 잠기며, 기존 보유분 SELL과 TP/SL 청산은 계속 동작합니다.
-- `ai_max_buy_weight_pct=40` 기본값으로 AI가 100% 매수 비중을 제안해도 실행부에서 1회 신규 매수 비중을 제한합니다.
+- `ai_max_buy_weight_pct=30` 기본값으로 AI가 100% 매수 비중을 제안해도 1회 신규 진입은 총자산의 30%를 넘지 않습니다.
 - `ai_min_confidence_trade=85` 기본값으로 낮은 확신도 자동 체결을 차단합니다.
+- `ai_trade_target_symbols=["KRW-BTC","KRW-ETH","KRW-XRP"]`, `ai_trade_excluded_symbols=["KRW-DOGE"]`로 자동 분석/매매 대상을 제한합니다.
+- `ai_entry_shadow_mode=true`가 기본값입니다. BUY 후보가 점수제를 통과해도 실제 주문 전 24~48시간은 신호만 기록하는 운영을 전제로 합니다.
+- 신규 BUY는 기술적 조건, 변동성, 시장심리, 실제 뉴스/RAG, 심볼별 과거 AI BUY 적중률로 보정한 confidence 점수를 모두 통과해야 합니다.
+- OpenSearch 뉴스가 `dummy://` 또는 fallback 문서뿐이면 뉴스 점수는 0점으로 처리하며 AI 프롬프트에도 실제 뉴스 없음으로 전달합니다.
+- RAG 뉴스 수집은 RSS 피드를 우선 사용해 API 키가 없어도 실제 뉴스 문서를 `market_news`에 저장합니다.
+- `/api/news/rag/status`로 실문서 수, fallback 문서 수, 임베딩 누락 수, 소스별 분포를 확인할 수 있습니다.
 - Upbit 시장가 매수 응답의 `price`는 주문 KRW 금액이므로 체결 단가로 저장하지 않고, 주문 상세 체결 VWAP 또는 현재가 fallback을 사용합니다.
+
+## RAG 2차 운영 정책
+- `market_news`는 parent 기사 식별자(`parent_id`)와 청크 문서를 함께 저장하는 OpenSearch 캐시성 인덱스입니다.
+- RSS/API 문서는 `content <= 1200`자이면 1청크, 긴 문서는 `900`자 최대 길이와 `120`자 overlap 기준으로 분할해 저장합니다.
+- 첫 ingestion 시 기존 인덱스가 청크 필드 매핑을 지원하지 않으면 `market_news`를 자동 재생성하고 RSS/API 실뉴스를 다시 수집합니다.
+- AI 뉴스 검색은 kNN 벡터 검색과 BM25(`title^3`, `content`) 검색 후보를 각각 조회한 뒤 parent 기준으로 중복 제거해 최대 3개 컨텍스트만 전달합니다.
+- `/api/news/rag/status`는 parent/chunk 문서 수, chunked parent 수, parent당 평균 청크 수까지 반환합니다.
