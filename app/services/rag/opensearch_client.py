@@ -25,6 +25,12 @@ MARKET_NEWS_INDEX_BODY = {
             "source": {"type": "keyword"},
             "link": {"type": "keyword"},
             "published_at": {"type": "date"},
+            "parent_id": {"type": "keyword"},
+            "chunk_index": {"type": "integer"},
+            "chunk_count": {"type": "integer"},
+            "content_length": {"type": "integer"},
+            "chunk_text_length": {"type": "integer"},
+            "is_chunked": {"type": "boolean"},
             "embedding": {
                 "type": "knn_vector",
                 "dimension": EMBEDDING_DIMENSION,
@@ -39,6 +45,14 @@ MARKET_NEWS_INDEX_BODY = {
 }
 
 _opensearch_client: AsyncOpenSearch | None = None
+EXPECTED_CHUNK_FIELD_TYPES = {
+    "parent_id": "keyword",
+    "chunk_index": "integer",
+    "chunk_count": "integer",
+    "content_length": "integer",
+    "chunk_text_length": "integer",
+    "is_chunked": "boolean",
+}
 
 
 def get_opensearch_client() -> AsyncOpenSearch:
@@ -62,7 +76,7 @@ async def close_opensearch_client() -> None:
         _opensearch_client = None
 
 
-def _extract_embedding_mapping(mapping_response: dict[str, Any]) -> dict[str, Any] | None:
+def _extract_properties_mapping(mapping_response: dict[str, Any]) -> dict[str, Any]:
     index_mapping = mapping_response.get(INDEX_NAME)
     if not isinstance(index_mapping, dict):
         index_mapping = next(
@@ -72,7 +86,12 @@ def _extract_embedding_mapping(mapping_response: dict[str, Any]) -> dict[str, An
 
     mappings = index_mapping.get("mappings") if isinstance(index_mapping, dict) else {}
     properties = mappings.get("properties") if isinstance(mappings, dict) else {}
-    embedding = properties.get("embedding") if isinstance(properties, dict) else None
+    return properties if isinstance(properties, dict) else {}
+
+
+def _extract_embedding_mapping(mapping_response: dict[str, Any]) -> dict[str, Any] | None:
+    properties = _extract_properties_mapping(mapping_response)
+    embedding = properties.get("embedding")
     return embedding if isinstance(embedding, dict) else None
 
 
@@ -90,6 +109,22 @@ def _is_expected_embedding_mapping(embedding: dict[str, Any] | None) -> bool:
         and method.get("name") == KNN_METHOD_NAME
         and method.get("engine") == KNN_ENGINE
         and method.get("space_type") == KNN_SPACE_TYPE
+    )
+
+
+def _has_expected_chunk_mapping(mapping_response: dict[str, Any]) -> bool:
+    properties = _extract_properties_mapping(mapping_response)
+    for field_name, expected_type in EXPECTED_CHUNK_FIELD_TYPES.items():
+        field_mapping = properties.get(field_name)
+        if not isinstance(field_mapping, dict) or field_mapping.get("type") != expected_type:
+            return False
+    return True
+
+
+def _is_expected_market_news_mapping(mapping_response: dict[str, Any]) -> bool:
+    return (
+        _is_expected_embedding_mapping(_extract_embedding_mapping(mapping_response))
+        and _has_expected_chunk_mapping(mapping_response)
     )
 
 
@@ -113,7 +148,7 @@ async def _create_market_news_index(client: AsyncOpenSearch) -> bool:
         return False
 
 
-async def ensure_market_news_index() -> bool:
+async def ensure_market_news_index(*, rebuild_on_mismatch: bool = False) -> bool:
     client = get_opensearch_client()
     try:
         index_exists = await client.indices.exists(index=INDEX_NAME)
@@ -130,14 +165,16 @@ async def ensure_market_news_index() -> bool:
         logger.exception("market_news 인덱스 매핑 확인에 실패했습니다: index=%s", INDEX_NAME)
         return False
 
-    embedding_mapping = _extract_embedding_mapping(mapping_response)
-    if _is_expected_embedding_mapping(embedding_mapping):
+    if _is_expected_market_news_mapping(mapping_response):
         return True
 
     logger.warning(
         "market_news 인덱스 매핑이 현재 OpenSearch 설정과 달라 재생성합니다: current=%s",
-        embedding_mapping,
+        _extract_properties_mapping(mapping_response),
     )
+    if not rebuild_on_mismatch:
+        return False
+
     try:
         await client.indices.delete(index=INDEX_NAME, ignore_unavailable=True)
     except Exception:
@@ -145,3 +182,7 @@ async def ensure_market_news_index() -> bool:
         return False
 
     return await _create_market_news_index(client)
+
+
+async def ensure_market_news_index_for_ingestion() -> bool:
+    return await ensure_market_news_index(rebuild_on_mismatch=True)
