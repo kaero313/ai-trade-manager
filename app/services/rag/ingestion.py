@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from html import unescape
+from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
 
@@ -36,6 +37,9 @@ EMBEDDING_MODEL = "gemini-embedding-001"
 NEWS_HTTP_TIMEOUT = 10.0
 RSS_FETCH_LIMIT_PER_FEED = 10
 RSS_FETCH_LIMIT_TOTAL = 30
+RSS_ARTICLE_CRAWL_CONCURRENCY = 4
+CRAWLED_BODY_MIN_CHARS = 500
+CRAWLED_BODY_MIN_GAIN_CHARS = 200
 SINGLE_CHUNK_MAX_CHARS = 1200
 CHUNK_MAX_CHARS = 900
 CHUNK_OVERLAP_CHARS = 120
@@ -53,6 +57,9 @@ class RawNewsDocument:
     published_at: datetime
     source: str
     link: str
+    content_source: str = "api"
+    crawl_status: str = "not_applicable"
+    crawl_error: str | None = None
 
 
 @dataclass(slots=True)
@@ -63,6 +70,9 @@ class RawNewsChunk:
     published_at: datetime
     source: str
     link: str
+    content_source: str
+    crawl_status: str
+    crawl_error: str | None
     chunk_index: int
     chunk_count: int
     content_length: int
@@ -76,6 +86,103 @@ def _clean_text(raw: Any) -> str:
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+class _ArticleBodyExtractor(HTMLParser):
+    _IGNORED_TAGS = {"script", "style", "noscript", "svg", "nav", "footer", "header", "aside", "form"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._ignored_stack: list[str] = []
+        self._container_stack: list[str] = []
+        self._article_parts: list[str] = []
+        self._main_parts: list[str] = []
+        self._paragraphs: list[str] = []
+        self._current_paragraph: list[str] | None = None
+        self._meta_descriptions: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag_name = tag.lower()
+        attrs_by_name = {name.lower(): str(value or "") for name, value in attrs}
+
+        if tag_name == "meta":
+            meta_name = (
+                attrs_by_name.get("property")
+                or attrs_by_name.get("name")
+                or ""
+            ).strip().lower()
+            if meta_name in {"og:description", "description", "twitter:description"}:
+                content = _clean_text(attrs_by_name.get("content"))
+                if content:
+                    self._meta_descriptions.append(content)
+
+        if self._ignored_stack or tag_name in self._IGNORED_TAGS:
+            self._ignored_stack.append(tag_name)
+            return
+
+        if tag_name in {"article", "main"}:
+            self._container_stack.append(tag_name)
+        elif tag_name == "p":
+            self._current_paragraph = []
+
+    def handle_endtag(self, tag: str) -> None:
+        tag_name = tag.lower()
+        if self._ignored_stack:
+            if tag_name == self._ignored_stack[-1]:
+                self._ignored_stack.pop()
+            return
+
+        if tag_name == "p" and self._current_paragraph is not None:
+            paragraph = _clean_text(" ".join(self._current_paragraph))
+            if paragraph:
+                self._paragraphs.append(paragraph)
+            self._current_paragraph = None
+            return
+
+        if tag_name in {"article", "main"}:
+            for index in range(len(self._container_stack) - 1, -1, -1):
+                if self._container_stack[index] == tag_name:
+                    del self._container_stack[index]
+                    break
+
+    def handle_data(self, data: str) -> None:
+        if self._ignored_stack:
+            return
+
+        text = str(data or "").strip()
+        if not text:
+            return
+
+        if "article" in self._container_stack:
+            self._article_parts.append(text)
+        if "main" in self._container_stack:
+            self._main_parts.append(text)
+        if self._current_paragraph is not None:
+            self._current_paragraph.append(text)
+
+    def extract_best(self) -> str:
+        candidates = [
+            " ".join(self._article_parts),
+            " ".join(self._main_parts),
+            " ".join(self._paragraphs),
+            " ".join(self._meta_descriptions),
+        ]
+        normalized_candidates = [_clean_text(candidate) for candidate in candidates]
+        normalized_candidates = [candidate for candidate in normalized_candidates if candidate]
+        if not normalized_candidates:
+            return ""
+        return max(normalized_candidates, key=len)
+
+
+def _extract_article_body_from_html(html: str) -> str:
+    extractor = _ArticleBodyExtractor()
+    try:
+        extractor.feed(str(html or ""))
+        extractor.close()
+    except Exception:
+        logger.debug("Article HTML parsing failed.", exc_info=True)
+        return ""
+    return extractor.extract_best()
 
 
 def _parse_datetime(raw: Any) -> datetime:
@@ -138,6 +245,9 @@ def _serialize_chunk(chunk: RawNewsChunk, embedding: list[float] | None = None) 
         "link": chunk.link,
         "published_at": chunk.published_at.isoformat(),
         "parent_id": chunk.parent_id,
+        "content_source": chunk.content_source,
+        "crawl_status": chunk.crawl_status,
+        "crawl_error": chunk.crawl_error,
         "chunk_index": chunk.chunk_index,
         "chunk_count": chunk.chunk_count,
         "content_length": chunk.content_length,
@@ -215,6 +325,9 @@ def _build_document_chunks(document: RawNewsDocument) -> list[RawNewsChunk]:
             published_at=document.published_at,
             source=document.source,
             link=document.link,
+            content_source=document.content_source,
+            crawl_status=document.crawl_status,
+            crawl_error=document.crawl_error,
             chunk_index=index,
             chunk_count=chunk_count,
             content_length=content_length,
@@ -247,6 +360,7 @@ def _dummy_news_documents(source: str) -> list[RawNewsDocument]:
                 published_at=published_at,
                 source=source,
                 link="dummy://cryptopanic/global-market-wait-and-see",
+                content_source="fallback",
             ),
             RawNewsDocument(
                 title="Bitcoin volatility check fallback feed",
@@ -254,6 +368,7 @@ def _dummy_news_documents(source: str) -> list[RawNewsDocument]:
                 published_at=published_at,
                 source=source,
                 link="dummy://cryptopanic/bitcoin-volatility-check",
+                content_source="fallback",
             ),
             RawNewsDocument(
                 title="Macro liquidity watch fallback update",
@@ -261,6 +376,7 @@ def _dummy_news_documents(source: str) -> list[RawNewsDocument]:
                 published_at=published_at,
                 source=source,
                 link="dummy://cryptopanic/macro-liquidity-watch",
+                content_source="fallback",
             ),
         ]
 
@@ -271,6 +387,7 @@ def _dummy_news_documents(source: str) -> list[RawNewsDocument]:
             published_at=published_at,
             source=source,
             link="dummy://naver/krw-market-standby",
+            content_source="fallback",
         ),
         RawNewsDocument(
             title="Upbit volatility check fallback",
@@ -278,6 +395,7 @@ def _dummy_news_documents(source: str) -> list[RawNewsDocument]:
             published_at=published_at,
             source=source,
             link="dummy://naver/upbit-volatility-check",
+            content_source="fallback",
         ),
         RawNewsDocument(
             title="Local crypto regulation watch fallback",
@@ -285,6 +403,7 @@ def _dummy_news_documents(source: str) -> list[RawNewsDocument]:
             published_at=published_at,
             source=source,
             link="dummy://naver/local-crypto-monitoring",
+            content_source="fallback",
         ),
     ]
 
@@ -316,7 +435,95 @@ def _rss_entry_to_document(feed_url: str, entry: Any) -> RawNewsDocument | None:
         published_at=_parse_feed_datetime(entry),
         source=_rss_source_name(feed_url),
         link=link,
+        content_source="rss_summary",
+        crawl_status="skipped",
     )
+
+
+def _is_crawlable_rss_document(document: RawNewsDocument) -> bool:
+    if _is_fallback_document(document):
+        return False
+    if document.content_source != "rss_summary" or not document.source.startswith("rss:"):
+        return False
+    scheme = urlparse(document.link).scheme.lower()
+    return scheme in {"http", "https"}
+
+
+def _should_use_crawled_body(original_content: str, crawled_body: str) -> bool:
+    normalized_original = _clean_text(original_content)
+    normalized_body = _clean_text(crawled_body)
+    if len(normalized_body) < CRAWLED_BODY_MIN_CHARS:
+        return False
+    return len(normalized_body) >= len(normalized_original) + CRAWLED_BODY_MIN_GAIN_CHARS
+
+
+async def _crawl_rss_article_body(
+    client: httpx.AsyncClient,
+    document: RawNewsDocument,
+) -> tuple[str | None, str | None]:
+    try:
+        response = await client.get(document.link)
+        response.raise_for_status()
+    except httpx.TimeoutException:
+        return None, "timeout"
+    except httpx.HTTPStatusError as exc:
+        return None, f"http_{exc.response.status_code}"
+    except httpx.RequestError:
+        return None, "request_failed"
+    except Exception:
+        logger.debug("RSS article crawl failed unexpectedly: link=%s", document.link, exc_info=True)
+        return None, "request_failed"
+
+    content_type = str(response.headers.get("content-type") or "").lower()
+    if content_type and "html" not in content_type:
+        return None, "non_html"
+
+    body = _extract_article_body_from_html(response.text)
+    if not _should_use_crawled_body(document.content, body):
+        return None, "short_body"
+    return _clean_text(body), None
+
+
+async def _enrich_rss_documents_with_crawl(
+    client: httpx.AsyncClient,
+    documents: list[RawNewsDocument],
+) -> tuple[list[RawNewsDocument], dict[str, int]]:
+    stats = {
+        "crawled": 0,
+        "crawl_failed": 0,
+        "crawl_skipped": 0,
+        "rss_summary_used": 0,
+    }
+    semaphore = asyncio.Semaphore(RSS_ARTICLE_CRAWL_CONCURRENCY)
+
+    async def enrich(document: RawNewsDocument) -> RawNewsDocument:
+        if not _is_crawlable_rss_document(document):
+            document.crawl_status = "skipped"
+            document.crawl_error = "not_crawlable"
+            stats["crawl_skipped"] += 1
+            stats["rss_summary_used"] += 1
+            return document
+
+        async with semaphore:
+            body, error = await _crawl_rss_article_body(client, document)
+
+        if body:
+            document.content = body
+            document.content_source = "crawled_body"
+            document.crawl_status = "success"
+            document.crawl_error = None
+            stats["crawled"] += 1
+            return document
+
+        document.content_source = "rss_summary"
+        document.crawl_status = "failed"
+        document.crawl_error = error or "unknown"
+        stats["crawl_failed"] += 1
+        stats["rss_summary_used"] += 1
+        return document
+
+    enriched = await asyncio.gather(*(enrich(document) for document in documents))
+    return list(enriched), stats
 
 
 async def _fetch_rss_news(client: httpx.AsyncClient) -> list[RawNewsDocument]:
@@ -549,6 +756,10 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
         "indexed": 0,
         "deleted": 0,
         "errors": 0,
+        "crawled": 0,
+        "crawl_failed": 0,
+        "crawl_skipped": 0,
+        "rss_summary_used": 0,
     }
     index_ready = False
 
@@ -568,6 +779,11 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
                 _fetch_naver_news(client),
                 _fetch_rss_news(client),
             )
+            rss_documents, crawl_stats = await _enrich_rss_documents_with_crawl(
+                client,
+                rss_documents,
+            )
+            stats.update(crawl_stats)
 
         documents = _deduplicate_documents(
             _prefer_real_documents([*cryptopanic_documents, *naver_documents, *rss_documents])
@@ -598,10 +814,17 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
                 stats["errors"] += 1
 
     logger.info(
-        "market_news ingestion finished: fetched=%s indexed=%s deleted=%s errors=%s",
+        (
+            "market_news ingestion finished: fetched=%s indexed=%s deleted=%s errors=%s "
+            "crawled=%s crawl_failed=%s crawl_skipped=%s rss_summary_used=%s"
+        ),
         stats["fetched"],
         stats["indexed"],
         stats["deleted"],
         stats["errors"],
+        stats["crawled"],
+        stats["crawl_failed"],
+        stats["crawl_skipped"],
+        stats["rss_summary_used"],
     )
     return stats

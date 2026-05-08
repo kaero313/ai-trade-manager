@@ -26,6 +26,9 @@ MARKET_NEWS_INDEX_BODY = {
             "link": {"type": "keyword"},
             "published_at": {"type": "date"},
             "parent_id": {"type": "keyword"},
+            "content_source": {"type": "keyword"},
+            "crawl_status": {"type": "keyword"},
+            "crawl_error": {"type": "keyword"},
             "chunk_index": {"type": "integer"},
             "chunk_count": {"type": "integer"},
             "content_length": {"type": "integer"},
@@ -47,6 +50,9 @@ MARKET_NEWS_INDEX_BODY = {
 _opensearch_client: AsyncOpenSearch | None = None
 EXPECTED_CHUNK_FIELD_TYPES = {
     "parent_id": "keyword",
+    "content_source": "keyword",
+    "crawl_status": "keyword",
+    "crawl_error": "keyword",
     "chunk_index": "integer",
     "chunk_count": "integer",
     "content_length": "integer",

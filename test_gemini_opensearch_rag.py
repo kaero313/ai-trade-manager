@@ -1,6 +1,8 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+import httpx
+
 from app.api.routes import news as news_route
 from app.services.ai.provider_router import resolve_provider_candidates
 from app.services.rag import ingestion as rag_ingestion
@@ -29,6 +31,9 @@ def test_market_news_index_uses_opensearch_3_lucene_knn() -> None:
     assert KNN_ENGINE == "lucene"
     assert KNN_SPACE_TYPE == "cosinesimil"
     assert properties["parent_id"]["type"] == "keyword"
+    assert properties["content_source"]["type"] == "keyword"
+    assert properties["crawl_status"]["type"] == "keyword"
+    assert properties["crawl_error"]["type"] == "keyword"
     assert properties["chunk_index"]["type"] == "integer"
     assert properties["chunk_count"]["type"] == "integer"
     assert properties["content_length"]["type"] == "integer"
@@ -53,6 +58,164 @@ def test_rss_entry_to_document_normalizes_real_news() -> None:
     assert document.link == "https://example.com/news/1"
     assert document.source == "rss:tokenpost.kr"
     assert document.published_at == datetime(2026, 5, 6, 3, 0, tzinfo=UTC)
+    assert document.content_source == "rss_summary"
+    assert document.crawl_status == "skipped"
+
+
+def test_extract_article_body_from_html_prefers_article_text() -> None:
+    article_text = " ".join(["Bitcoin market liquidity is improving."] * 40)
+    nav_text = "Navigation text should be ignored."
+    html = f"""
+    <html>
+      <head><meta property="og:description" content="Short market summary"></head>
+      <body>
+        <nav>{nav_text}</nav>
+        <article><p>{article_text}</p></article>
+      </body>
+    </html>
+    """
+
+    extracted = rag_ingestion._extract_article_body_from_html(html)
+
+    assert "Bitcoin market liquidity is improving." in extracted
+    assert nav_text not in extracted
+
+
+def test_rss_article_crawl_replaces_summary_with_body() -> None:
+    body_text = " ".join(["Institutional Bitcoin demand expanded in Asian trading."] * 35)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://example.com/news/body"
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            text=f"<html><body><main><p>{body_text}</p></main></body></html>",
+        )
+
+    document = rag_ingestion.RawNewsDocument(
+        title="BTC body test",
+        content="Short RSS summary.",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:example.com",
+        link="https://example.com/news/body",
+        content_source="rss_summary",
+        crawl_status="skipped",
+    )
+
+    async def run() -> tuple[list[rag_ingestion.RawNewsDocument], dict[str, int]]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await rag_ingestion._enrich_rss_documents_with_crawl(client, [document])
+
+    enriched, stats = asyncio.run(run())
+
+    assert enriched[0].content == rag_ingestion._clean_text(body_text)
+    assert enriched[0].content_source == "crawled_body"
+    assert enriched[0].crawl_status == "success"
+    assert enriched[0].crawl_error is None
+    assert stats["crawled"] == 1
+    assert stats["rss_summary_used"] == 0
+
+
+def test_rss_article_crawl_falls_back_for_non_html_response() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={"title": "not html"},
+        )
+
+    document = rag_ingestion.RawNewsDocument(
+        title="BTC non html test",
+        content="RSS summary remains available.",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:example.com",
+        link="https://example.com/news/json",
+        content_source="rss_summary",
+        crawl_status="skipped",
+    )
+
+    async def run() -> tuple[list[rag_ingestion.RawNewsDocument], dict[str, int]]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await rag_ingestion._enrich_rss_documents_with_crawl(client, [document])
+
+    enriched, stats = asyncio.run(run())
+
+    assert enriched[0].content == "RSS summary remains available."
+    assert enriched[0].content_source == "rss_summary"
+    assert enriched[0].crawl_status == "failed"
+    assert enriched[0].crawl_error == "non_html"
+    assert stats["crawl_failed"] == 1
+    assert stats["rss_summary_used"] == 1
+
+
+def test_rss_article_crawl_falls_back_for_timeout() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timeout", request=request)
+
+    document = rag_ingestion.RawNewsDocument(
+        title="BTC timeout test",
+        content="RSS summary after timeout.",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:example.com",
+        link="https://example.com/news/timeout",
+        content_source="rss_summary",
+        crawl_status="skipped",
+    )
+
+    async def run() -> tuple[list[rag_ingestion.RawNewsDocument], dict[str, int]]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await rag_ingestion._enrich_rss_documents_with_crawl(client, [document])
+
+    enriched, stats = asyncio.run(run())
+
+    assert enriched[0].content == "RSS summary after timeout."
+    assert enriched[0].crawl_status == "failed"
+    assert enriched[0].crawl_error == "timeout"
+    assert stats["crawl_failed"] == 1
+
+
+def test_short_crawled_body_keeps_rss_summary() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html"},
+            text="<html><body><article><p>Too short.</p></article></body></html>",
+        )
+
+    document = rag_ingestion.RawNewsDocument(
+        title="BTC short body test",
+        content="RSS summary after short body.",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:example.com",
+        link="https://example.com/news/short-body",
+        content_source="rss_summary",
+        crawl_status="skipped",
+    )
+
+    async def run() -> tuple[list[rag_ingestion.RawNewsDocument], dict[str, int]]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await rag_ingestion._enrich_rss_documents_with_crawl(client, [document])
+
+    enriched, stats = asyncio.run(run())
+
+    assert enriched[0].content == "RSS summary after short body."
+    assert enriched[0].crawl_status == "failed"
+    assert enriched[0].crawl_error == "short_body"
+    assert stats["rss_summary_used"] == 1
+
+
+def test_api_and_dummy_documents_are_not_crawlable() -> None:
+    api_document = rag_ingestion.RawNewsDocument(
+        title="API news",
+        content="API supplied description.",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="cryptopanic",
+        link="https://example.com/api-news",
+    )
+    dummy_document = rag_ingestion._dummy_news_documents("naver")[0]
+
+    assert not rag_ingestion._is_crawlable_rss_document(api_document)
+    assert not rag_ingestion._is_crawlable_rss_document(dummy_document)
 
 
 def test_real_rss_documents_exclude_dummy_documents() -> None:
@@ -125,6 +288,9 @@ def test_chunk_serialization_includes_chunk_metadata() -> None:
     payload = rag_ingestion._serialize_chunk(chunk, [0.1] * EMBEDDING_DIMENSION)
 
     assert payload["parent_id"] == chunk.parent_id
+    assert payload["content_source"] == "api"
+    assert payload["crawl_status"] == "not_applicable"
+    assert payload["crawl_error"] is None
     assert payload["chunk_index"] == 0
     assert payload["chunk_count"] == 1
     assert payload["content_length"] == len(document.content)
