@@ -126,3 +126,5 @@ Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구
 - 크롤링 실패, 비HTML 응답, 짧은 본문, timeout은 ingestion 실패로 보지 않고 RSS 요약 fallback으로 저장합니다.
 - `market_news` 청크 문서는 `content_source`, `crawl_status`, `crawl_error`를 함께 저장해 본문 확보율과 실패 원인을 추적합니다.
 - `/api/news/rag/status`는 크롤 성공/실패/스킵 parent 수, 평균 본문 길이, 평균 청크 길이, content source/crawl status 분포를 반환합니다.
+- Google News RSS는 집계 페이지를 직접 크롤하지 않고 `google_news_aggregator`로 스킵하며, TokenPost형 `articleBody` 컨테이너는 본문 후보로 우선 추출합니다.
+- `/api/news/rag/status`는 `crawl_error_breakdown`과 source별 crawl error 분포도 반환해 본문 확보 실패 원인을 관측합니다.

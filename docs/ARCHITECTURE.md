@@ -221,3 +221,8 @@ ai-trade-manager/
 - 추출 본문이 RSS 요약보다 충분히 길고 최소 길이를 넘을 때만 `content_source=crawled_body`로 저장하며, 실패하면 `content_source=rss_summary`와 실패 상태를 남깁니다.
 - API 문서와 dummy/fallback 문서는 본문 크롤링 대상에서 제외하고, 크롤링 실패는 매매 게이트 하드 차단이 아니라 RAG 품질 관측 지표로만 사용합니다.
 - `/api/news/rag/status`는 크롤 성공/실패/스킵 parent 수, 평균 본문 길이, 평균 청크 길이, content source/crawl status 분포를 추가로 반환합니다.
+
+## Phase 46.1 업데이트
+- Google News RSS 문서는 원문 기사가 아닌 집계 페이지이므로 본문 크롤링을 스킵하고 `crawl_error=google_news_aggregator`로 기록합니다.
+- TokenPost처럼 `article_content`/`itemprop=articleBody` 컨테이너가 있는 HTML은 해당 영역을 본문 후보로 우선 추출합니다.
+- `/api/news/rag/status`는 `crawl_error_breakdown`과 source별 crawl error 분포를 반환해 크롤 실패 원인을 소스 단위로 관측합니다.

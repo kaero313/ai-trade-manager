@@ -170,3 +170,8 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 - `market_news` 청크 문서는 `content_source`, `crawl_status`, `crawl_error`를 추가로 저장해 RSS 요약, 기사 본문, API 문서, fallback 문서를 구분합니다.
 - 신규 매핑이 없는 기존 인덱스는 ingestion 경로에서만 자동 재생성됩니다. Alembic 마이그레이션은 만들지 않습니다.
 - `/api/news/rag/status`는 크롤 성공/실패/스킵 parent 수, 평균 본문 길이, 평균 청크 길이, content source/crawl status 분포를 집계합니다.
+
+## Phase 46.1 업데이트
+- PostgreSQL 스키마 변경은 없습니다. 크롤 실패 원인 집계는 기존 OpenSearch `crawl_error` keyword 필드를 사용합니다.
+- Google News RSS 집계 페이지는 `crawl_status=skipped`, `crawl_error=google_news_aggregator`로 저장합니다.
+- `/api/news/rag/status`는 `crawl_error_breakdown`과 source별 crawl error 분포를 추가 집계합니다.
