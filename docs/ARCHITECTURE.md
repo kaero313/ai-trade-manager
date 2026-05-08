@@ -215,3 +215,9 @@ ai-trade-manager/
 - 기존 `market_news` 매핑에 청크 필드가 없으면 ingestion 경로에서만 인덱스를 삭제/재생성합니다. 조회 경로는 인덱스를 임의 재생성하지 않습니다.
 - AI 분석의 뉴스 검색은 Gemini query embedding 기반 kNN 후보와 BM25 후보를 각각 조회한 뒤 `0.55 * vector + 0.35 * keyword + 0.10 * recency` 점수로 병합합니다.
 - 병합 결과는 `parent_id` 기준으로 중복 제거되어 같은 기사에서 여러 청크가 검색되어도 가장 높은 점수의 청크 1개만 AI 컨텍스트에 전달됩니다.
+
+## Phase 46 업데이트
+- RSS 실뉴스는 ingestion 중 `http(s)` 링크에 한해 제한 동시성으로 기사 HTML을 가져오고, `meta description`, `article`, `main`, `p` 텍스트를 경량 휴리스틱으로 추출합니다.
+- 추출 본문이 RSS 요약보다 충분히 길고 최소 길이를 넘을 때만 `content_source=crawled_body`로 저장하며, 실패하면 `content_source=rss_summary`와 실패 상태를 남깁니다.
+- API 문서와 dummy/fallback 문서는 본문 크롤링 대상에서 제외하고, 크롤링 실패는 매매 게이트 하드 차단이 아니라 RAG 품질 관측 지표로만 사용합니다.
+- `/api/news/rag/status`는 크롤 성공/실패/스킵 parent 수, 평균 본문 길이, 평균 청크 길이, content source/crawl status 분포를 추가로 반환합니다.

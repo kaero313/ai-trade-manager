@@ -164,3 +164,9 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 - 청크 `_id`는 `{parent_id}:{chunk_index}` 형식으로 고정해 재수집 시 같은 기사 청크가 중복 누적되지 않도록 합니다.
 - 기존 인덱스가 청크 매핑을 지원하지 않으면 ingestion 시 자동 재생성됩니다. OpenSearch는 재수집 가능한 RAG 캐시로 취급하므로 Alembic 마이그레이션은 만들지 않습니다.
 - `/api/news/rag/status`는 실문서/fallback/임베딩 통계에 더해 parent 문서 수, chunk 문서 수, chunked parent 수, parent당 평균 청크 수를 집계합니다.
+
+## Phase 46 업데이트
+- PostgreSQL 스키마 변경은 없습니다. RAG 본문 크롤링과 품질 관측은 OpenSearch `market_news` 캐시 인덱스의 필드와 애플리케이션 집계만 변경합니다.
+- `market_news` 청크 문서는 `content_source`, `crawl_status`, `crawl_error`를 추가로 저장해 RSS 요약, 기사 본문, API 문서, fallback 문서를 구분합니다.
+- 신규 매핑이 없는 기존 인덱스는 ingestion 경로에서만 자동 재생성됩니다. Alembic 마이그레이션은 만들지 않습니다.
+- `/api/news/rag/status`는 크롤 성공/실패/스킵 parent 수, 평균 본문 길이, 평균 청크 길이, content source/crawl status 분포를 집계합니다.

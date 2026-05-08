@@ -120,3 +120,9 @@ Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구
 - 첫 ingestion 시 기존 인덱스가 청크 필드 매핑을 지원하지 않으면 `market_news`를 자동 재생성하고 RSS/API 실뉴스를 다시 수집합니다.
 - AI 뉴스 검색은 kNN 벡터 검색과 BM25(`title^3`, `content`) 검색 후보를 각각 조회한 뒤 parent 기준으로 중복 제거해 최대 3개 컨텍스트만 전달합니다.
 - `/api/news/rag/status`는 parent/chunk 문서 수, chunked parent 수, parent당 평균 청크 수까지 반환합니다.
+
+## RAG 3차 품질 관측 정책
+- RSS 실뉴스 문서는 보수적 기사 본문 크롤링을 거쳐 RSS 요약보다 충분히 긴 HTML 본문이 확보될 때만 `content`를 본문으로 대체합니다.
+- 크롤링 실패, 비HTML 응답, 짧은 본문, timeout은 ingestion 실패로 보지 않고 RSS 요약 fallback으로 저장합니다.
+- `market_news` 청크 문서는 `content_source`, `crawl_status`, `crawl_error`를 함께 저장해 본문 확보율과 실패 원인을 추적합니다.
+- `/api/news/rag/status`는 크롤 성공/실패/스킵 parent 수, 평균 본문 길이, 평균 청크 길이, content source/crawl status 분포를 반환합니다.
