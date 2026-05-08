@@ -338,11 +338,43 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
                         "doc_count": 2,
                         "parents": {"value": 1},
                     },
+                    "crawled_parent_documents": {
+                        "doc_count": 2,
+                        "parents": {"value": 1},
+                    },
+                    "rss_summary_parent_documents": {
+                        "doc_count": 1,
+                        "parents": {"value": 1},
+                    },
+                    "crawl_failed_parent_documents": {
+                        "doc_count": 1,
+                        "parents": {"value": 1},
+                    },
+                    "crawl_skipped_parent_documents": {
+                        "doc_count": 1,
+                        "parents": {"value": 1},
+                    },
+                    "avg_content_length": {"value": 1350.5},
+                    "avg_chunk_text_length": {"value": 675.25},
                     "latest_published_at": {"value": 1778025600000},
                     "source_breakdown": {
                         "buckets": [
                             {"key": "rss:tokenpost.kr", "doc_count": 3},
                             {"key": "naver", "doc_count": 1},
+                        ]
+                    },
+                    "content_source_breakdown": {
+                        "buckets": [
+                            {"key": "crawled_body", "doc_count": 2},
+                            {"key": "rss_summary", "doc_count": 1},
+                            {"key": "fallback", "doc_count": 1},
+                        ]
+                    },
+                    "crawl_status_breakdown": {
+                        "buckets": [
+                            {"key": "success", "doc_count": 2},
+                            {"key": "failed", "doc_count": 1},
+                            {"key": "not_applicable", "doc_count": 1},
                         ]
                     },
                 },
@@ -357,12 +389,28 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
     assert response.chunk_documents == 4
     assert response.chunked_parent_documents == 1
     assert response.avg_chunks_per_parent == 1.3333
+    assert response.crawled_parent_documents == 1
+    assert response.rss_summary_parent_documents == 1
+    assert response.crawl_failed_parent_documents == 1
+    assert response.crawl_skipped_parent_documents == 1
+    assert response.avg_content_length == 1350.5
+    assert response.avg_chunk_text_length == 675.25
     assert response.real_documents == 3
     assert response.fallback_documents == 1
     assert response.embedded_documents == 2
     assert response.missing_embedding_documents == 2
     assert response.latest_published_at == "2026-05-06T00:00:00+00:00"
     assert response.source_breakdown == {"rss:tokenpost.kr": 3, "naver": 1}
+    assert response.content_source_breakdown == {
+        "crawled_body": 2,
+        "rss_summary": 1,
+        "fallback": 1,
+    }
+    assert response.crawl_status_breakdown == {
+        "success": 2,
+        "failed": 1,
+        "not_applicable": 1,
+    }
 
 
 def test_market_news_mapping_validation_rejects_legacy_nmslib() -> None:

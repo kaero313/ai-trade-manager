@@ -49,12 +49,20 @@ class RagStatusResponse(BaseModel):
     chunk_documents: int = Field(...)
     chunked_parent_documents: int = Field(...)
     avg_chunks_per_parent: float = Field(...)
+    crawled_parent_documents: int = Field(...)
+    rss_summary_parent_documents: int = Field(...)
+    crawl_failed_parent_documents: int = Field(...)
+    crawl_skipped_parent_documents: int = Field(...)
+    avg_content_length: float = Field(...)
+    avg_chunk_text_length: float = Field(...)
     real_documents: int = Field(...)
     fallback_documents: int = Field(...)
     embedded_documents: int = Field(...)
     missing_embedding_documents: int = Field(...)
     latest_published_at: str | None = Field(default=None)
     source_breakdown: dict[str, int] = Field(default_factory=dict)
+    content_source_breakdown: dict[str, int] = Field(default_factory=dict)
+    crawl_status_breakdown: dict[str, int] = Field(default_factory=dict)
     configured_sources: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = Field(default=None)
 
@@ -138,8 +146,28 @@ def _build_rag_status_query() -> dict[str, Any]:
                     "parents": {"cardinality": {"field": "parent_id"}},
                 },
             },
+            "crawled_parent_documents": {
+                "filter": {"term": {"content_source": "crawled_body"}},
+                "aggs": {"parents": {"cardinality": {"field": "parent_id"}}},
+            },
+            "rss_summary_parent_documents": {
+                "filter": {"term": {"content_source": "rss_summary"}},
+                "aggs": {"parents": {"cardinality": {"field": "parent_id"}}},
+            },
+            "crawl_failed_parent_documents": {
+                "filter": {"term": {"crawl_status": "failed"}},
+                "aggs": {"parents": {"cardinality": {"field": "parent_id"}}},
+            },
+            "crawl_skipped_parent_documents": {
+                "filter": {"term": {"crawl_status": "skipped"}},
+                "aggs": {"parents": {"cardinality": {"field": "parent_id"}}},
+            },
+            "avg_content_length": {"avg": {"field": "content_length"}},
+            "avg_chunk_text_length": {"avg": {"field": "chunk_text_length"}},
             "latest_published_at": {"max": {"field": "published_at"}},
             "source_breakdown": {"terms": {"field": "source", "size": 20}},
+            "content_source_breakdown": {"terms": {"field": "content_source", "size": 10}},
+            "crawl_status_breakdown": {"terms": {"field": "crawl_status", "size": 10}},
         },
     }
 
@@ -183,10 +211,14 @@ def _extract_nested_agg_value(aggregations: dict[str, Any], bucket_key: str, val
 
 
 def _extract_source_breakdown(aggregations: dict[str, Any]) -> dict[str, int]:
-    source_bucket = aggregations.get("source_breakdown")
-    if not isinstance(source_bucket, dict):
+    return _extract_terms_breakdown(aggregations, "source_breakdown")
+
+
+def _extract_terms_breakdown(aggregations: dict[str, Any], key: str) -> dict[str, int]:
+    terms_bucket = aggregations.get(key)
+    if not isinstance(terms_bucket, dict):
         return {}
-    buckets = source_bucket.get("buckets")
+    buckets = terms_bucket.get("buckets")
     if not isinstance(buckets, list):
         return {}
     return {
@@ -194,6 +226,16 @@ def _extract_source_breakdown(aggregations: dict[str, Any]) -> dict[str, int]:
         for bucket in buckets
         if isinstance(bucket, dict) and bucket.get("key") is not None
     }
+
+
+def _extract_agg_float(aggregations: dict[str, Any], key: str) -> float:
+    bucket = aggregations.get(key)
+    if not isinstance(bucket, dict):
+        return 0.0
+    try:
+        return round(float(bucket.get("value") or 0.0), 4)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _extract_latest_published_at(aggregations: dict[str, Any]) -> str | None:
@@ -242,11 +284,19 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
                 chunk_documents=0,
                 chunked_parent_documents=0,
                 avg_chunks_per_parent=0.0,
+                crawled_parent_documents=0,
+                rss_summary_parent_documents=0,
+                crawl_failed_parent_documents=0,
+                crawl_skipped_parent_documents=0,
+                avg_content_length=0.0,
+                avg_chunk_text_length=0.0,
                 real_documents=0,
                 fallback_documents=0,
                 embedded_documents=0,
                 missing_embedding_documents=0,
                 source_breakdown={},
+                content_source_breakdown={},
+                crawl_status_breakdown={},
                 configured_sources=configured_sources,
             )
 
@@ -260,11 +310,19 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
             chunk_documents=0,
             chunked_parent_documents=0,
             avg_chunks_per_parent=0.0,
+            crawled_parent_documents=0,
+            rss_summary_parent_documents=0,
+            crawl_failed_parent_documents=0,
+            crawl_skipped_parent_documents=0,
+            avg_content_length=0.0,
+            avg_chunk_text_length=0.0,
             real_documents=0,
             fallback_documents=0,
             embedded_documents=0,
             missing_embedding_documents=0,
             source_breakdown={},
+            content_source_breakdown={},
+            crawl_status_breakdown={},
             configured_sources=configured_sources,
             error=str(exc),
         )
@@ -284,7 +342,29 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
         "chunked_parent_documents",
         "parents",
     )
+    crawled_parent_documents = _extract_nested_agg_value(
+        aggregations,
+        "crawled_parent_documents",
+        "parents",
+    )
+    rss_summary_parent_documents = _extract_nested_agg_value(
+        aggregations,
+        "rss_summary_parent_documents",
+        "parents",
+    )
+    crawl_failed_parent_documents = _extract_nested_agg_value(
+        aggregations,
+        "crawl_failed_parent_documents",
+        "parents",
+    )
+    crawl_skipped_parent_documents = _extract_nested_agg_value(
+        aggregations,
+        "crawl_skipped_parent_documents",
+        "parents",
+    )
     avg_chunks_per_parent = round(chunk_documents / parent_documents, 4) if parent_documents else 0.0
+    avg_content_length = _extract_agg_float(aggregations, "avg_content_length")
+    avg_chunk_text_length = _extract_agg_float(aggregations, "avg_chunk_text_length")
     real_documents = max(total_documents - fallback_documents, 0)
     status = _resolve_rag_status(
         index_exists=index_exists,
@@ -302,12 +382,20 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
         chunk_documents=chunk_documents,
         chunked_parent_documents=chunked_parent_documents,
         avg_chunks_per_parent=avg_chunks_per_parent,
+        crawled_parent_documents=crawled_parent_documents,
+        rss_summary_parent_documents=rss_summary_parent_documents,
+        crawl_failed_parent_documents=crawl_failed_parent_documents,
+        crawl_skipped_parent_documents=crawl_skipped_parent_documents,
+        avg_content_length=avg_content_length,
+        avg_chunk_text_length=avg_chunk_text_length,
         real_documents=real_documents,
         fallback_documents=fallback_documents,
         embedded_documents=embedded_documents,
         missing_embedding_documents=missing_embedding_documents,
         latest_published_at=_extract_latest_published_at(aggregations),
         source_breakdown=_extract_source_breakdown(aggregations),
+        content_source_breakdown=_extract_terms_breakdown(aggregations, "content_source_breakdown"),
+        crawl_status_breakdown=_extract_terms_breakdown(aggregations, "crawl_status_breakdown"),
         configured_sources=configured_sources,
     )
 
