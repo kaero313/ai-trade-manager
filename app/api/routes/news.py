@@ -63,6 +63,8 @@ class RagStatusResponse(BaseModel):
     source_breakdown: dict[str, int] = Field(default_factory=dict)
     content_source_breakdown: dict[str, int] = Field(default_factory=dict)
     crawl_status_breakdown: dict[str, int] = Field(default_factory=dict)
+    crawl_error_breakdown: dict[str, int] = Field(default_factory=dict)
+    crawl_error_by_source: dict[str, dict[str, int]] = Field(default_factory=dict)
     configured_sources: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = Field(default=None)
 
@@ -168,6 +170,13 @@ def _build_rag_status_query() -> dict[str, Any]:
             "source_breakdown": {"terms": {"field": "source", "size": 20}},
             "content_source_breakdown": {"terms": {"field": "content_source", "size": 10}},
             "crawl_status_breakdown": {"terms": {"field": "crawl_status", "size": 10}},
+            "crawl_error_breakdown": {"terms": {"field": "crawl_error", "size": 20}},
+            "crawl_error_by_source": {
+                "terms": {"field": "source", "size": 20},
+                "aggs": {
+                    "errors": {"terms": {"field": "crawl_error", "size": 20}},
+                },
+            },
         },
     }
 
@@ -238,6 +247,36 @@ def _extract_agg_float(aggregations: dict[str, Any], key: str) -> float:
         return 0.0
 
 
+def _extract_nested_terms_breakdown(
+    aggregations: dict[str, Any],
+    key: str,
+    nested_key: str,
+) -> dict[str, dict[str, int]]:
+    parent_bucket = aggregations.get(key)
+    if not isinstance(parent_bucket, dict):
+        return {}
+    buckets = parent_bucket.get("buckets")
+    if not isinstance(buckets, list):
+        return {}
+
+    breakdown: dict[str, dict[str, int]] = {}
+    for bucket in buckets:
+        if not isinstance(bucket, dict) or bucket.get("key") is None:
+            continue
+        nested_bucket = bucket.get(nested_key)
+        if not isinstance(nested_bucket, dict):
+            continue
+        nested_buckets = nested_bucket.get("buckets")
+        if not isinstance(nested_buckets, list):
+            continue
+        breakdown[str(bucket["key"])] = {
+            str(item.get("key")): _to_int(item.get("doc_count"))
+            for item in nested_buckets
+            if isinstance(item, dict) and item.get("key") is not None
+        }
+    return breakdown
+
+
 def _extract_latest_published_at(aggregations: dict[str, Any]) -> str | None:
     latest_bucket = aggregations.get("latest_published_at")
     if not isinstance(latest_bucket, dict):
@@ -297,6 +336,8 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
                 source_breakdown={},
                 content_source_breakdown={},
                 crawl_status_breakdown={},
+                crawl_error_breakdown={},
+                crawl_error_by_source={},
                 configured_sources=configured_sources,
             )
 
@@ -323,6 +364,8 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
             source_breakdown={},
             content_source_breakdown={},
             crawl_status_breakdown={},
+            crawl_error_breakdown={},
+            crawl_error_by_source={},
             configured_sources=configured_sources,
             error=str(exc),
         )
@@ -396,6 +439,12 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
         source_breakdown=_extract_source_breakdown(aggregations),
         content_source_breakdown=_extract_terms_breakdown(aggregations, "content_source_breakdown"),
         crawl_status_breakdown=_extract_terms_breakdown(aggregations, "crawl_status_breakdown"),
+        crawl_error_breakdown=_extract_terms_breakdown(aggregations, "crawl_error_breakdown"),
+        crawl_error_by_source=_extract_nested_terms_breakdown(
+            aggregations,
+            "crawl_error_by_source",
+            "errors",
+        ),
         configured_sources=configured_sources,
     )
 

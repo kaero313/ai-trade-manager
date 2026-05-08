@@ -90,11 +90,28 @@ def _clean_text(raw: Any) -> str:
 
 class _ArticleBodyExtractor(HTMLParser):
     _IGNORED_TAGS = {"script", "style", "noscript", "svg", "nav", "footer", "header", "aside", "form"}
+    _VOID_TAGS = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self._ignored_stack: list[str] = []
         self._container_stack: list[str] = []
+        self._article_body_parts: list[str] = []
         self._article_parts: list[str] = []
         self._main_parts: list[str] = []
         self._paragraphs: list[str] = []
@@ -117,13 +134,26 @@ class _ArticleBodyExtractor(HTMLParser):
                     self._meta_descriptions.append(content)
 
         if self._ignored_stack or tag_name in self._IGNORED_TAGS:
-            self._ignored_stack.append(tag_name)
+            if tag_name not in self._VOID_TAGS:
+                self._ignored_stack.append(tag_name)
             return
+
+        class_names = set(attrs_by_name.get("class", "").split())
+        itemprop = attrs_by_name.get("itemprop", "").strip().lower()
+        if (
+            itemprop == "articlebody"
+            or "article_content" in class_names
+            or "article-body" in class_names
+        ):
+            self._container_stack.append("article_body")
 
         if tag_name in {"article", "main"}:
             self._container_stack.append(tag_name)
         elif tag_name == "p":
             self._current_paragraph = []
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag: str) -> None:
         tag_name = tag.lower()
@@ -144,6 +174,13 @@ class _ArticleBodyExtractor(HTMLParser):
                 if self._container_stack[index] == tag_name:
                     del self._container_stack[index]
                     break
+            return
+
+        if "article_body" in self._container_stack and tag_name in {"div", "section"}:
+            for index in range(len(self._container_stack) - 1, -1, -1):
+                if self._container_stack[index] == "article_body":
+                    del self._container_stack[index]
+                    break
 
     def handle_data(self, data: str) -> None:
         if self._ignored_stack:
@@ -153,6 +190,8 @@ class _ArticleBodyExtractor(HTMLParser):
         if not text:
             return
 
+        if "article_body" in self._container_stack:
+            self._article_body_parts.append(text)
         if "article" in self._container_stack:
             self._article_parts.append(text)
         if "main" in self._container_stack:
@@ -162,6 +201,7 @@ class _ArticleBodyExtractor(HTMLParser):
 
     def extract_best(self) -> str:
         candidates = [
+            " ".join(self._article_body_parts),
             " ".join(self._article_parts),
             " ".join(self._main_parts),
             " ".join(self._paragraphs),
@@ -449,6 +489,12 @@ def _is_crawlable_rss_document(document: RawNewsDocument) -> bool:
     return scheme in {"http", "https"}
 
 
+def _is_google_news_aggregator_document(document: RawNewsDocument) -> bool:
+    parsed = urlparse(document.link)
+    host = parsed.netloc.lower().removeprefix("www.")
+    return document.source == "rss:news.google.com" or host == "news.google.com"
+
+
 def _should_use_crawled_body(original_content: str, crawled_body: str) -> bool:
     normalized_original = _clean_text(original_content)
     normalized_body = _clean_text(crawled_body)
@@ -497,6 +543,13 @@ async def _enrich_rss_documents_with_crawl(
     semaphore = asyncio.Semaphore(RSS_ARTICLE_CRAWL_CONCURRENCY)
 
     async def enrich(document: RawNewsDocument) -> RawNewsDocument:
+        if _is_google_news_aggregator_document(document):
+            document.crawl_status = "skipped"
+            document.crawl_error = "google_news_aggregator"
+            stats["crawl_skipped"] += 1
+            stats["rss_summary_used"] += 1
+            return document
+
         if not _is_crawlable_rss_document(document):
             document.crawl_status = "skipped"
             document.crawl_error = "not_crawlable"

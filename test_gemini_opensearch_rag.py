@@ -81,6 +81,26 @@ def test_extract_article_body_from_html_prefers_article_text() -> None:
     assert nav_text not in extracted
 
 
+def test_extract_article_body_survives_ignored_void_tags() -> None:
+    body_text = " ".join(["TokenPost article body keeps the useful market context."] * 30)
+    html = f"""
+    <html>
+      <body>
+        <header><img src="/logo.png"><span>Navigation</span></header>
+        <div class="article_content" itemprop="articleBody">
+          <p>{body_text}</p>
+        </div>
+      </body>
+    </html>
+    """
+
+    extracted = rag_ingestion._extract_article_body_from_html(html)
+
+    assert "TokenPost article body keeps the useful market context." in extracted
+    assert "Navigation" not in extracted
+    assert len(extracted) > 500
+
+
 def test_rss_article_crawl_replaces_summary_with_body() -> None:
     body_text = " ".join(["Institutional Bitcoin demand expanded in Asian trading."] * 35)
 
@@ -201,6 +221,37 @@ def test_short_crawled_body_keeps_rss_summary() -> None:
     assert enriched[0].content == "RSS summary after short body."
     assert enriched[0].crawl_status == "failed"
     assert enriched[0].crawl_error == "short_body"
+    assert stats["rss_summary_used"] == 1
+
+
+def test_google_news_rss_document_skips_article_crawl() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        return httpx.Response(500)
+
+    document = rag_ingestion.RawNewsDocument(
+        title="Google News aggregated story",
+        content="RSS summary remains the usable fallback.",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:news.google.com",
+        link="https://news.google.com/rss/articles/example?oc=5",
+        content_source="rss_summary",
+        crawl_status="skipped",
+    )
+
+    async def run() -> tuple[list[rag_ingestion.RawNewsDocument], dict[str, int]]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await rag_ingestion._enrich_rss_documents_with_crawl(client, [document])
+
+    enriched, stats = asyncio.run(run())
+
+    assert calls == []
+    assert enriched[0].content == "RSS summary remains the usable fallback."
+    assert enriched[0].crawl_status == "skipped"
+    assert enriched[0].crawl_error == "google_news_aggregator"
+    assert stats["crawl_skipped"] == 1
     assert stats["rss_summary_used"] == 1
 
 
@@ -377,6 +428,32 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
                             {"key": "not_applicable", "doc_count": 1},
                         ]
                     },
+                    "crawl_error_breakdown": {
+                        "buckets": [
+                            {"key": "short_body", "doc_count": 2},
+                            {"key": "google_news_aggregator", "doc_count": 1},
+                        ]
+                    },
+                    "crawl_error_by_source": {
+                        "buckets": [
+                            {
+                                "key": "rss:tokenpost.kr",
+                                "errors": {
+                                    "buckets": [
+                                        {"key": "short_body", "doc_count": 2},
+                                    ]
+                                },
+                            },
+                            {
+                                "key": "rss:news.google.com",
+                                "errors": {
+                                    "buckets": [
+                                        {"key": "google_news_aggregator", "doc_count": 1},
+                                    ]
+                                },
+                            },
+                        ]
+                    },
                 },
             }
 
@@ -410,6 +487,14 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
         "success": 2,
         "failed": 1,
         "not_applicable": 1,
+    }
+    assert response.crawl_error_breakdown == {
+        "short_body": 2,
+        "google_news_aggregator": 1,
+    }
+    assert response.crawl_error_by_source == {
+        "rss:tokenpost.kr": {"short_body": 2},
+        "rss:news.google.com": {"google_news_aggregator": 1},
     }
 
 
