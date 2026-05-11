@@ -515,13 +515,38 @@ def test_fallback_delete_uses_dummy_and_fallback_markers(monkeypatch) -> None:
 def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> None:
     class FakeIndices:
         async def exists(self, index: str) -> bool:
-            assert index == "market_news"
+            assert index in {"market_news", INGESTION_RUNS_INDEX_NAME}
             return True
 
     class FakeOpenSearchClient:
         indices = FakeIndices()
 
         async def search(self, index: str, body: dict) -> dict:
+            if index == INGESTION_RUNS_INDEX_NAME:
+                assert body["size"] == 1
+                return {
+                    "hits": {
+                        "hits": [
+                            {
+                                "_source": {
+                                    "run_id": "run-1",
+                                    "status": "partial",
+                                    "fetched": 4,
+                                    "indexed": 4,
+                                    "source_health": [
+                                        {
+                                            "source": "rss:tokenpost.kr",
+                                            "status": "partial",
+                                            "error": None,
+                                            "fetched": 3,
+                                        }
+                                    ],
+                                }
+                            }
+                        ]
+                    }
+                }
+
             assert index == "market_news"
             assert body["size"] == 0
             return {
@@ -643,6 +668,39 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
         "rss:tokenpost.kr": {"short_body": 2},
         "rss:news.google.com": {"google_news_aggregator": 1},
     }
+    assert response.latest_ingestion is not None
+    assert response.latest_ingestion["run_id"] == "run-1"
+    assert response.latest_ingestion["source_health"][0]["source"] == "rss:tokenpost.kr"
+
+
+def test_rag_status_keeps_response_when_ingestion_run_index_is_unavailable() -> None:
+    class FakeIndices:
+        async def exists(self, index: str) -> bool:
+            if index == INGESTION_RUNS_INDEX_NAME:
+                raise RuntimeError("run index unavailable")
+            assert index == "market_news"
+            return True
+
+    class FakeOpenSearchClient:
+        indices = FakeIndices()
+
+        async def search(self, index: str, body: dict) -> dict:
+            assert index == "market_news"
+            return {
+                "hits": {"total": {"value": 1}},
+                "aggregations": {
+                    "fallback_documents": {"doc_count": 0},
+                    "embedded_documents": {"doc_count": 1},
+                    "missing_embedding_documents": {"doc_count": 0},
+                    "parent_documents": {"value": 1},
+                    "chunk_documents": {"doc_count": 1},
+                },
+            }
+
+    response = asyncio.run(news_route._build_rag_status_response(FakeOpenSearchClient()))
+
+    assert response.status == "healthy"
+    assert response.latest_ingestion is None
 
 
 def test_market_news_mapping_validation_rejects_legacy_nmslib() -> None:

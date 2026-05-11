@@ -10,6 +10,7 @@ from app.db.session import get_db
 from app.services.news_analyzer import analyze_market_sentiment
 from app.services.news_scraper import fetch_crypto_news
 from app.services.rag.ingestion import get_configured_market_news_sources
+from app.services.rag.opensearch_client import INGESTION_RUNS_INDEX_NAME
 from app.services.rag.opensearch_client import INDEX_NAME
 from app.services.rag.opensearch_client import get_opensearch_client
 
@@ -65,6 +66,7 @@ class RagStatusResponse(BaseModel):
     crawl_status_breakdown: dict[str, int] = Field(default_factory=dict)
     crawl_error_breakdown: dict[str, int] = Field(default_factory=dict)
     crawl_error_by_source: dict[str, dict[str, int]] = Field(default_factory=dict)
+    latest_ingestion: dict[str, Any] | None = Field(default=None)
     configured_sources: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = Field(default=None)
 
@@ -307,6 +309,31 @@ def _resolve_rag_status(
     return "healthy"
 
 
+async def _fetch_latest_ingestion_status(client: Any) -> dict[str, Any] | None:
+    try:
+        index_exists = await client.indices.exists(index=INGESTION_RUNS_INDEX_NAME)
+        if not index_exists:
+            return None
+
+        response = await client.search(
+            index=INGESTION_RUNS_INDEX_NAME,
+            body={
+                "size": 1,
+                "query": {"match_all": {}},
+                "sort": [{"finished_at": {"order": "desc"}}],
+            },
+        )
+    except Exception:
+        return None
+
+    hits = response.get("hits", {}).get("hits", []) if isinstance(response, dict) else []
+    if not isinstance(hits, list) or not hits:
+        return None
+
+    source = hits[0].get("_source") if isinstance(hits[0], dict) else None
+    return source if isinstance(source, dict) else None
+
+
 async def _build_rag_status_response(client: Any | None = None) -> RagStatusResponse:
     configured_sources = get_configured_market_news_sources()
     search_client = client or get_opensearch_client()
@@ -315,6 +342,7 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
     try:
         index_exists = bool(await search_client.indices.exists(index=INDEX_NAME))
         if not index_exists:
+            latest_ingestion = await _fetch_latest_ingestion_status(search_client)
             return RagStatusResponse(
                 status="empty",
                 index_exists=False,
@@ -338,6 +366,7 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
                 crawl_status_breakdown={},
                 crawl_error_breakdown={},
                 crawl_error_by_source={},
+                latest_ingestion=latest_ingestion,
                 configured_sources=configured_sources,
             )
 
@@ -366,6 +395,7 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
             crawl_status_breakdown={},
             crawl_error_breakdown={},
             crawl_error_by_source={},
+            latest_ingestion=None,
             configured_sources=configured_sources,
             error=str(exc),
         )
@@ -416,6 +446,7 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
         fallback_documents=fallback_documents,
         missing_embedding_documents=missing_embedding_documents,
     )
+    latest_ingestion = await _fetch_latest_ingestion_status(search_client)
 
     return RagStatusResponse(
         status=status,
@@ -445,6 +476,7 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
             "crawl_error_by_source",
             "errors",
         ),
+        latest_ingestion=latest_ingestion,
         configured_sources=configured_sources,
     )
 
