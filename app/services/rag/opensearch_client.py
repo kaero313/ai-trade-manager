@@ -6,6 +6,7 @@ from opensearchpy import AsyncOpenSearch
 from app.core.config import settings
 
 INDEX_NAME = "market_news"
+INGESTION_RUNS_INDEX_NAME = "market_news_ingestion_runs"
 EMBEDDING_DIMENSION = 1536
 KNN_METHOD_NAME = "hnsw"
 KNN_ENGINE = "lucene"
@@ -41,6 +42,45 @@ MARKET_NEWS_INDEX_BODY = {
                     "name": KNN_METHOD_NAME,
                     "engine": KNN_ENGINE,
                     "space_type": KNN_SPACE_TYPE,
+                },
+            },
+        }
+    },
+}
+
+INGESTION_RUNS_INDEX_BODY = {
+    "mappings": {
+        "properties": {
+            "run_id": {"type": "keyword"},
+            "started_at": {"type": "date"},
+            "finished_at": {"type": "date"},
+            "status": {"type": "keyword"},
+            "fetched": {"type": "integer"},
+            "indexed": {"type": "integer"},
+            "deleted": {"type": "integer"},
+            "errors": {"type": "integer"},
+            "crawled": {"type": "integer"},
+            "crawl_failed": {"type": "integer"},
+            "crawl_skipped": {"type": "integer"},
+            "rss_summary_used": {"type": "integer"},
+            "stale_deleted": {"type": "integer"},
+            "fallback_deleted": {"type": "integer"},
+            "expired_deleted": {"type": "integer"},
+            "source_health": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "keyword"},
+                    "type": {"type": "keyword"},
+                    "enabled": {"type": "boolean"},
+                    "status": {"type": "keyword"},
+                    "fetched": {"type": "integer"},
+                    "error": {"type": "keyword"},
+                    "parse_warning": {"type": "boolean"},
+                    "crawled": {"type": "integer"},
+                    "crawl_failed": {"type": "integer"},
+                    "crawl_skipped": {"type": "integer"},
+                    "rss_summary_used": {"type": "integer"},
+                    "crawl_error_breakdown": {"type": "object"},
                 },
             },
         }
@@ -192,3 +232,32 @@ async def ensure_market_news_index(*, rebuild_on_mismatch: bool = False) -> bool
 
 async def ensure_market_news_index_for_ingestion() -> bool:
     return await ensure_market_news_index(rebuild_on_mismatch=True)
+
+
+async def ensure_market_news_ingestion_runs_index() -> bool:
+    client = get_opensearch_client()
+    try:
+        index_exists = await client.indices.exists(index=INGESTION_RUNS_INDEX_NAME)
+    except Exception:
+        logger.exception(
+            "market_news ingestion run 인덱스 존재 여부 확인에 실패했습니다: index=%s",
+            INGESTION_RUNS_INDEX_NAME,
+        )
+        return False
+
+    if index_exists:
+        return True
+
+    try:
+        await client.indices.create(index=INGESTION_RUNS_INDEX_NAME, body=INGESTION_RUNS_INDEX_BODY)
+        logger.info("market_news ingestion run 인덱스 생성 완료: index=%s", INGESTION_RUNS_INDEX_NAME)
+        return True
+    except Exception as exc:
+        details = getattr(exc, "info", None)
+        logger.error(
+            "market_news ingestion run 인덱스 생성 실패: index=%s details=%s",
+            INGESTION_RUNS_INDEX_NAME,
+            details if details is not None else str(exc),
+            exc_info=True,
+        )
+        return False

@@ -1,5 +1,6 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import httpx
 
@@ -8,8 +9,10 @@ from app.services.ai.provider_router import resolve_provider_candidates
 from app.services.rag import ingestion as rag_ingestion
 from app.services.rag.opensearch_client import (
     EMBEDDING_DIMENSION,
+    INGESTION_RUNS_INDEX_NAME,
     KNN_ENGINE,
     KNN_SPACE_TYPE,
+    INGESTION_RUNS_INDEX_BODY,
     MARKET_NEWS_INDEX_BODY,
     _has_expected_chunk_mapping,
     _is_expected_embedding_mapping,
@@ -39,6 +42,21 @@ def test_market_news_index_uses_opensearch_3_lucene_knn() -> None:
     assert properties["content_length"]["type"] == "integer"
     assert properties["chunk_text_length"]["type"] == "integer"
     assert properties["is_chunked"]["type"] == "boolean"
+
+
+def test_ingestion_runs_index_tracks_source_health() -> None:
+    properties = INGESTION_RUNS_INDEX_BODY["mappings"]["properties"]
+    source_health = properties["source_health"]["properties"]
+
+    assert INGESTION_RUNS_INDEX_NAME == "market_news_ingestion_runs"
+    assert properties["run_id"]["type"] == "keyword"
+    assert properties["status"]["type"] == "keyword"
+    assert properties["stale_deleted"]["type"] == "integer"
+    assert properties["fallback_deleted"]["type"] == "integer"
+    assert properties["expired_deleted"]["type"] == "integer"
+    assert source_health["source"]["type"] == "keyword"
+    assert source_health["status"]["type"] == "keyword"
+    assert source_health["crawl_error_breakdown"]["type"] == "object"
 
 
 def test_rss_entry_to_document_normalizes_real_news() -> None:
@@ -255,6 +273,59 @@ def test_google_news_rss_document_skips_article_crawl() -> None:
     assert stats["rss_summary_used"] == 1
 
 
+def test_rss_fetch_records_http_404_source_health(monkeypatch) -> None:
+    monkeypatch.setattr(rag_ingestion, "RSS_FEED_URLS", ["https://example.com/rss"])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, request=request)
+
+    async def run() -> tuple[list[rag_ingestion.RawNewsDocument], list[rag_ingestion.SourceHealth]]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await rag_ingestion._fetch_rss_news(client)
+
+    documents, source_health = asyncio.run(run())
+
+    assert documents == []
+    assert len(source_health) == 1
+    assert source_health[0].source == "rss:example.com"
+    assert source_health[0].status == "failed"
+    assert source_health[0].error == "http_404"
+    assert source_health[0].fetched == 0
+
+
+def test_rss_fetch_records_parse_warning_with_entries(monkeypatch) -> None:
+    monkeypatch.setattr(rag_ingestion, "RSS_FEED_URLS", ["https://example.com/rss"])
+    monkeypatch.setattr(
+        rag_ingestion.feedparser,
+        "parse",
+        lambda _: SimpleNamespace(
+            bozo=True,
+            entries=[
+                {
+                    "title": "BTC parse warning",
+                    "summary": "RSS summary",
+                    "link": "https://example.com/news/1",
+                    "published": "Wed, 06 May 2026 03:00:00 GMT",
+                }
+            ],
+        ),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"<rss></rss>", request=request)
+
+    async def run() -> tuple[list[rag_ingestion.RawNewsDocument], list[rag_ingestion.SourceHealth]]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await rag_ingestion._fetch_rss_news(client)
+
+    documents, source_health = asyncio.run(run())
+
+    assert len(documents) == 1
+    assert source_health[0].status == "partial"
+    assert source_health[0].parse_warning is True
+    assert source_health[0].fetched == 1
+
+
 def test_api_and_dummy_documents_are_not_crawlable() -> None:
     api_document = rag_ingestion.RawNewsDocument(
         title="API news",
@@ -363,6 +434,82 @@ def test_generate_embeddings_returns_empty_without_gemini_key(monkeypatch) -> No
     chunks = rag_ingestion._build_document_chunks(document)
 
     assert asyncio.run(rag_ingestion._generate_embeddings(chunks)) == {}
+
+
+def test_generate_embeddings_closes_gemini_client(monkeypatch) -> None:
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-key")
+    analyzers: list[object] = []
+
+    class FakeAnalyzer:
+        def __init__(self) -> None:
+            self.closed = False
+            analyzers.append(self)
+
+        async def generate_embeddings(self, texts: list[str], *, task_type: str) -> list[list[float]]:
+            assert task_type == "RETRIEVAL_DOCUMENT"
+            return [[0.1] * EMBEDDING_DIMENSION for _ in texts]
+
+        def close(self) -> None:
+            self.closed = True
+
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", FakeAnalyzer)
+    document = rag_ingestion.RawNewsDocument(
+        title="Embedding close test",
+        content="Embedding content",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:tokenpost.kr",
+        link="https://example.com/news/embedding-close",
+    )
+    chunks = rag_ingestion._build_document_chunks(document)
+
+    embeddings = asyncio.run(rag_ingestion._generate_embeddings(chunks))
+
+    assert embeddings
+    assert getattr(analyzers[0], "closed") is True
+
+
+def test_stale_delete_targets_only_sources_with_current_parents(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    class FakeOpenSearchClient:
+        async def delete_by_query(self, **kwargs) -> dict:
+            calls.append(kwargs)
+            return {"deleted": 2}
+
+    monkeypatch.setattr(rag_ingestion, "get_opensearch_client", lambda: FakeOpenSearchClient())
+
+    deleted = asyncio.run(
+        rag_ingestion._delete_stale_source_documents(
+            {
+                "rss:tokenpost.kr": {"parent-a", "parent-b"},
+                "rss:failed.example": set(),
+            }
+        )
+    )
+
+    assert deleted == 2
+    assert len(calls) == 1
+    assert calls[0]["index"] == "market_news"
+    bool_query = calls[0]["body"]["query"]["bool"]
+    assert bool_query["filter"] == [{"term": {"source": "rss:tokenpost.kr"}}]
+    assert bool_query["must_not"] == [{"terms": {"parent_id": ["parent-a", "parent-b"]}}]
+
+
+def test_fallback_delete_uses_dummy_and_fallback_markers(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    class FakeOpenSearchClient:
+        async def delete_by_query(self, **kwargs) -> dict:
+            calls.append(kwargs)
+            return {"deleted": 3}
+
+    monkeypatch.setattr(rag_ingestion, "get_opensearch_client", lambda: FakeOpenSearchClient())
+
+    deleted = asyncio.run(rag_ingestion._delete_fallback_documents())
+
+    assert deleted == 3
+    assert calls[0]["body"]["query"]["bool"]["minimum_should_match"] == 1
+    assert {"wildcard": {"link": "dummy://*"}} in calls[0]["body"]["query"]["bool"]["should"]
 
 
 def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> None:

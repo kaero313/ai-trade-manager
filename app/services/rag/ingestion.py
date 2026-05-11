@@ -4,13 +4,15 @@ import asyncio
 import hashlib
 import logging
 import re
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import feedparser
 import httpx
@@ -21,8 +23,10 @@ from app.services.news_scraper import RSS_FEED_URLS
 from app.services.ai.providers.gemini import AIProviderRateLimitError, GeminiAnalyzer
 from app.services.rag.opensearch_client import (
     EMBEDDING_DIMENSION,
+    INGESTION_RUNS_INDEX_NAME,
     INDEX_NAME,
     ensure_market_news_index_for_ingestion,
+    ensure_market_news_ingestion_runs_index,
     get_opensearch_client,
 )
 
@@ -33,6 +37,7 @@ NAVER_NEWS_ENDPOINT = "https://openapi.naver.com/v1/search/news.json"
 CRYPTO_PANIC_FETCH_LIMIT = 10
 NAVER_FETCH_LIMIT = 10
 MARKET_NEWS_TTL_DAYS = 28
+INGESTION_RUN_TTL_DAYS = 14
 EMBEDDING_MODEL = "gemini-embedding-001"
 NEWS_HTTP_TIMEOUT = 10.0
 RSS_FETCH_LIMIT_PER_FEED = 10
@@ -78,6 +83,39 @@ class RawNewsChunk:
     content_length: int
     chunk_text_length: int
     is_chunked: bool
+
+
+@dataclass(slots=True)
+class SourceHealth:
+    source: str
+    type: str
+    enabled: bool
+    status: str = "success"
+    fetched: int = 0
+    error: str | None = None
+    parse_warning: bool = False
+    crawled: int = 0
+    crawl_failed: int = 0
+    crawl_skipped: int = 0
+    rss_summary_used: int = 0
+    crawl_error_breakdown: dict[str, int] = field(default_factory=dict)
+
+
+def _serialize_source_health(health: SourceHealth) -> dict[str, Any]:
+    return {
+        "source": health.source,
+        "type": health.type,
+        "enabled": health.enabled,
+        "status": health.status,
+        "fetched": health.fetched,
+        "error": health.error,
+        "parse_warning": health.parse_warning,
+        "crawled": health.crawled,
+        "crawl_failed": health.crawl_failed,
+        "crawl_skipped": health.crawl_skipped,
+        "rss_summary_used": health.rss_summary_used,
+        "crawl_error_breakdown": dict(health.crawl_error_breakdown),
+    }
 
 
 def _clean_text(raw: Any) -> str:
@@ -503,6 +541,16 @@ def _should_use_crawled_body(original_content: str, crawled_body: str) -> bool:
     return len(normalized_body) >= len(normalized_original) + CRAWLED_BODY_MIN_GAIN_CHARS
 
 
+def _fetch_error_code(exc: Exception) -> str:
+    if isinstance(exc, httpx.TimeoutException):
+        return "timeout"
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"http_{exc.response.status_code}"
+    if isinstance(exc, httpx.RequestError):
+        return "request_failed"
+    return "request_failed"
+
+
 async def _crawl_rss_article_body(
     client: httpx.AsyncClient,
     document: RawNewsDocument,
@@ -579,33 +627,98 @@ async def _enrich_rss_documents_with_crawl(
     return list(enriched), stats
 
 
-async def _fetch_rss_news(client: httpx.AsyncClient) -> list[RawNewsDocument]:
+def _apply_crawl_health_to_sources(
+    source_health: list[SourceHealth],
+    documents: list[RawNewsDocument],
+) -> None:
+    documents_by_source: dict[str, list[RawNewsDocument]] = {}
+    for document in documents:
+        documents_by_source.setdefault(document.source, []).append(document)
+
+    for health in source_health:
+        source_documents = documents_by_source.get(health.source, [])
+        if not source_documents:
+            continue
+
+        health.crawled = sum(1 for document in source_documents if document.crawl_status == "success")
+        health.crawl_failed = sum(1 for document in source_documents if document.crawl_status == "failed")
+        health.crawl_skipped = sum(1 for document in source_documents if document.crawl_status == "skipped")
+        health.rss_summary_used = sum(
+            1
+            for document in source_documents
+            if document.content_source == "rss_summary"
+        )
+        health.crawl_error_breakdown = dict(
+            Counter(
+                str(document.crawl_error)
+                for document in source_documents
+                if document.crawl_error
+            )
+        )
+        if health.status == "success" and (health.parse_warning or health.crawl_failed > 0):
+            health.status = "partial"
+
+
+async def _fetch_rss_news(
+    client: httpx.AsyncClient,
+) -> tuple[list[RawNewsDocument], list[SourceHealth]]:
     documents: list[RawNewsDocument] = []
+    source_health: list[SourceHealth] = []
     for feed_url in RSS_FEED_URLS:
+        source_name = _rss_source_name(feed_url)
+        health = SourceHealth(source=source_name, type="rss", enabled=True)
+        source_health.append(health)
+
         try:
             response = await client.get(feed_url)
             response.raise_for_status()
             parsed = await asyncio.to_thread(feedparser.parse, response.content)
-        except Exception:
+        except Exception as exc:
+            health.status = "failed"
+            health.error = _fetch_error_code(exc)
             logger.exception("RSS 뉴스 수집 실패: feed=%s", feed_url)
             continue
 
         if getattr(parsed, "bozo", False):
+            health.parse_warning = True
             logger.warning("RSS 파싱 경고가 발생했습니다: feed=%s", feed_url)
 
+        feed_documents: list[RawNewsDocument] = []
         entries = getattr(parsed, "entries", []) or []
         for entry in entries[:RSS_FETCH_LIMIT_PER_FEED]:
             document = _rss_entry_to_document(feed_url, entry)
             if document is not None:
-                documents.append(document)
+                feed_documents.append(document)
 
-    return _deduplicate_documents(documents)[:RSS_FETCH_LIMIT_TOTAL]
+        health.fetched = len(feed_documents)
+        if feed_documents:
+            health.status = "partial" if health.parse_warning else "success"
+            documents.extend(feed_documents)
+        else:
+            health.status = "failed"
+            health.error = "parse_warning" if health.parse_warning else "no_entries"
+
+    deduplicated = _deduplicate_documents(documents)[:RSS_FETCH_LIMIT_TOTAL]
+    included_sources = {document.source for document in deduplicated}
+    for health in source_health:
+        if health.source not in included_sources:
+            health.fetched = 0
+    return deduplicated, source_health
 
 
-async def _fetch_cryptopanic_news(client: httpx.AsyncClient) -> list[RawNewsDocument]:
+async def _fetch_cryptopanic_news(
+    client: httpx.AsyncClient,
+) -> tuple[list[RawNewsDocument], SourceHealth]:
+    health = SourceHealth(
+        source="cryptopanic",
+        type="api",
+        enabled=bool(settings.cryptopanic_api_key),
+    )
     if not settings.cryptopanic_api_key:
+        health.status = "skipped"
+        health.error = "credentials_missing"
         logger.warning("CryptoPanic API key is missing. Falling back to dummy documents.")
-        return _dummy_news_documents("cryptopanic")
+        return _dummy_news_documents("cryptopanic"), health
 
     try:
         response = await client.get(
@@ -618,9 +731,11 @@ async def _fetch_cryptopanic_news(client: httpx.AsyncClient) -> list[RawNewsDocu
         )
         response.raise_for_status()
         payload = response.json()
-    except Exception:
+    except Exception as exc:
+        health.status = "failed"
+        health.error = _fetch_error_code(exc)
         logger.exception("CryptoPanic fetch failed. Falling back to dummy documents.")
-        return _dummy_news_documents("cryptopanic")
+        return _dummy_news_documents("cryptopanic"), health
 
     results = payload.get("results") or []
     documents: list[RawNewsDocument] = []
@@ -641,15 +756,28 @@ async def _fetch_cryptopanic_news(client: httpx.AsyncClient) -> list[RawNewsDocu
             )
         )
 
-    return documents
+    health.fetched = len(documents)
+    health.status = "success" if documents else "failed"
+    health.error = None if documents else "no_results"
+    return documents, health
 
 
-async def _fetch_naver_news(client: httpx.AsyncClient) -> list[RawNewsDocument]:
+async def _fetch_naver_news(
+    client: httpx.AsyncClient,
+) -> tuple[list[RawNewsDocument], SourceHealth]:
+    health = SourceHealth(
+        source="naver",
+        type="api",
+        enabled=bool(settings.naver_client_id and settings.naver_client_secret),
+    )
     if not settings.naver_client_id or not settings.naver_client_secret:
+        health.status = "skipped"
+        health.error = "credentials_missing"
         logger.warning("Naver API credentials are missing. Falling back to dummy documents.")
-        return _dummy_news_documents("naver")
+        return _dummy_news_documents("naver"), health
 
     documents: list[RawNewsDocument] = []
+    errors: list[str] = []
     headers = {
         "X-Naver-Client-Id": settings.naver_client_id,
         "X-Naver-Client-Secret": settings.naver_client_secret,
@@ -668,7 +796,8 @@ async def _fetch_naver_news(client: httpx.AsyncClient) -> list[RawNewsDocument]:
             )
             response.raise_for_status()
             payload = response.json()
-        except Exception:
+        except Exception as exc:
+            errors.append(_fetch_error_code(exc))
             logger.exception("Naver news fetch failed for query=%s", query)
             continue
 
@@ -688,7 +817,15 @@ async def _fetch_naver_news(client: httpx.AsyncClient) -> list[RawNewsDocument]:
                 )
             )
 
-    return documents or _dummy_news_documents("naver")
+    health.fetched = len(documents)
+    if documents:
+        health.status = "partial" if errors else "success"
+        health.error = errors[0] if errors else None
+        return documents, health
+
+    health.status = "failed"
+    health.error = errors[0] if errors else "no_results"
+    return _dummy_news_documents("naver"), health
 
 
 def _deduplicate_documents(documents: list[RawNewsDocument]) -> list[RawNewsDocument]:
@@ -737,6 +874,12 @@ async def _generate_embeddings(chunks: list[RawNewsChunk]) -> dict[str, list[flo
     except Exception:
         logger.exception("Gemini 임베딩 생성 실패. 문서를 임베딩 없이 인덱싱합니다.")
         return {}
+    finally:
+        aclose = getattr(analyzer, "aclose", None)
+        if callable(aclose):
+            await aclose()
+        else:
+            analyzer.close()
 
     embeddings: dict[str, list[float]] = {}
     for index, embedding in enumerate(embedding_values):
@@ -782,6 +925,74 @@ async def _bulk_upsert_chunks(
     return int(success_count), list(errors)
 
 
+def _fallback_document_query() -> dict[str, Any]:
+    return {
+        "bool": {
+            "should": [
+                {"wildcard": {"link": "dummy://*"}},
+                {"match_phrase": {"content": "credentials are unavailable"}},
+                {"match_phrase": {"content": "request failed"}},
+                {
+                    "match_phrase": {
+                        "content": "generated to keep the rag ingestion pipeline alive",
+                    }
+                },
+            ],
+            "minimum_should_match": 1,
+        }
+    }
+
+
+def _source_parent_ids(documents: list[RawNewsDocument]) -> dict[str, set[str]]:
+    parent_ids: dict[str, set[str]] = {}
+    for document in documents:
+        if _is_fallback_document(document):
+            continue
+        parent_ids.setdefault(document.source, set()).add(_build_document_id(document))
+    return parent_ids
+
+
+async def _delete_stale_source_documents(source_parent_ids: dict[str, set[str]]) -> int:
+    client = get_opensearch_client()
+    deleted = 0
+    for source, parent_ids in source_parent_ids.items():
+        if not parent_ids:
+            continue
+
+        response = await client.delete_by_query(
+            index=INDEX_NAME,
+            body={
+                "query": {
+                    "bool": {
+                        "filter": [
+                            {"term": {"source": source}},
+                        ],
+                        "must_not": [
+                            {"terms": {"parent_id": sorted(parent_ids)}},
+                        ],
+                    }
+                }
+            },
+            conflicts="proceed",
+            ignore_unavailable=True,
+            refresh=True,
+        )
+        deleted += int(response.get("deleted", 0))
+    return deleted
+
+
+async def _delete_fallback_documents() -> int:
+    client = get_opensearch_client()
+    response = await client.delete_by_query(
+        index=INDEX_NAME,
+        body={"query": _fallback_document_query()},
+        conflicts="proceed",
+        ignore_unavailable=True,
+        refresh=True,
+    )
+    return int(response.get("deleted", 0))
+
+
 async def _delete_expired_documents() -> int:
     cutoff = (datetime.now(UTC) - timedelta(days=MARKET_NEWS_TTL_DAYS)).isoformat()
     client = get_opensearch_client()
@@ -803,7 +1014,86 @@ async def _delete_expired_documents() -> int:
     return int(response.get("deleted", 0))
 
 
+async def _delete_expired_ingestion_runs() -> int:
+    cutoff = (datetime.now(UTC) - timedelta(days=INGESTION_RUN_TTL_DAYS)).isoformat()
+    client = get_opensearch_client()
+    response = await client.delete_by_query(
+        index=INGESTION_RUNS_INDEX_NAME,
+        body={
+            "query": {
+                "range": {
+                    "finished_at": {
+                        "lt": cutoff,
+                    }
+                }
+            }
+        },
+        conflicts="proceed",
+        ignore_unavailable=True,
+        refresh=True,
+    )
+    return int(response.get("deleted", 0))
+
+
+def _refresh_deleted_total(stats: dict[str, int]) -> None:
+    stats["deleted"] = (
+        stats.get("stale_deleted", 0)
+        + stats.get("fallback_deleted", 0)
+        + stats.get("expired_deleted", 0)
+    )
+
+
+def _resolve_ingestion_run_status(stats: dict[str, int], source_health: list[SourceHealth]) -> str:
+    if stats.get("indexed", 0) <= 0 or stats.get("errors", 0) > 0:
+        return "failed" if stats.get("indexed", 0) <= 0 else "partial"
+    if any(health.enabled and health.status in {"failed", "partial"} for health in source_health):
+        return "partial"
+    return "success"
+
+
+async def _store_ingestion_run(
+    *,
+    run_id: str,
+    started_at: datetime,
+    finished_at: datetime,
+    stats: dict[str, int],
+    source_health: list[SourceHealth],
+) -> None:
+    if not await ensure_market_news_ingestion_runs_index():
+        return
+
+    client = get_opensearch_client()
+    payload: dict[str, Any] = {
+        "run_id": run_id,
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "status": _resolve_ingestion_run_status(stats, source_health),
+        "fetched": stats["fetched"],
+        "indexed": stats["indexed"],
+        "deleted": stats["deleted"],
+        "errors": stats["errors"],
+        "crawled": stats["crawled"],
+        "crawl_failed": stats["crawl_failed"],
+        "crawl_skipped": stats["crawl_skipped"],
+        "rss_summary_used": stats["rss_summary_used"],
+        "stale_deleted": stats["stale_deleted"],
+        "fallback_deleted": stats["fallback_deleted"],
+        "expired_deleted": stats["expired_deleted"],
+        "source_health": [_serialize_source_health(health) for health in source_health],
+    }
+    await client.index(
+        index=INGESTION_RUNS_INDEX_NAME,
+        id=run_id,
+        body=payload,
+        refresh=True,
+    )
+    await _delete_expired_ingestion_runs()
+
+
 async def run_market_news_ingestion_job() -> dict[str, int]:
+    run_id = uuid4().hex
+    started_at = datetime.now(UTC)
+    source_health: list[SourceHealth] = []
     stats = {
         "fetched": 0,
         "indexed": 0,
@@ -813,6 +1103,9 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
         "crawl_failed": 0,
         "crawl_skipped": 0,
         "rss_summary_used": 0,
+        "stale_deleted": 0,
+        "fallback_deleted": 0,
+        "expired_deleted": 0,
     }
     index_ready = False
 
@@ -820,6 +1113,7 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
         index_ready = await ensure_market_news_index_for_ingestion()
         if not index_ready:
             logger.warning("market_news 인덱스 준비 실패로 ingestion 작업을 건너뜁니다.")
+            stats["errors"] += 1
             return stats
 
         async with httpx.AsyncClient(
@@ -827,15 +1121,20 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
             follow_redirects=True,
             headers={"User-Agent": "ai-trade-manager/0.1"},
         ) as client:
-            cryptopanic_documents, naver_documents, rss_documents = await asyncio.gather(
+            cryptopanic_result, naver_result, rss_result = await asyncio.gather(
                 _fetch_cryptopanic_news(client),
                 _fetch_naver_news(client),
                 _fetch_rss_news(client),
             )
+            cryptopanic_documents, cryptopanic_health = cryptopanic_result
+            naver_documents, naver_health = naver_result
+            rss_documents, rss_health = rss_result
             rss_documents, crawl_stats = await _enrich_rss_documents_with_crawl(
                 client,
                 rss_documents,
             )
+            _apply_crawl_health_to_sources(rss_health, rss_documents)
+            source_health = [cryptopanic_health, naver_health, *rss_health]
             stats.update(crawl_stats)
 
         documents = _deduplicate_documents(
@@ -855,21 +1154,39 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
         if bulk_errors:
             stats["errors"] += len(bulk_errors)
             logger.warning("OpenSearch bulk indexing reported %s errors.", len(bulk_errors))
+        if indexed_count:
+            source_parent_ids = _source_parent_ids(documents)
+            stats["stale_deleted"] = await _delete_stale_source_documents(source_parent_ids)
+            if source_parent_ids:
+                stats["fallback_deleted"] = await _delete_fallback_documents()
+            _refresh_deleted_total(stats)
     except Exception:
         stats["errors"] += 1
         logger.exception("market_news ingestion job failed.")
     finally:
         if index_ready:
             try:
-                stats["deleted"] = await _delete_expired_documents()
+                stats["expired_deleted"] = await _delete_expired_documents()
+                _refresh_deleted_total(stats)
             except Exception:
                 logger.exception("Failed to delete expired market_news documents.")
                 stats["errors"] += 1
+        try:
+            await _store_ingestion_run(
+                run_id=run_id,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                stats=stats,
+                source_health=source_health,
+            )
+        except Exception:
+            logger.exception("Failed to store market_news ingestion run.")
 
     logger.info(
         (
             "market_news ingestion finished: fetched=%s indexed=%s deleted=%s errors=%s "
-            "crawled=%s crawl_failed=%s crawl_skipped=%s rss_summary_used=%s"
+            "crawled=%s crawl_failed=%s crawl_skipped=%s rss_summary_used=%s "
+            "stale_deleted=%s fallback_deleted=%s expired_deleted=%s"
         ),
         stats["fetched"],
         stats["indexed"],
@@ -879,5 +1196,8 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
         stats["crawl_failed"],
         stats["crawl_skipped"],
         stats["rss_summary_used"],
+        stats["stale_deleted"],
+        stats["fallback_deleted"],
+        stats["expired_deleted"],
     )
     return stats

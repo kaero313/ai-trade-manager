@@ -1,3 +1,4 @@
+import inspect
 from typing import TypeVar
 
 from google import genai
@@ -35,6 +36,30 @@ class GeminiAnalyzer(BaseAIAnalyzer):
     def __init__(self, model: str | None = None) -> None:
         self.model = (model or GEMINI_TEXT_MODEL).strip() or GEMINI_TEXT_MODEL
         self.client = genai.Client(api_key=settings.GEMINI_API_KEY) if settings.GEMINI_API_KEY else None
+
+    def close(self) -> None:
+        if self.client is not None:
+            self.client.close()
+            self.client = None
+
+    async def aclose(self) -> None:
+        if self.client is None:
+            return
+        api_client = getattr(self.client, "_api_client", None)
+        aio_client = getattr(self.client, "aio", None)
+        aclose = getattr(aio_client, "aclose", None)
+        try:
+            if callable(aclose):
+                await aclose()
+            session = getattr(api_client, "_aiohttp_session", None)
+            session_close = getattr(session, "close", None)
+            if callable(session_close):
+                maybe_awaitable = session_close()
+                if inspect.isawaitable(maybe_awaitable):
+                    await maybe_awaitable
+        finally:
+            self.client.close()
+            self.client = None
 
     def _ensure_client_available(self) -> None:
         if self.client is None:
