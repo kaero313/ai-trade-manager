@@ -226,3 +226,9 @@ ai-trade-manager/
 - Google News RSS 문서는 원문 기사가 아닌 집계 페이지이므로 본문 크롤링을 스킵하고 `crawl_error=google_news_aggregator`로 기록합니다.
 - TokenPost처럼 `article_content`/`itemprop=articleBody` 컨테이너가 있는 HTML은 해당 영역을 본문 후보로 우선 추출합니다.
 - `/api/news/rag/status`는 `crawl_error_breakdown`과 source별 crawl error 분포를 반환해 크롤 실패 원인을 소스 단위로 관측합니다.
+
+## Phase 46.2 업데이트
+- ingestion은 bulk upsert 성공 후 현재 run에서 parent 문서를 만든 source만 대상으로 오래된 `market_news` 청크를 삭제합니다.
+- 실패/비활성/문서 0건 source의 기존 문서는 삭제하지 않고 TTL 만료 정책에 맡기며, 실뉴스가 있으면 dummy/fallback 문서는 즉시 삭제합니다.
+- `market_news_ingestion_runs` OpenSearch 캐시 인덱스에 run 통계와 RSS/API source별 health를 저장하고 `/api/news/rag/status.latest_ingestion`으로 노출합니다.
+- Gemini 임베딩 생성에 사용한 client는 RAG ingestion 경로에서 명시적으로 close해 세션 누수를 방지합니다.

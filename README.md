@@ -128,3 +128,10 @@ Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구
 - `/api/news/rag/status`는 크롤 성공/실패/스킵 parent 수, 평균 본문 길이, 평균 청크 길이, content source/crawl status 분포를 반환합니다.
 - Google News RSS는 집계 페이지를 직접 크롤하지 않고 `google_news_aggregator`로 스킵하며, TokenPost형 `articleBody` 컨테이너는 본문 후보로 우선 추출합니다.
 - `/api/news/rag/status`는 `crawl_error_breakdown`과 source별 crawl error 분포도 반환해 본문 확보 실패 원인을 관측합니다.
+
+## RAG 3.2 운영 정책
+- ingestion 성공 후 이번 run에서 parent 문서를 만든 source만 최신 parent 스냅샷 기준으로 오래된 `market_news` 청크를 삭제합니다.
+- 실뉴스가 수집되면 기존 dummy/fallback 문서는 즉시 삭제하고, 기존 28일 TTL 만료 삭제도 유지합니다.
+- `market_news_ingestion_runs` OpenSearch 캐시 인덱스에 최신 run 통계와 source별 health를 14일 동안 저장합니다.
+- `/api/news/rag/status`는 `latest_ingestion`을 통해 source별 fetched/error/parse warning/crawl 통계와 삭제 통계를 함께 반환합니다.
+- RAG 임베딩 생성 후 Gemini client를 명시적으로 닫아 ingestion 종료 시 aiohttp session 경고가 남지 않도록 합니다.

@@ -175,3 +175,9 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 - PostgreSQL 스키마 변경은 없습니다. 크롤 실패 원인 집계는 기존 OpenSearch `crawl_error` keyword 필드를 사용합니다.
 - Google News RSS 집계 페이지는 `crawl_status=skipped`, `crawl_error=google_news_aggregator`로 저장합니다.
 - `/api/news/rag/status`는 `crawl_error_breakdown`과 source별 crawl error 분포를 추가 집계합니다.
+
+## Phase 46.2 업데이트
+- PostgreSQL 스키마 변경은 없습니다. RAG 3.2는 OpenSearch 캐시 인덱스와 애플리케이션 집계만 변경합니다.
+- `market_news`는 최신 parent 스냅샷 기준 source별 stale 청크 삭제, 실뉴스 수집 시 fallback 즉시 삭제, 28일 TTL 만료 삭제를 함께 적용합니다.
+- `market_news_ingestion_runs`는 `run_id`, 시작/종료 시각, run status, 수집/색인/삭제/크롤 통계, `source_health`를 저장하는 14일 TTL 관측용 인덱스입니다.
+- `/api/news/rag/status.latest_ingestion`은 최신 run 문서의 source별 fetched/error/parse warning/crawl 통계와 삭제 통계를 반환합니다.
