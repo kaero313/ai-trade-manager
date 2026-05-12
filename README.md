@@ -135,3 +135,9 @@ Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구
 - `market_news_ingestion_runs` OpenSearch 캐시 인덱스에 최신 run 통계와 source별 health를 14일 동안 저장합니다.
 - `/api/news/rag/status`는 `latest_ingestion`을 통해 source별 fetched/error/parse warning/crawl 통계와 삭제 통계를 함께 반환합니다.
 - RAG 임베딩 생성 후 Gemini client를 명시적으로 닫아 ingestion 종료 시 aiohttp session 경고가 남지 않도록 합니다.
+
+## RAG 3.3 운영 정책
+- 죽은 Coindesk Korea RSS와 Naver 뉴스 RSS를 제거하고 CoinDesk 글로벌 RSS와 Cointelegraph RSS로 대체합니다.
+- RAG RSS ingestion은 4개 정상 RSS를 source별로 고르게 반영하기 위해 feed당 최대 8건, 전체 최대 32건을 수집합니다.
+- Google News RSS는 기존처럼 집계 페이지 본문 크롤링을 스킵하고 RSS 요약 컨텍스트로만 사용합니다.
+- `/api/news/rag/status.latest_ingestion.source_health`로 4개 RSS source의 fetched/error/crawl 상태를 운영 검증합니다.

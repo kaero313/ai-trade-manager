@@ -326,6 +326,58 @@ def test_rss_fetch_records_parse_warning_with_entries(monkeypatch) -> None:
     assert source_health[0].fetched == 1
 
 
+def test_rss_fetch_limits_four_feeds_to_eight_each_and_thirty_two_total(monkeypatch) -> None:
+    feeds = [f"https://feed{index}.example/rss" for index in range(4)]
+    monkeypatch.setattr(rag_ingestion, "RSS_FEED_URLS", feeds)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=str(request.url).encode(), request=request)
+
+    def parse_feed(raw_content: bytes) -> SimpleNamespace:
+        feed_url = raw_content.decode()
+        return SimpleNamespace(
+            bozo=False,
+            entries=[
+                {
+                    "title": f"{feed_url} BTC story {index}",
+                    "summary": "RSS summary",
+                    "link": f"{feed_url}/news/{index}",
+                    "published": "Wed, 06 May 2026 03:00:00 GMT",
+                }
+                for index in range(10)
+            ],
+        )
+
+    monkeypatch.setattr(rag_ingestion.feedparser, "parse", parse_feed)
+
+    async def run() -> tuple[list[rag_ingestion.RawNewsDocument], list[rag_ingestion.SourceHealth]]:
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await rag_ingestion._fetch_rss_news(client)
+
+    documents, source_health = asyncio.run(run())
+
+    assert len(documents) == 32
+    assert len(source_health) == 4
+    for feed_url in feeds:
+        source = rag_ingestion._rss_source_name(feed_url)
+        assert sum(1 for document in documents if document.source == source) == 8
+    assert all(health.fetched == 8 for health in source_health)
+    assert all(health.status == "success" for health in source_health)
+
+
+def test_configured_market_news_sources_use_current_rss_feeds() -> None:
+    configured_sources = rag_ingestion.get_configured_market_news_sources()
+    rss_source = next(source for source in configured_sources if source["source"] == "rss")
+
+    assert rag_ingestion.RSS_FETCH_LIMIT_PER_FEED == 8
+    assert rag_ingestion.RSS_FETCH_LIMIT_TOTAL == 32
+    assert rss_source["feed_count"] == 4
+    assert "https://www.coindesk.com/arc/outboundfeeds/rss/" in rss_source["feeds"]
+    assert "https://cointelegraph.com/rss" in rss_source["feeds"]
+    assert "https://www.coindeskkorea.com/rss/allArticle.xml" not in rss_source["feeds"]
+    assert "https://news.naver.com/main/rss.naver?mode=LSD&mid=shm&sid1=101" not in rss_source["feeds"]
+
+
 def test_api_and_dummy_documents_are_not_crawlable() -> None:
     api_document = rag_ingestion.RawNewsDocument(
         title="API news",
@@ -466,6 +518,39 @@ def test_generate_embeddings_closes_gemini_client(monkeypatch) -> None:
 
     assert embeddings
     assert getattr(analyzers[0], "closed") is True
+
+
+def test_generate_embeddings_batches_gemini_requests(monkeypatch) -> None:
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-key")
+    batch_sizes: list[int] = []
+
+    class FakeAnalyzer:
+        async def generate_embeddings(self, texts: list[str], *, task_type: str) -> list[list[float]]:
+            assert task_type == "RETRIEVAL_DOCUMENT"
+            batch_sizes.append(len(texts))
+            return [[0.1] * EMBEDDING_DIMENSION for _ in texts]
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", FakeAnalyzer)
+    chunks = [
+        rag_ingestion._build_document_chunks(
+            rag_ingestion.RawNewsDocument(
+                title=f"Embedding batch test {index}",
+                content="Embedding content",
+                published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+                source="rss:tokenpost.kr",
+                link=f"https://example.com/news/embedding-batch/{index}",
+            )
+        )[0]
+        for index in range(rag_ingestion.GEMINI_EMBEDDING_BATCH_SIZE + 5)
+    ]
+
+    embeddings = asyncio.run(rag_ingestion._generate_embeddings(chunks))
+
+    assert batch_sizes == [rag_ingestion.GEMINI_EMBEDDING_BATCH_SIZE, 5]
+    assert len(embeddings) == rag_ingestion.GEMINI_EMBEDDING_BATCH_SIZE + 5
 
 
 def test_stale_delete_targets_only_sources_with_current_parents(monkeypatch) -> None:

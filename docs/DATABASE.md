@@ -181,3 +181,8 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 - `market_news`는 최신 parent 스냅샷 기준 source별 stale 청크 삭제, 실뉴스 수집 시 fallback 즉시 삭제, 28일 TTL 만료 삭제를 함께 적용합니다.
 - `market_news_ingestion_runs`는 `run_id`, 시작/종료 시각, run status, 수집/색인/삭제/크롤 통계, `source_health`를 저장하는 14일 TTL 관측용 인덱스입니다.
 - `/api/news/rag/status.latest_ingestion`은 최신 run 문서의 source별 fetched/error/parse warning/crawl 통계와 삭제 통계를 반환합니다.
+
+## Phase 46.3 업데이트
+- PostgreSQL 스키마 변경은 없습니다. RSS 소스 정리와 수집량 조정은 OpenSearch RAG 수집 레이어만 변경합니다.
+- `market_news`는 교체된 4개 RSS source에서 feed당 최대 8건, 전체 최대 32건의 최신 parent/chunk 문서를 저장합니다.
+- `market_news_ingestion_runs.source_health`로 CoinDesk, TokenPost, Cointelegraph, Google News source별 수집/크롤 상태를 관측합니다.

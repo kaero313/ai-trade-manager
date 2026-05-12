@@ -232,3 +232,9 @@ ai-trade-manager/
 - 실패/비활성/문서 0건 source의 기존 문서는 삭제하지 않고 TTL 만료 정책에 맡기며, 실뉴스가 있으면 dummy/fallback 문서는 즉시 삭제합니다.
 - `market_news_ingestion_runs` OpenSearch 캐시 인덱스에 run 통계와 RSS/API source별 health를 저장하고 `/api/news/rag/status.latest_ingestion`으로 노출합니다.
 - Gemini 임베딩 생성에 사용한 client는 RAG ingestion 경로에서 명시적으로 close해 세션 누수를 방지합니다.
+
+## Phase 46.3 업데이트
+- 죽은 Coindesk Korea RSS와 Naver 뉴스 RSS를 제거하고 CoinDesk 글로벌 RSS와 Cointelegraph RSS로 대체합니다.
+- RAG ingestion은 4개 정상 RSS에서 feed당 최대 8건, 전체 최대 32건을 수집해 source 다양성을 유지합니다.
+- Google News RSS는 계속 aggregator로 스킵하고 RSS 요약 컨텍스트로만 사용합니다.
+- 운영 검증은 `latest_ingestion.source_health`, stale/fallback 삭제 통계, AI 뉴스 검색 parent 중복 여부를 기준으로 수행합니다.

@@ -10,9 +10,9 @@ import feedparser
 logger = logging.getLogger(__name__)
 
 RSS_FEED_URLS: list[str] = [
-    "https://www.coindeskkorea.com/rss/allArticle.xml",
+    "https://www.coindesk.com/arc/outboundfeeds/rss/",
     "https://www.tokenpost.kr/rss",
-    "https://news.naver.com/main/rss.naver?mode=LSD&mid=shm&sid1=101",
+    "https://cointelegraph.com/rss",
     "https://news.google.com/rss/search?q=%EA%B0%80%EC%83%81%EC%9E%90%EC%82%B0&hl=ko&gl=KR&ceid=KR:ko",
 ]
 MAX_NEWS_ITEMS = 15

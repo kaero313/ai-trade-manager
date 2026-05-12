@@ -39,9 +39,10 @@ NAVER_FETCH_LIMIT = 10
 MARKET_NEWS_TTL_DAYS = 28
 INGESTION_RUN_TTL_DAYS = 14
 EMBEDDING_MODEL = "gemini-embedding-001"
+GEMINI_EMBEDDING_BATCH_SIZE = 100
 NEWS_HTTP_TIMEOUT = 10.0
-RSS_FETCH_LIMIT_PER_FEED = 10
-RSS_FETCH_LIMIT_TOTAL = 30
+RSS_FETCH_LIMIT_PER_FEED = 8
+RSS_FETCH_LIMIT_TOTAL = 32
 RSS_ARTICLE_CRAWL_CONCURRENCY = 4
 CRAWLED_BODY_MIN_CHARS = 500
 CRAWLED_BODY_MIN_GAIN_CHARS = 200
@@ -865,10 +866,15 @@ async def _generate_embeddings(chunks: list[RawNewsChunk]) -> dict[str, list[flo
     texts = [f"{chunk.title}\n\n{chunk.content}" for chunk in chunks]
     analyzer = GeminiAnalyzer()
     try:
-        embedding_values = await analyzer.generate_embeddings(
-            texts,
-            task_type="RETRIEVAL_DOCUMENT",
-        )
+        embedding_values: list[list[float]] = []
+        for start_index in range(0, len(texts), GEMINI_EMBEDDING_BATCH_SIZE):
+            batch = texts[start_index : start_index + GEMINI_EMBEDDING_BATCH_SIZE]
+            embedding_values.extend(
+                await analyzer.generate_embeddings(
+                    batch,
+                    task_type="RETRIEVAL_DOCUMENT",
+                )
+            )
     except AIProviderRateLimitError:
         raise
     except Exception:
