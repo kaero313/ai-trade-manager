@@ -141,3 +141,9 @@ Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구
 - RAG RSS ingestion은 4개 정상 RSS를 source별로 고르게 반영하기 위해 feed당 최대 8건, 전체 최대 32건을 수집합니다.
 - Google News RSS는 기존처럼 집계 페이지 본문 크롤링을 스킵하고 RSS 요약 컨텍스트로만 사용합니다.
 - `/api/news/rag/status.latest_ingestion.source_health`로 4개 RSS source의 fetched/error/crawl 상태를 운영 검증합니다.
+
+## RAG 3.4 운영 정책
+- Gemini cooldown이나 임베딩 실패가 발생해도 RSS 문서/청크 저장은 계속하고, 임베딩이 없는 청크는 BM25 검색 컨텍스트로 사용합니다.
+- `market_news` 청크는 `embedding_status`, `embedding_error`, `embedding_model`, `embedding_generated_at`을 저장해 임베딩 품질 상태를 추적합니다.
+- `/api/news/rag/status`는 `embedding_status_breakdown`과 `embedding_error_breakdown`을 반환하며, 임베딩 누락이 있으면 기존처럼 `degraded`로 표시합니다.
+- 임베딩 누락이 있는 ingestion run은 `latest_ingestion.status=partial`로 기록하고 다음 ingestion에서 같은 최신 RSS 청크 임베딩을 다시 시도합니다.

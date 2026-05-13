@@ -40,6 +40,14 @@ MARKET_NEWS_TTL_DAYS = 28
 INGESTION_RUN_TTL_DAYS = 14
 EMBEDDING_MODEL = "gemini-embedding-001"
 GEMINI_EMBEDDING_BATCH_SIZE = 100
+EMBEDDING_STATUS_EMBEDDED = "embedded"
+EMBEDDING_STATUS_MISSING = "missing"
+EMBEDDING_STATUS_RATE_LIMITED = "rate_limited"
+EMBEDDING_STATUS_FAILED = "failed"
+EMBEDDING_ERROR_CREDENTIALS_MISSING = "credentials_missing"
+EMBEDDING_ERROR_RATE_LIMITED = "rate_limited"
+EMBEDDING_ERROR_GENERATION_FAILED = "generation_failed"
+EMBEDDING_ERROR_INVALID_DIMENSION = "invalid_dimension"
 NEWS_HTTP_TIMEOUT = 10.0
 RSS_FETCH_LIMIT_PER_FEED = 8
 RSS_FETCH_LIMIT_TOTAL = 32
@@ -84,6 +92,25 @@ class RawNewsChunk:
     content_length: int
     chunk_text_length: int
     is_chunked: bool
+
+
+@dataclass(slots=True)
+class ChunkEmbeddingResult:
+    status: str
+    error: str | None = None
+    embedding: list[float] | None = None
+    model: str | None = None
+    generated_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class EmbeddingGenerationResult:
+    chunks: dict[str, ChunkEmbeddingResult] = field(default_factory=dict)
+    requested: int = 0
+    succeeded: int = 0
+    missing: int = 0
+    failed: int = 0
+    error: str | None = None
 
 
 @dataclass(slots=True)
@@ -316,7 +343,11 @@ def _build_chunk_id(chunk: RawNewsChunk) -> str:
     return f"{chunk.parent_id}:{chunk.chunk_index}"
 
 
-def _serialize_chunk(chunk: RawNewsChunk, embedding: list[float] | None = None) -> dict[str, Any]:
+def _serialize_chunk(
+    chunk: RawNewsChunk,
+    embedding_result: ChunkEmbeddingResult | None = None,
+) -> dict[str, Any]:
+    embedding_state = embedding_result or ChunkEmbeddingResult(status=EMBEDDING_STATUS_MISSING)
     payload: dict[str, Any] = {
         "title": chunk.title,
         "content": chunk.content,
@@ -332,9 +363,15 @@ def _serialize_chunk(chunk: RawNewsChunk, embedding: list[float] | None = None) 
         "content_length": chunk.content_length,
         "chunk_text_length": chunk.chunk_text_length,
         "is_chunked": chunk.is_chunked,
+        "embedding_status": embedding_state.status,
+        "embedding_error": embedding_state.error,
+        "embedding_model": embedding_state.model,
+        "embedding_generated_at": embedding_state.generated_at.isoformat()
+        if embedding_state.generated_at
+        else None,
     }
-    if embedding:
-        payload["embedding"] = embedding
+    if embedding_state.embedding:
+        payload["embedding"] = embedding_state.embedding
     return payload
 
 
@@ -855,31 +892,117 @@ def get_configured_market_news_sources() -> list[dict[str, Any]]:
     ]
 
 
-async def _generate_embeddings(chunks: list[RawNewsChunk]) -> dict[str, list[float]]:
+def _new_embedding_result(
+    chunks: list[RawNewsChunk],
+    *,
+    status: str,
+    error: str | None = None,
+) -> EmbeddingGenerationResult:
+    chunk_results = {
+        _build_chunk_id(chunk): ChunkEmbeddingResult(status=status, error=error)
+        for chunk in chunks
+    }
+    return _finalize_embedding_result(chunk_results, requested=len(chunks), error=error)
+
+
+def _finalize_embedding_result(
+    chunk_results: dict[str, ChunkEmbeddingResult],
+    *,
+    requested: int,
+    error: str | None = None,
+) -> EmbeddingGenerationResult:
+    succeeded = sum(1 for result in chunk_results.values() if result.status == EMBEDDING_STATUS_EMBEDDED)
+    missing = max(requested - succeeded, 0)
+    failed = sum(1 for result in chunk_results.values() if result.error is not None)
+    return EmbeddingGenerationResult(
+        chunks=chunk_results,
+        requested=requested,
+        succeeded=succeeded,
+        missing=missing,
+        failed=failed,
+        error=error,
+    )
+
+
+async def _generate_embeddings(chunks: list[RawNewsChunk]) -> EmbeddingGenerationResult:
     if not chunks:
-        return {}
+        return EmbeddingGenerationResult()
 
     if not settings.GEMINI_API_KEY:
         logger.warning("GEMINI_API_KEY가 없어 문서를 임베딩 없이 인덱싱합니다.")
-        return {}
+        return _new_embedding_result(
+            chunks,
+            status=EMBEDDING_STATUS_MISSING,
+            error=EMBEDDING_ERROR_CREDENTIALS_MISSING,
+        )
 
     texts = [f"{chunk.title}\n\n{chunk.content}" for chunk in chunks]
     analyzer = GeminiAnalyzer()
+    chunk_results: dict[str, ChunkEmbeddingResult] = {
+        _build_chunk_id(chunk): ChunkEmbeddingResult(status=EMBEDDING_STATUS_MISSING)
+        for chunk in chunks
+    }
+    representative_error: str | None = None
     try:
-        embedding_values: list[list[float]] = []
         for start_index in range(0, len(texts), GEMINI_EMBEDDING_BATCH_SIZE):
             batch = texts[start_index : start_index + GEMINI_EMBEDDING_BATCH_SIZE]
-            embedding_values.extend(
-                await analyzer.generate_embeddings(
+            batch_chunks = chunks[start_index : start_index + len(batch)]
+            try:
+                embedding_values = await analyzer.generate_embeddings(
                     batch,
                     task_type="RETRIEVAL_DOCUMENT",
                 )
-            )
-    except AIProviderRateLimitError:
-        raise
-    except Exception:
-        logger.exception("Gemini 임베딩 생성 실패. 문서를 임베딩 없이 인덱싱합니다.")
-        return {}
+            except AIProviderRateLimitError as exc:
+                representative_error = EMBEDDING_ERROR_RATE_LIMITED
+                logger.warning("Gemini 임베딩 쿨다운으로 남은 청크를 임베딩 없이 인덱싱합니다: %s", exc)
+                for chunk in chunks[start_index:]:
+                    chunk_results[_build_chunk_id(chunk)] = ChunkEmbeddingResult(
+                        status=EMBEDDING_STATUS_RATE_LIMITED,
+                        error=EMBEDDING_ERROR_RATE_LIMITED,
+                    )
+                break
+            except Exception:
+                representative_error = EMBEDDING_ERROR_GENERATION_FAILED
+                logger.exception("Gemini 임베딩 생성 실패. 남은 청크를 임베딩 없이 인덱싱합니다.")
+                for chunk in chunks[start_index:]:
+                    chunk_results[_build_chunk_id(chunk)] = ChunkEmbeddingResult(
+                        status=EMBEDDING_STATUS_FAILED,
+                        error=EMBEDDING_ERROR_GENERATION_FAILED,
+                    )
+                break
+
+            generated_at = datetime.now(UTC)
+            if len(embedding_values) != len(batch_chunks):
+                representative_error = representative_error or EMBEDDING_ERROR_GENERATION_FAILED
+                logger.warning(
+                    "Gemini 임베딩 응답 개수가 요청 개수와 다릅니다: requested=%s received=%s",
+                    len(batch_chunks),
+                    len(embedding_values),
+                )
+                for chunk in batch_chunks:
+                    chunk_results[_build_chunk_id(chunk)] = ChunkEmbeddingResult(
+                        status=EMBEDDING_STATUS_FAILED,
+                        error=EMBEDDING_ERROR_GENERATION_FAILED,
+                    )
+                continue
+
+            for index, embedding in enumerate(embedding_values):
+                chunk = batch_chunks[index]
+                chunk_id = _build_chunk_id(chunk)
+                if len(embedding) != EMBEDDING_DIMENSION:
+                    representative_error = representative_error or EMBEDDING_ERROR_INVALID_DIMENSION
+                    logger.warning("예상과 다른 Gemini 임베딩 차원입니다: chunk_id=%s", chunk_id)
+                    chunk_results[chunk_id] = ChunkEmbeddingResult(
+                        status=EMBEDDING_STATUS_FAILED,
+                        error=EMBEDDING_ERROR_INVALID_DIMENSION,
+                    )
+                    continue
+                chunk_results[chunk_id] = ChunkEmbeddingResult(
+                    status=EMBEDDING_STATUS_EMBEDDED,
+                    embedding=embedding,
+                    model=EMBEDDING_MODEL,
+                    generated_at=generated_at,
+                )
     finally:
         aclose = getattr(analyzer, "aclose", None)
         if callable(aclose):
@@ -887,19 +1010,16 @@ async def _generate_embeddings(chunks: list[RawNewsChunk]) -> dict[str, list[flo
         else:
             analyzer.close()
 
-    embeddings: dict[str, list[float]] = {}
-    for index, embedding in enumerate(embedding_values):
-        if len(embedding) != EMBEDDING_DIMENSION:
-            logger.warning("예상과 다른 Gemini 임베딩 차원입니다: index=%s", index)
-            continue
-        embeddings[_build_chunk_id(chunks[index])] = embedding
-
-    return embeddings
+    return _finalize_embedding_result(
+        chunk_results,
+        requested=len(chunks),
+        error=representative_error,
+    )
 
 
 async def _bulk_upsert_chunks(
     chunks: list[RawNewsChunk],
-    embeddings: dict[str, list[float]],
+    embeddings: EmbeddingGenerationResult,
 ) -> tuple[int, list[Any]]:
     if not chunks:
         return 0, []
@@ -912,7 +1032,7 @@ async def _bulk_upsert_chunks(
                 "_op_type": "index",
                 "_index": INDEX_NAME,
                 "_id": chunk_id,
-                "_source": _serialize_chunk(chunk, embeddings.get(chunk_id)),
+                "_source": _serialize_chunk(chunk, embeddings.chunks.get(chunk_id)),
             }
         )
 
@@ -1041,7 +1161,7 @@ async def _delete_expired_ingestion_runs() -> int:
     return int(response.get("deleted", 0))
 
 
-def _refresh_deleted_total(stats: dict[str, int]) -> None:
+def _refresh_deleted_total(stats: dict[str, Any]) -> None:
     stats["deleted"] = (
         stats.get("stale_deleted", 0)
         + stats.get("fallback_deleted", 0)
@@ -1049,9 +1169,11 @@ def _refresh_deleted_total(stats: dict[str, int]) -> None:
     )
 
 
-def _resolve_ingestion_run_status(stats: dict[str, int], source_health: list[SourceHealth]) -> str:
-    if stats.get("indexed", 0) <= 0 or stats.get("errors", 0) > 0:
-        return "failed" if stats.get("indexed", 0) <= 0 else "partial"
+def _resolve_ingestion_run_status(stats: dict[str, Any], source_health: list[SourceHealth]) -> str:
+    if stats.get("indexed", 0) <= 0:
+        return "failed"
+    if stats.get("errors", 0) > 0 or stats.get("embedding_missing", 0) > 0:
+        return "partial"
     if any(health.enabled and health.status in {"failed", "partial"} for health in source_health):
         return "partial"
     return "success"
@@ -1062,7 +1184,7 @@ async def _store_ingestion_run(
     run_id: str,
     started_at: datetime,
     finished_at: datetime,
-    stats: dict[str, int],
+    stats: dict[str, Any],
     source_health: list[SourceHealth],
 ) -> None:
     if not await ensure_market_news_ingestion_runs_index():
@@ -1085,6 +1207,11 @@ async def _store_ingestion_run(
         "stale_deleted": stats["stale_deleted"],
         "fallback_deleted": stats["fallback_deleted"],
         "expired_deleted": stats["expired_deleted"],
+        "embedding_requested": stats["embedding_requested"],
+        "embedding_succeeded": stats["embedding_succeeded"],
+        "embedding_missing": stats["embedding_missing"],
+        "embedding_failed": stats["embedding_failed"],
+        "embedding_error": stats["embedding_error"],
         "source_health": [_serialize_source_health(health) for health in source_health],
     }
     await client.index(
@@ -1096,7 +1223,7 @@ async def _store_ingestion_run(
     await _delete_expired_ingestion_runs()
 
 
-async def run_market_news_ingestion_job() -> dict[str, int]:
+async def run_market_news_ingestion_job() -> dict[str, Any]:
     run_id = uuid4().hex
     started_at = datetime.now(UTC)
     source_health: list[SourceHealth] = []
@@ -1112,6 +1239,11 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
         "stale_deleted": 0,
         "fallback_deleted": 0,
         "expired_deleted": 0,
+        "embedding_requested": 0,
+        "embedding_succeeded": 0,
+        "embedding_missing": 0,
+        "embedding_failed": 0,
+        "embedding_error": None,
     }
     index_ready = False
 
@@ -1148,12 +1280,12 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
         )
         stats["fetched"] = len(documents)
         chunks = _build_news_chunks(documents)
-        try:
-            embeddings = await _generate_embeddings(chunks)
-        except AIProviderRateLimitError as exc:
-            stats["errors"] += 1
-            logger.warning("Gemini 임베딩 쿨다운으로 market_news ingestion을 중단합니다: %s", exc)
-            return stats
+        embeddings = await _generate_embeddings(chunks)
+        stats["embedding_requested"] = embeddings.requested
+        stats["embedding_succeeded"] = embeddings.succeeded
+        stats["embedding_missing"] = embeddings.missing
+        stats["embedding_failed"] = embeddings.failed
+        stats["embedding_error"] = embeddings.error
 
         indexed_count, bulk_errors = await _bulk_upsert_chunks(chunks, embeddings)
         stats["indexed"] = indexed_count
@@ -1192,7 +1324,9 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
         (
             "market_news ingestion finished: fetched=%s indexed=%s deleted=%s errors=%s "
             "crawled=%s crawl_failed=%s crawl_skipped=%s rss_summary_used=%s "
-            "stale_deleted=%s fallback_deleted=%s expired_deleted=%s"
+            "stale_deleted=%s fallback_deleted=%s expired_deleted=%s "
+            "embedding_requested=%s embedding_succeeded=%s embedding_missing=%s "
+            "embedding_failed=%s embedding_error=%s"
         ),
         stats["fetched"],
         stats["indexed"],
@@ -1205,5 +1339,10 @@ async def run_market_news_ingestion_job() -> dict[str, int]:
         stats["stale_deleted"],
         stats["fallback_deleted"],
         stats["expired_deleted"],
+        stats["embedding_requested"],
+        stats["embedding_succeeded"],
+        stats["embedding_missing"],
+        stats["embedding_failed"],
+        stats["embedding_error"],
     )
     return stats

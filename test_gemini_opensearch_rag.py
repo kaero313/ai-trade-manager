@@ -42,6 +42,10 @@ def test_market_news_index_uses_opensearch_3_lucene_knn() -> None:
     assert properties["content_length"]["type"] == "integer"
     assert properties["chunk_text_length"]["type"] == "integer"
     assert properties["is_chunked"]["type"] == "boolean"
+    assert properties["embedding_status"]["type"] == "keyword"
+    assert properties["embedding_error"]["type"] == "keyword"
+    assert properties["embedding_model"]["type"] == "keyword"
+    assert properties["embedding_generated_at"]["type"] == "date"
 
 
 def test_ingestion_runs_index_tracks_source_health() -> None:
@@ -54,6 +58,11 @@ def test_ingestion_runs_index_tracks_source_health() -> None:
     assert properties["stale_deleted"]["type"] == "integer"
     assert properties["fallback_deleted"]["type"] == "integer"
     assert properties["expired_deleted"]["type"] == "integer"
+    assert properties["embedding_requested"]["type"] == "integer"
+    assert properties["embedding_succeeded"]["type"] == "integer"
+    assert properties["embedding_missing"]["type"] == "integer"
+    assert properties["embedding_failed"]["type"] == "integer"
+    assert properties["embedding_error"]["type"] == "keyword"
     assert source_health["source"]["type"] == "keyword"
     assert source_health["status"]["type"] == "keyword"
     assert source_health["crawl_error_breakdown"]["type"] == "object"
@@ -459,7 +468,16 @@ def test_chunk_serialization_includes_chunk_metadata() -> None:
     )
     chunk = rag_ingestion._build_document_chunks(document)[0]
 
-    payload = rag_ingestion._serialize_chunk(chunk, [0.1] * EMBEDDING_DIMENSION)
+    generated_at = datetime(2026, 5, 6, 4, 0, tzinfo=UTC)
+    payload = rag_ingestion._serialize_chunk(
+        chunk,
+        rag_ingestion.ChunkEmbeddingResult(
+            status="embedded",
+            embedding=[0.1] * EMBEDDING_DIMENSION,
+            model="gemini-embedding-001",
+            generated_at=generated_at,
+        ),
+    )
 
     assert payload["parent_id"] == chunk.parent_id
     assert payload["content_source"] == "api"
@@ -470,6 +488,10 @@ def test_chunk_serialization_includes_chunk_metadata() -> None:
     assert payload["content_length"] == len(document.content)
     assert payload["chunk_text_length"] == len(document.content)
     assert payload["is_chunked"] is False
+    assert payload["embedding_status"] == "embedded"
+    assert payload["embedding_error"] is None
+    assert payload["embedding_model"] == "gemini-embedding-001"
+    assert payload["embedding_generated_at"] == generated_at.isoformat()
     assert len(payload["embedding"]) == EMBEDDING_DIMENSION
 
 
@@ -485,7 +507,16 @@ def test_generate_embeddings_returns_empty_without_gemini_key(monkeypatch) -> No
 
     chunks = rag_ingestion._build_document_chunks(document)
 
-    assert asyncio.run(rag_ingestion._generate_embeddings(chunks)) == {}
+    result = asyncio.run(rag_ingestion._generate_embeddings(chunks))
+    chunk_state = result.chunks[rag_ingestion._build_chunk_id(chunks[0])]
+
+    assert result.requested == 1
+    assert result.succeeded == 0
+    assert result.missing == 1
+    assert result.failed == 1
+    assert result.error == "credentials_missing"
+    assert chunk_state.status == "missing"
+    assert chunk_state.error == "credentials_missing"
 
 
 def test_generate_embeddings_closes_gemini_client(monkeypatch) -> None:
@@ -514,9 +545,12 @@ def test_generate_embeddings_closes_gemini_client(monkeypatch) -> None:
     )
     chunks = rag_ingestion._build_document_chunks(document)
 
-    embeddings = asyncio.run(rag_ingestion._generate_embeddings(chunks))
+    result = asyncio.run(rag_ingestion._generate_embeddings(chunks))
+    chunk_state = result.chunks[rag_ingestion._build_chunk_id(chunks[0])]
 
-    assert embeddings
+    assert result.succeeded == 1
+    assert chunk_state.status == "embedded"
+    assert chunk_state.embedding is not None
     assert getattr(analyzers[0], "closed") is True
 
 
@@ -547,10 +581,81 @@ def test_generate_embeddings_batches_gemini_requests(monkeypatch) -> None:
         for index in range(rag_ingestion.GEMINI_EMBEDDING_BATCH_SIZE + 5)
     ]
 
-    embeddings = asyncio.run(rag_ingestion._generate_embeddings(chunks))
+    result = asyncio.run(rag_ingestion._generate_embeddings(chunks))
 
     assert batch_sizes == [rag_ingestion.GEMINI_EMBEDDING_BATCH_SIZE, 5]
-    assert len(embeddings) == rag_ingestion.GEMINI_EMBEDDING_BATCH_SIZE + 5
+    assert result.succeeded == rag_ingestion.GEMINI_EMBEDDING_BATCH_SIZE + 5
+    assert result.missing == 0
+
+
+def test_generate_embeddings_records_rate_limited_chunks(monkeypatch) -> None:
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-key")
+
+    class FakeAnalyzer:
+        async def generate_embeddings(self, texts: list[str], *, task_type: str) -> list[list[float]]:
+            raise rag_ingestion.AIProviderRateLimitError("cooldown")
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", FakeAnalyzer)
+    document = rag_ingestion.RawNewsDocument(
+        title="Embedding cooldown test",
+        content="Embedding content",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:tokenpost.kr",
+        link="https://example.com/news/embedding-cooldown",
+    )
+    chunks = rag_ingestion._build_document_chunks(document)
+
+    result = asyncio.run(rag_ingestion._generate_embeddings(chunks))
+    chunk_state = result.chunks[rag_ingestion._build_chunk_id(chunks[0])]
+
+    assert result.requested == 1
+    assert result.succeeded == 0
+    assert result.missing == 1
+    assert result.failed == 1
+    assert result.error == "rate_limited"
+    assert chunk_state.status == "rate_limited"
+    assert chunk_state.error == "rate_limited"
+
+
+def test_generate_embeddings_records_invalid_dimension_per_chunk(monkeypatch) -> None:
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-key")
+
+    class FakeAnalyzer:
+        async def generate_embeddings(self, texts: list[str], *, task_type: str) -> list[list[float]]:
+            assert len(texts) == 2
+            return [[0.1] * EMBEDDING_DIMENSION, [0.1, 0.2]]
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", FakeAnalyzer)
+    chunks = [
+        rag_ingestion._build_document_chunks(
+            rag_ingestion.RawNewsDocument(
+                title=f"Invalid dimension test {index}",
+                content="Embedding content",
+                published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+                source="rss:tokenpost.kr",
+                link=f"https://example.com/news/invalid-dimension/{index}",
+            )
+        )[0]
+        for index in range(2)
+    ]
+
+    result = asyncio.run(rag_ingestion._generate_embeddings(chunks))
+    first_state = result.chunks[rag_ingestion._build_chunk_id(chunks[0])]
+    second_state = result.chunks[rag_ingestion._build_chunk_id(chunks[1])]
+
+    assert result.succeeded == 1
+    assert result.missing == 1
+    assert result.failed == 1
+    assert result.error == "invalid_dimension"
+    assert first_state.status == "embedded"
+    assert second_state.status == "failed"
+    assert second_state.error == "invalid_dimension"
 
 
 def test_stale_delete_targets_only_sources_with_current_parents(monkeypatch) -> None:
@@ -597,6 +702,72 @@ def test_fallback_delete_uses_dummy_and_fallback_markers(monkeypatch) -> None:
     assert {"wildcard": {"link": "dummy://*"}} in calls[0]["body"]["query"]["bool"]["should"]
 
 
+def test_bulk_upsert_keeps_documents_when_embedding_is_rate_limited(monkeypatch) -> None:
+    actions: list[dict] = []
+
+    class FakeIndices:
+        async def refresh(self, index: str) -> None:
+            assert index == "market_news"
+
+    class FakeOpenSearchClient:
+        indices = FakeIndices()
+
+    async def fake_async_bulk(client: object, bulk_actions: list[dict], **kwargs: object) -> tuple[int, list]:
+        assert isinstance(client, FakeOpenSearchClient)
+        actions.extend(bulk_actions)
+        return len(bulk_actions), []
+
+    monkeypatch.setattr(rag_ingestion, "get_opensearch_client", lambda: FakeOpenSearchClient())
+    monkeypatch.setattr(rag_ingestion, "async_bulk", fake_async_bulk)
+    document = rag_ingestion.RawNewsDocument(
+        title="Rate limited bulk upsert",
+        content="BM25 fallback should still have content.",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:tokenpost.kr",
+        link="https://example.com/news/rate-limited-bulk",
+    )
+    chunks = rag_ingestion._build_document_chunks(document)
+    embedding_result = rag_ingestion._new_embedding_result(
+        chunks,
+        status="rate_limited",
+        error="rate_limited",
+    )
+
+    indexed, errors = asyncio.run(rag_ingestion._bulk_upsert_chunks(chunks, embedding_result))
+
+    assert indexed == 1
+    assert errors == []
+    source = actions[0]["_source"]
+    assert source["embedding_status"] == "rate_limited"
+    assert source["embedding_error"] == "rate_limited"
+    assert "embedding" not in source
+
+
+def test_ingestion_run_status_is_partial_when_embeddings_are_missing() -> None:
+    assert (
+        rag_ingestion._resolve_ingestion_run_status(
+            {
+                "indexed": 1,
+                "errors": 0,
+                "embedding_missing": 1,
+            },
+            [],
+        )
+        == "partial"
+    )
+    assert (
+        rag_ingestion._resolve_ingestion_run_status(
+            {
+                "indexed": 0,
+                "errors": 0,
+                "embedding_missing": 1,
+            },
+            [],
+        )
+        == "failed"
+    )
+
+
 def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> None:
     class FakeIndices:
         async def exists(self, index: str) -> bool:
@@ -618,6 +789,11 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
                                     "status": "partial",
                                     "fetched": 4,
                                     "indexed": 4,
+                                    "embedding_requested": 4,
+                                    "embedding_succeeded": 2,
+                                    "embedding_missing": 2,
+                                    "embedding_failed": 2,
+                                    "embedding_error": "rate_limited",
                                     "source_health": [
                                         {
                                             "source": "rss:tokenpost.kr",
@@ -691,6 +867,17 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
                             {"key": "google_news_aggregator", "doc_count": 1},
                         ]
                     },
+                    "embedding_status_breakdown": {
+                        "buckets": [
+                            {"key": "embedded", "doc_count": 2},
+                            {"key": "rate_limited", "doc_count": 2},
+                        ]
+                    },
+                    "embedding_error_breakdown": {
+                        "buckets": [
+                            {"key": "rate_limited", "doc_count": 2},
+                        ]
+                    },
                     "crawl_error_by_source": {
                         "buckets": [
                             {
@@ -749,12 +936,18 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
         "short_body": 2,
         "google_news_aggregator": 1,
     }
+    assert response.embedding_status_breakdown == {
+        "embedded": 2,
+        "rate_limited": 2,
+    }
+    assert response.embedding_error_breakdown == {"rate_limited": 2}
     assert response.crawl_error_by_source == {
         "rss:tokenpost.kr": {"short_body": 2},
         "rss:news.google.com": {"google_news_aggregator": 1},
     }
     assert response.latest_ingestion is not None
     assert response.latest_ingestion["run_id"] == "run-1"
+    assert response.latest_ingestion["embedding_error"] == "rate_limited"
     assert response.latest_ingestion["source_health"][0]["source"] == "rss:tokenpost.kr"
 
 

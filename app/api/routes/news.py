@@ -60,6 +60,8 @@ class RagStatusResponse(BaseModel):
     fallback_documents: int = Field(...)
     embedded_documents: int = Field(...)
     missing_embedding_documents: int = Field(...)
+    embedding_status_breakdown: dict[str, int] = Field(default_factory=dict)
+    embedding_error_breakdown: dict[str, int] = Field(default_factory=dict)
     latest_published_at: str | None = Field(default=None)
     source_breakdown: dict[str, int] = Field(default_factory=dict)
     content_source_breakdown: dict[str, int] = Field(default_factory=dict)
@@ -173,6 +175,8 @@ def _build_rag_status_query() -> dict[str, Any]:
             "content_source_breakdown": {"terms": {"field": "content_source", "size": 10}},
             "crawl_status_breakdown": {"terms": {"field": "crawl_status", "size": 10}},
             "crawl_error_breakdown": {"terms": {"field": "crawl_error", "size": 20}},
+            "embedding_status_breakdown": {"terms": {"field": "embedding_status", "size": 10}},
+            "embedding_error_breakdown": {"terms": {"field": "embedding_error", "size": 20}},
             "crawl_error_by_source": {
                 "terms": {"field": "source", "size": 20},
                 "aggs": {
@@ -361,6 +365,8 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
                 fallback_documents=0,
                 embedded_documents=0,
                 missing_embedding_documents=0,
+                embedding_status_breakdown={},
+                embedding_error_breakdown={},
                 source_breakdown={},
                 content_source_breakdown={},
                 crawl_status_breakdown={},
@@ -390,6 +396,8 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
             fallback_documents=0,
             embedded_documents=0,
             missing_embedding_documents=0,
+            embedding_status_breakdown={},
+            embedding_error_breakdown={},
             source_breakdown={},
             content_source_breakdown={},
             crawl_status_breakdown={},
@@ -471,6 +479,14 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
         content_source_breakdown=_extract_terms_breakdown(aggregations, "content_source_breakdown"),
         crawl_status_breakdown=_extract_terms_breakdown(aggregations, "crawl_status_breakdown"),
         crawl_error_breakdown=_extract_terms_breakdown(aggregations, "crawl_error_breakdown"),
+        embedding_status_breakdown=_extract_terms_breakdown(
+            aggregations,
+            "embedding_status_breakdown",
+        ),
+        embedding_error_breakdown=_extract_terms_breakdown(
+            aggregations,
+            "embedding_error_breakdown",
+        ),
         crawl_error_by_source=_extract_nested_terms_breakdown(
             aggregations,
             "crawl_error_by_source",

@@ -238,3 +238,9 @@ ai-trade-manager/
 - RAG ingestion은 4개 정상 RSS에서 feed당 최대 8건, 전체 최대 32건을 수집해 source 다양성을 유지합니다.
 - Google News RSS는 계속 aggregator로 스킵하고 RSS 요약 컨텍스트로만 사용합니다.
 - 운영 검증은 `latest_ingestion.source_health`, stale/fallback 삭제 통계, AI 뉴스 검색 parent 중복 여부를 기준으로 수행합니다.
+
+## Phase 46.4 업데이트
+- RAG ingestion은 Gemini cooldown, 키 없음, 임베딩 생성 실패가 발생해도 문서/청크 upsert를 계속 수행합니다.
+- 임베딩 결과는 청크별 `embedding_status`와 `embedding_error`로 저장하며, 성공 청크만 `embedding` 벡터와 생성 메타데이터를 포함합니다.
+- 임베딩 누락 청크가 있어도 BM25 검색 경로는 계속 동작하고, kNN 검색은 임베딩이 확보된 청크만 후보로 사용합니다.
+- run health는 임베딩 요청/성공/누락/실패 수와 대표 오류를 저장하고, 누락이 있는 run은 `partial`로 관측합니다.
