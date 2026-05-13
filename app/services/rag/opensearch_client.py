@@ -75,6 +75,12 @@ INGESTION_RUNS_INDEX_BODY = {
             "embedding_missing": {"type": "integer"},
             "embedding_failed": {"type": "integer"},
             "embedding_error": {"type": "keyword"},
+            "backfill_requested": {"type": "integer"},
+            "backfill_succeeded": {"type": "integer"},
+            "backfill_missing": {"type": "integer"},
+            "backfill_failed": {"type": "integer"},
+            "backfill_error": {"type": "keyword"},
+            "backfill_skipped_reason": {"type": "keyword"},
             "source_health": {
                 "type": "object",
                 "properties": {

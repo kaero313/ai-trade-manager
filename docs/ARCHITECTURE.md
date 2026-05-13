@@ -244,3 +244,9 @@ ai-trade-manager/
 - 임베딩 결과는 청크별 `embedding_status`와 `embedding_error`로 저장하며, 성공 청크만 `embedding` 벡터와 생성 메타데이터를 포함합니다.
 - 임베딩 누락 청크가 있어도 BM25 검색 경로는 계속 동작하고, kNN 검색은 임베딩이 확보된 청크만 후보로 사용합니다.
 - run health는 임베딩 요청/성공/누락/실패 수와 대표 오류를 저장하고, 누락이 있는 run은 `partial`로 관측합니다.
+
+## Phase 46.5 업데이트
+- RAG ingestion은 정상 upsert 이후 임베딩 누락 청크를 최대 50개 조회해 자동 backfill을 시도합니다.
+- backfill 후보는 실뉴스 청크 중 `embedding_status`가 `missing/rate_limited/failed`이거나 legacy `embedding` 필드가 없는 문서입니다.
+- backfill 성공 시 기존 문서 전체를 재색인하지 않고 `embedding`, `embedding_status`, `embedding_error`, `embedding_model`, `embedding_generated_at`만 partial update합니다.
+- 현재 run에서 `rate_limited` 또는 `credentials_missing`이 감지되면 backfill을 스킵해 즉시 재시도에 따른 Gemini 쿼터 낭비를 피합니다.

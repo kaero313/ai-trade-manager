@@ -63,6 +63,12 @@ def test_ingestion_runs_index_tracks_source_health() -> None:
     assert properties["embedding_missing"]["type"] == "integer"
     assert properties["embedding_failed"]["type"] == "integer"
     assert properties["embedding_error"]["type"] == "keyword"
+    assert properties["backfill_requested"]["type"] == "integer"
+    assert properties["backfill_succeeded"]["type"] == "integer"
+    assert properties["backfill_missing"]["type"] == "integer"
+    assert properties["backfill_failed"]["type"] == "integer"
+    assert properties["backfill_error"]["type"] == "keyword"
+    assert properties["backfill_skipped_reason"]["type"] == "keyword"
     assert source_health["source"]["type"] == "keyword"
     assert source_health["status"]["type"] == "keyword"
     assert source_health["crawl_error_breakdown"]["type"] == "object"
@@ -743,6 +749,141 @@ def test_bulk_upsert_keeps_documents_when_embedding_is_rate_limited(monkeypatch)
     assert "embedding" not in source
 
 
+def test_missing_embedding_backfill_query_targets_real_unembedded_chunks() -> None:
+    query = rag_ingestion._build_missing_embedding_backfill_query(limit=7)
+
+    assert query["size"] == 7
+    assert {"published_at": {"order": "desc", "missing": "_last"}} in query["sort"]
+    bool_query = query["query"]["bool"]
+    assert {"exists": {"field": "parent_id"}} in bool_query["filter"]
+    missing_filter = bool_query["filter"][1]["bool"]
+    assert missing_filter["minimum_should_match"] == 1
+    assert {
+        "terms": {
+            "embedding_status": [
+                "missing",
+                "rate_limited",
+                "failed",
+            ]
+        }
+    } in missing_filter["should"]
+    assert {
+        "bool": {
+            "must_not": [
+                {"exists": {"field": "embedding"}},
+            ]
+        }
+    } in missing_filter["should"]
+    fallback_query = bool_query["must_not"][0]["bool"]
+    assert {"wildcard": {"link": "dummy://*"}} in fallback_query["should"]
+
+
+def test_embedding_backfill_update_doc_contains_only_embedding_metadata() -> None:
+    generated_at = datetime(2026, 5, 6, 4, 0, tzinfo=UTC)
+
+    payload = rag_ingestion._embedding_update_doc(
+        rag_ingestion.ChunkEmbeddingResult(
+            status="embedded",
+            embedding=[0.1] * EMBEDDING_DIMENSION,
+            model="gemini-embedding-001",
+            generated_at=generated_at,
+        )
+    )
+
+    assert set(payload) == {
+        "embedding",
+        "embedding_status",
+        "embedding_error",
+        "embedding_model",
+        "embedding_generated_at",
+    }
+    assert payload["embedding_status"] == "embedded"
+    assert payload["embedding_error"] is None
+    assert payload["embedding_model"] == "gemini-embedding-001"
+    assert payload["embedding_generated_at"] == generated_at.isoformat()
+    assert len(payload["embedding"]) == EMBEDDING_DIMENSION
+
+
+def test_missing_embedding_backfill_skips_when_embedding_rate_limited() -> None:
+    stats = asyncio.run(rag_ingestion._backfill_missing_embeddings(skip_reason="rate_limited"))
+
+    assert stats["backfill_requested"] == 0
+    assert stats["backfill_succeeded"] == 0
+    assert stats["backfill_skipped_reason"] == "rate_limited"
+
+
+def test_missing_embedding_backfill_updates_successful_embeddings(monkeypatch) -> None:
+    actions: list[dict] = []
+    search_bodies: list[dict] = []
+
+    class FakeIndices:
+        async def refresh(self, index: str) -> None:
+            assert index == "market_news"
+
+    class FakeOpenSearchClient:
+        indices = FakeIndices()
+
+        async def search(self, index: str, body: dict) -> dict:
+            assert index == "market_news"
+            search_bodies.append(body)
+            return {
+                "hits": {
+                    "hits": [
+                        {
+                            "_id": "parent-a:0",
+                            "_source": {
+                                "title": "Backfill Bitcoin article",
+                                "content": "Backfill content",
+                                "source": "rss:tokenpost.kr",
+                                "link": "https://example.com/a",
+                                "published_at": datetime(2026, 5, 6, 3, 0, tzinfo=UTC).isoformat(),
+                                "parent_id": "parent-a",
+                                "content_source": "crawled_body",
+                                "crawl_status": "success",
+                                "chunk_index": 0,
+                                "chunk_count": 1,
+                                "content_length": 16,
+                                "chunk_text_length": 16,
+                                "is_chunked": False,
+                            },
+                        }
+                    ]
+                }
+            }
+
+    class FakeAnalyzer:
+        async def generate_embeddings(self, texts: list[str], *, task_type: str) -> list[list[float]]:
+            assert task_type == "RETRIEVAL_DOCUMENT"
+            assert texts == ["Backfill Bitcoin article\n\nBackfill content"]
+            return [[0.1] * EMBEDDING_DIMENSION]
+
+        def close(self) -> None:
+            pass
+
+    async def fake_async_bulk(client: object, bulk_actions: list[dict], **kwargs: object) -> tuple[int, list]:
+        assert isinstance(client, FakeOpenSearchClient)
+        actions.extend(bulk_actions)
+        return len(bulk_actions), []
+
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(rag_ingestion, "get_opensearch_client", lambda: FakeOpenSearchClient())
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", FakeAnalyzer)
+    monkeypatch.setattr(rag_ingestion, "async_bulk", fake_async_bulk)
+
+    stats = asyncio.run(rag_ingestion._backfill_missing_embeddings())
+
+    assert search_bodies[0]["size"] == rag_ingestion.MISSING_EMBEDDING_BACKFILL_LIMIT
+    assert stats["backfill_requested"] == 1
+    assert stats["backfill_succeeded"] == 1
+    assert stats["backfill_missing"] == 0
+    assert stats["backfill_failed"] == 0
+    assert actions[0]["_op_type"] == "update"
+    assert actions[0]["_id"] == "parent-a:0"
+    assert actions[0]["doc"]["embedding_status"] == "embedded"
+    assert actions[0]["doc"]["embedding_error"] is None
+    assert len(actions[0]["doc"]["embedding"]) == EMBEDDING_DIMENSION
+
+
 def test_ingestion_run_status_is_partial_when_embeddings_are_missing() -> None:
     assert (
         rag_ingestion._resolve_ingestion_run_status(
@@ -765,6 +906,19 @@ def test_ingestion_run_status_is_partial_when_embeddings_are_missing() -> None:
             [],
         )
         == "failed"
+    )
+    assert (
+        rag_ingestion._resolve_ingestion_run_status(
+            {
+                "indexed": 1,
+                "errors": 0,
+                "embedding_missing": 0,
+                "backfill_missing": 1,
+                "backfill_failed": 0,
+            },
+            [],
+        )
+        == "partial"
     )
 
 
@@ -794,6 +948,12 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
                                     "embedding_missing": 2,
                                     "embedding_failed": 2,
                                     "embedding_error": "rate_limited",
+                                    "backfill_requested": 0,
+                                    "backfill_succeeded": 0,
+                                    "backfill_missing": 0,
+                                    "backfill_failed": 0,
+                                    "backfill_error": None,
+                                    "backfill_skipped_reason": "rate_limited",
                                     "source_health": [
                                         {
                                             "source": "rss:tokenpost.kr",
@@ -948,6 +1108,7 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
     assert response.latest_ingestion is not None
     assert response.latest_ingestion["run_id"] == "run-1"
     assert response.latest_ingestion["embedding_error"] == "rate_limited"
+    assert response.latest_ingestion["backfill_skipped_reason"] == "rate_limited"
     assert response.latest_ingestion["source_health"][0]["source"] == "rss:tokenpost.kr"
 
 

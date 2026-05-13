@@ -40,6 +40,7 @@ MARKET_NEWS_TTL_DAYS = 28
 INGESTION_RUN_TTL_DAYS = 14
 EMBEDDING_MODEL = "gemini-embedding-001"
 GEMINI_EMBEDDING_BATCH_SIZE = 100
+MISSING_EMBEDDING_BACKFILL_LIMIT = 50
 EMBEDDING_STATUS_EMBEDDED = "embedded"
 EMBEDDING_STATUS_MISSING = "missing"
 EMBEDDING_STATUS_RATE_LIMITED = "rate_limited"
@@ -48,6 +49,7 @@ EMBEDDING_ERROR_CREDENTIALS_MISSING = "credentials_missing"
 EMBEDDING_ERROR_RATE_LIMITED = "rate_limited"
 EMBEDDING_ERROR_GENERATION_FAILED = "generation_failed"
 EMBEDDING_ERROR_INVALID_DIMENSION = "invalid_dimension"
+EMBEDDING_ERROR_UPDATE_FAILED = "opensearch_update_failed"
 NEWS_HTTP_TIMEOUT = 10.0
 RSS_FETCH_LIMIT_PER_FEED = 8
 RSS_FETCH_LIMIT_TOTAL = 32
@@ -1051,6 +1053,203 @@ async def _bulk_upsert_chunks(
     return int(success_count), list(errors)
 
 
+def _build_missing_embedding_backfill_query(
+    limit: int = MISSING_EMBEDDING_BACKFILL_LIMIT,
+) -> dict[str, Any]:
+    missing_embedding_filter = {
+        "bool": {
+            "should": [
+                {
+                    "terms": {
+                        "embedding_status": [
+                            EMBEDDING_STATUS_MISSING,
+                            EMBEDDING_STATUS_RATE_LIMITED,
+                            EMBEDDING_STATUS_FAILED,
+                        ]
+                    }
+                },
+                {
+                    "bool": {
+                        "must_not": [
+                            {"exists": {"field": "embedding"}},
+                        ]
+                    }
+                },
+            ],
+            "minimum_should_match": 1,
+        }
+    }
+    return {
+        "size": limit,
+        "_source": [
+            "title",
+            "content",
+            "source",
+            "link",
+            "published_at",
+            "parent_id",
+            "content_source",
+            "crawl_status",
+            "crawl_error",
+            "chunk_index",
+            "chunk_count",
+            "content_length",
+            "chunk_text_length",
+            "is_chunked",
+        ],
+        "query": {
+            "bool": {
+                "filter": [
+                    {"exists": {"field": "parent_id"}},
+                    missing_embedding_filter,
+                ],
+                "must_not": [
+                    _fallback_document_query(),
+                ],
+            }
+        },
+        "sort": [
+            {"published_at": {"order": "desc", "missing": "_last"}},
+            {"_id": {"order": "asc"}},
+        ],
+    }
+
+
+def _backfill_chunk_from_hit(hit: dict[str, Any]) -> tuple[str, RawNewsChunk] | None:
+    source = hit.get("_source")
+    chunk_id = str(hit.get("_id") or "").strip()
+    if not chunk_id or not isinstance(source, dict):
+        return None
+
+    parent_id = str(source.get("parent_id") or "").strip()
+    title = str(source.get("title") or "").strip()
+    content = str(source.get("content") or "").strip()
+    if not parent_id or not title or not content:
+        return None
+
+    chunk_index = int(source.get("chunk_index") or 0)
+    return (
+        chunk_id,
+        RawNewsChunk(
+            parent_id=parent_id,
+            title=title,
+            content=content,
+            published_at=_parse_datetime(source.get("published_at")),
+            source=str(source.get("source") or "").strip(),
+            link=str(source.get("link") or "").strip(),
+            content_source=str(source.get("content_source") or "rss_summary"),
+            crawl_status=str(source.get("crawl_status") or "not_applicable"),
+            crawl_error=source.get("crawl_error") if isinstance(source.get("crawl_error"), str) else None,
+            chunk_index=chunk_index,
+            chunk_count=int(source.get("chunk_count") or 1),
+            content_length=int(source.get("content_length") or len(content)),
+            chunk_text_length=int(source.get("chunk_text_length") or len(content)),
+            is_chunked=bool(source.get("is_chunked")),
+        ),
+    )
+
+
+def _embedding_update_doc(result: ChunkEmbeddingResult) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "embedding": result.embedding,
+        "embedding_status": EMBEDDING_STATUS_EMBEDDED,
+        "embedding_error": None,
+        "embedding_model": result.model or EMBEDDING_MODEL,
+        "embedding_generated_at": (result.generated_at or datetime.now(UTC)).isoformat(),
+    }
+    return payload
+
+
+def _initial_backfill_stats(skip_reason: str | None = None) -> dict[str, Any]:
+    return {
+        "backfill_requested": 0,
+        "backfill_succeeded": 0,
+        "backfill_missing": 0,
+        "backfill_failed": 0,
+        "backfill_error": None,
+        "backfill_skipped_reason": skip_reason,
+    }
+
+
+def _backfill_skip_reason(embeddings: EmbeddingGenerationResult) -> str | None:
+    if embeddings.error in {EMBEDDING_ERROR_RATE_LIMITED, EMBEDDING_ERROR_CREDENTIALS_MISSING}:
+        return embeddings.error
+    return None
+
+
+async def _backfill_missing_embeddings(
+    *,
+    skip_reason: str | None = None,
+    limit: int = MISSING_EMBEDDING_BACKFILL_LIMIT,
+) -> dict[str, Any]:
+    stats = _initial_backfill_stats(skip_reason)
+    if skip_reason:
+        logger.info("missing embedding backfill을 건너뜁니다: reason=%s", skip_reason)
+        return stats
+
+    client = get_opensearch_client()
+    response = await client.search(index=INDEX_NAME, body=_build_missing_embedding_backfill_query(limit))
+    hits = response.get("hits", {}).get("hits", []) if isinstance(response, dict) else []
+    if not isinstance(hits, list) or not hits:
+        return stats
+
+    chunk_ids: list[str] = []
+    chunks: list[RawNewsChunk] = []
+    for hit in hits:
+        if not isinstance(hit, dict):
+            continue
+        parsed = _backfill_chunk_from_hit(hit)
+        if parsed is None:
+            continue
+        chunk_id, chunk = parsed
+        chunk_ids.append(chunk_id)
+        chunks.append(chunk)
+
+    stats["backfill_requested"] = len(chunks)
+    if not chunks:
+        return stats
+
+    embeddings = await _generate_embeddings(chunks)
+    stats["backfill_error"] = embeddings.error
+
+    actions = []
+    for index, chunk in enumerate(chunks):
+        result = embeddings.chunks.get(_build_chunk_id(chunk))
+        if result is None or result.status != EMBEDDING_STATUS_EMBEDDED or not result.embedding:
+            continue
+        actions.append(
+            {
+                "_op_type": "update",
+                "_index": INDEX_NAME,
+                "_id": chunk_ids[index],
+                "doc": _embedding_update_doc(result),
+            }
+        )
+
+    if not actions:
+        stats["backfill_missing"] = embeddings.missing
+        stats["backfill_failed"] = embeddings.failed
+        return stats
+
+    success_count, errors = await async_bulk(
+        client,
+        actions,
+        raise_on_error=False,
+        raise_on_exception=False,
+    )
+    stats["backfill_succeeded"] = int(success_count)
+    stats["backfill_missing"] = max(stats["backfill_requested"] - stats["backfill_succeeded"], 0)
+    stats["backfill_failed"] = embeddings.failed + len(errors)
+    if errors and not stats["backfill_error"]:
+        stats["backfill_error"] = EMBEDDING_ERROR_UPDATE_FAILED
+    if success_count:
+        try:
+            await client.indices.refresh(index=INDEX_NAME)
+        except Exception:
+            logger.warning("market_news backfill refresh에 실패했습니다.", exc_info=True)
+    return stats
+
+
 def _fallback_document_query() -> dict[str, Any]:
     return {
         "bool": {
@@ -1172,7 +1371,12 @@ def _refresh_deleted_total(stats: dict[str, Any]) -> None:
 def _resolve_ingestion_run_status(stats: dict[str, Any], source_health: list[SourceHealth]) -> str:
     if stats.get("indexed", 0) <= 0:
         return "failed"
-    if stats.get("errors", 0) > 0 or stats.get("embedding_missing", 0) > 0:
+    if (
+        stats.get("errors", 0) > 0
+        or stats.get("embedding_missing", 0) > 0
+        or stats.get("backfill_missing", 0) > 0
+        or stats.get("backfill_failed", 0) > 0
+    ):
         return "partial"
     if any(health.enabled and health.status in {"failed", "partial"} for health in source_health):
         return "partial"
@@ -1212,6 +1416,12 @@ async def _store_ingestion_run(
         "embedding_missing": stats["embedding_missing"],
         "embedding_failed": stats["embedding_failed"],
         "embedding_error": stats["embedding_error"],
+        "backfill_requested": stats["backfill_requested"],
+        "backfill_succeeded": stats["backfill_succeeded"],
+        "backfill_missing": stats["backfill_missing"],
+        "backfill_failed": stats["backfill_failed"],
+        "backfill_error": stats["backfill_error"],
+        "backfill_skipped_reason": stats["backfill_skipped_reason"],
         "source_health": [_serialize_source_health(health) for health in source_health],
     }
     await client.index(
@@ -1244,6 +1454,12 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
         "embedding_missing": 0,
         "embedding_failed": 0,
         "embedding_error": None,
+        "backfill_requested": 0,
+        "backfill_succeeded": 0,
+        "backfill_missing": 0,
+        "backfill_failed": 0,
+        "backfill_error": None,
+        "backfill_skipped_reason": None,
     }
     index_ready = False
 
@@ -1298,6 +1514,15 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
             if source_parent_ids:
                 stats["fallback_deleted"] = await _delete_fallback_documents()
             _refresh_deleted_total(stats)
+            try:
+                backfill_stats = await _backfill_missing_embeddings(
+                    skip_reason=_backfill_skip_reason(embeddings)
+                )
+                stats.update(backfill_stats)
+            except Exception:
+                logger.exception("missing embedding backfill failed.")
+                stats["backfill_failed"] += 1
+                stats["backfill_error"] = EMBEDDING_ERROR_UPDATE_FAILED
     except Exception:
         stats["errors"] += 1
         logger.exception("market_news ingestion job failed.")
@@ -1326,7 +1551,9 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
             "crawled=%s crawl_failed=%s crawl_skipped=%s rss_summary_used=%s "
             "stale_deleted=%s fallback_deleted=%s expired_deleted=%s "
             "embedding_requested=%s embedding_succeeded=%s embedding_missing=%s "
-            "embedding_failed=%s embedding_error=%s"
+            "embedding_failed=%s embedding_error=%s "
+            "backfill_requested=%s backfill_succeeded=%s backfill_missing=%s "
+            "backfill_failed=%s backfill_error=%s backfill_skipped_reason=%s"
         ),
         stats["fetched"],
         stats["indexed"],
@@ -1344,5 +1571,11 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
         stats["embedding_missing"],
         stats["embedding_failed"],
         stats["embedding_error"],
+        stats["backfill_requested"],
+        stats["backfill_succeeded"],
+        stats["backfill_missing"],
+        stats["backfill_failed"],
+        stats["backfill_error"],
+        stats["backfill_skipped_reason"],
     )
     return stats

@@ -147,3 +147,9 @@ Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구
 - `market_news` 청크는 `embedding_status`, `embedding_error`, `embedding_model`, `embedding_generated_at`을 저장해 임베딩 품질 상태를 추적합니다.
 - `/api/news/rag/status`는 `embedding_status_breakdown`과 `embedding_error_breakdown`을 반환하며, 임베딩 누락이 있으면 기존처럼 `degraded`로 표시합니다.
 - 임베딩 누락이 있는 ingestion run은 `latest_ingestion.status=partial`로 기록하고 다음 ingestion에서 같은 최신 RSS 청크 임베딩을 다시 시도합니다.
+
+## RAG 3.5 운영 정책
+- RSS ingestion 후 Gemini 쿨다운이 없으면 `market_news`의 missing/rate_limited/failed 또는 legacy 임베딩 누락 청크를 최대 50개 자동 보충합니다.
+- backfill은 fallback/dummy 문서를 제외하고 최신 `published_at` 순서로 실행하며, 성공 시 `_id` 기준 partial update로 임베딩 메타데이터만 갱신합니다.
+- 현재 run의 임베딩 단계가 `rate_limited` 또는 `credentials_missing`이면 backfill을 건너뛰고 `backfill_skipped_reason`으로 원인을 기록합니다.
+- `market_news_ingestion_runs`는 backfill 요청/성공/누락/실패 수와 대표 오류를 저장해 `/api/news/rag/status.latest_ingestion`에서 확인할 수 있습니다.
