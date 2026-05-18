@@ -2,6 +2,7 @@ from typing import TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from app.core.config import settings
@@ -16,6 +17,8 @@ from app.services.ai.providers.base import (
 StructuredResponseT = TypeVar("StructuredResponseT", bound=BaseModel)
 
 OPENAI_TEXT_MODEL = "gpt-5-mini"
+OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+OPENAI_EMBEDDING_DIMENSION = 1536
 
 
 def _resolve_openai_api_key() -> str | None:
@@ -47,6 +50,12 @@ class OpenAIAnalyzer(BaseAIAnalyzer):
         self.model = (model or OPENAI_TEXT_MODEL).strip() or OPENAI_TEXT_MODEL
         self.api_key = _resolve_openai_api_key()
 
+    def close(self) -> None:
+        return None
+
+    async def aclose(self) -> None:
+        return None
+
     def _ensure_client_available(self) -> None:
         if self.api_key is None:
             raise RuntimeError("OpenAI API 키가 설정되지 않아 분석을 실행할 수 없습니다.")
@@ -54,6 +63,10 @@ class OpenAIAnalyzer(BaseAIAnalyzer):
     def _build_chat_model(self) -> ChatOpenAI:
         self._ensure_client_available()
         return ChatOpenAI(model=self.model, api_key=self.api_key)
+
+    def _build_async_client(self) -> AsyncOpenAI:
+        self._ensure_client_available()
+        return AsyncOpenAI(api_key=self.api_key)
 
     def _build_rate_limit_error(self, error: Exception) -> AIProviderRateLimitError:
         reason = "insufficient_quota" if "insufficient_quota" in str(error).lower() else "rate_limit"
@@ -86,6 +99,50 @@ class OpenAIAnalyzer(BaseAIAnalyzer):
                 return joined
 
         return "OpenAI 분석 응답이 비어 있습니다."
+
+    async def generate_embeddings(
+        self,
+        texts: list[str],
+        *,
+        task_type: str,
+    ) -> list[list[float]]:
+        if not texts:
+            return []
+
+        client = self._build_async_client()
+        try:
+            response = await client.embeddings.create(
+                model=OPENAI_EMBEDDING_MODEL,
+                input=texts,
+                dimensions=OPENAI_EMBEDDING_DIMENSION,
+            )
+        except Exception as error:
+            if is_provider_rate_limit_error("openai", error):
+                raise self._build_rate_limit_error(error) from error
+            raise RuntimeError(_normalize_openai_error(error)) from error
+        finally:
+            await client.close()
+
+        response_data = getattr(response, "data", None)
+        if not isinstance(response_data, list) or len(response_data) != len(texts):
+            raise RuntimeError("OpenAI embedding response count does not match request count.")
+
+        embeddings: list[list[float]] = []
+        ordered_response_data = sorted(
+            response_data,
+            key=lambda value: getattr(value, "index", 0),
+        )
+        for index, item in enumerate(ordered_response_data):
+            values = getattr(item, "embedding", None)
+            if not isinstance(values, list) or len(values) != OPENAI_EMBEDDING_DIMENSION:
+                raise RuntimeError(f"OpenAI embedding dimension is invalid: index={index}")
+            embeddings.append([float(value) for value in values])
+
+        return embeddings
+
+    async def generate_embedding(self, text: str, *, task_type: str) -> list[float]:
+        embeddings = await self.generate_embeddings([text], task_type=task_type)
+        return embeddings[0]
 
     async def generate_structured_analysis(
         self,

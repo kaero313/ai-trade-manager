@@ -20,7 +20,9 @@ from opensearchpy.helpers import async_bulk
 
 from app.core.config import settings
 from app.services.news_scraper import RSS_FEED_URLS
-from app.services.ai.providers.gemini import AIProviderRateLimitError, GeminiAnalyzer
+from app.services.ai.providers.base import AIProviderRateLimitError
+from app.services.ai.providers.gemini import GEMINI_EMBEDDING_MODEL, GeminiAnalyzer
+from app.services.ai.providers.openai import OPENAI_EMBEDDING_MODEL, OpenAIAnalyzer
 from app.services.rag.opensearch_client import (
     EMBEDDING_DIMENSION,
     INGESTION_RUNS_INDEX_NAME,
@@ -38,8 +40,12 @@ CRYPTO_PANIC_FETCH_LIMIT = 10
 NAVER_FETCH_LIMIT = 10
 MARKET_NEWS_TTL_DAYS = 28
 INGESTION_RUN_TTL_DAYS = 14
-EMBEDDING_MODEL = "gemini-embedding-001"
-GEMINI_EMBEDDING_BATCH_SIZE = 100
+EMBEDDING_PROVIDER_GEMINI = "gemini"
+EMBEDDING_PROVIDER_OPENAI = "openai"
+EMBEDDING_MODEL = GEMINI_EMBEDDING_MODEL
+EMBEDDING_BATCH_SIZE = 100
+GEMINI_EMBEDDING_BATCH_SIZE = EMBEDDING_BATCH_SIZE
+EMBEDDING_REQUEST_LIMIT_PER_RUN = 100
 MISSING_EMBEDDING_BACKFILL_LIMIT = 50
 EMBEDDING_STATUS_EMBEDDED = "embedded"
 EMBEDDING_STATUS_MISSING = "missing"
@@ -50,6 +56,7 @@ EMBEDDING_ERROR_RATE_LIMITED = "rate_limited"
 EMBEDDING_ERROR_GENERATION_FAILED = "generation_failed"
 EMBEDDING_ERROR_INVALID_DIMENSION = "invalid_dimension"
 EMBEDDING_ERROR_UPDATE_FAILED = "opensearch_update_failed"
+EMBEDDING_ERROR_RUN_LIMIT_EXCEEDED = "run_limit_exceeded"
 NEWS_HTTP_TIMEOUT = 10.0
 RSS_FETCH_LIMIT_PER_FEED = 8
 RSS_FETCH_LIMIT_TOTAL = 32
@@ -101,6 +108,7 @@ class ChunkEmbeddingResult:
     status: str
     error: str | None = None
     embedding: list[float] | None = None
+    provider: str | None = None
     model: str | None = None
     generated_at: datetime | None = None
 
@@ -112,6 +120,18 @@ class EmbeddingGenerationResult:
     succeeded: int = 0
     missing: int = 0
     failed: int = 0
+    error: str | None = None
+    primary_provider: str | None = EMBEDDING_PROVIDER_GEMINI
+    fallback_provider: str | None = EMBEDDING_PROVIDER_OPENAI
+    fallback_used: bool = False
+    provider_error_breakdown: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class EmbeddingProviderAttempt:
+    provider: str
+    model: str
+    embeddings: list[list[float]] | None = None
     error: str | None = None
 
 
@@ -367,6 +387,7 @@ def _serialize_chunk(
         "is_chunked": chunk.is_chunked,
         "embedding_status": embedding_state.status,
         "embedding_error": embedding_state.error,
+        "embedding_provider": embedding_state.provider,
         "embedding_model": embedding_state.model,
         "embedding_generated_at": embedding_state.generated_at.isoformat()
         if embedding_state.generated_at
@@ -899,12 +920,18 @@ def _new_embedding_result(
     *,
     status: str,
     error: str | None = None,
+    provider_error_breakdown: dict[str, int] | None = None,
 ) -> EmbeddingGenerationResult:
     chunk_results = {
         _build_chunk_id(chunk): ChunkEmbeddingResult(status=status, error=error)
         for chunk in chunks
     }
-    return _finalize_embedding_result(chunk_results, requested=len(chunks), error=error)
+    return _finalize_embedding_result(
+        chunk_results,
+        requested=len(chunks),
+        error=error,
+        provider_error_breakdown=provider_error_breakdown,
+    )
 
 
 def _finalize_embedding_result(
@@ -912,9 +939,13 @@ def _finalize_embedding_result(
     *,
     requested: int,
     error: str | None = None,
+    primary_provider: str | None = EMBEDDING_PROVIDER_GEMINI,
+    fallback_provider: str | None = EMBEDDING_PROVIDER_OPENAI,
+    fallback_used: bool = False,
+    provider_error_breakdown: dict[str, int] | None = None,
 ) -> EmbeddingGenerationResult:
     succeeded = sum(1 for result in chunk_results.values() if result.status == EMBEDDING_STATUS_EMBEDDED)
-    missing = max(requested - succeeded, 0)
+    missing = sum(1 for result in chunk_results.values() if result.status != EMBEDDING_STATUS_EMBEDDED)
     failed = sum(1 for result in chunk_results.values() if result.error is not None)
     return EmbeddingGenerationResult(
         chunks=chunk_results,
@@ -923,99 +954,242 @@ def _finalize_embedding_result(
         missing=missing,
         failed=failed,
         error=error,
+        primary_provider=primary_provider,
+        fallback_provider=fallback_provider,
+        fallback_used=fallback_used,
+        provider_error_breakdown=dict(provider_error_breakdown or {}),
     )
+
+
+def _embedding_provider_error_key(provider: str, error: str) -> str:
+    return f"{provider}:{error}"
+
+
+def _record_embedding_provider_error(
+    provider_errors: Counter[str],
+    *,
+    provider: str,
+    error: str,
+    count: int,
+) -> None:
+    if count > 0:
+        provider_errors[_embedding_provider_error_key(provider, error)] += count
+
+
+def _is_configured_api_key(raw_value: str | None) -> bool:
+    api_key = str(raw_value or "").strip()
+    if not api_key:
+        return False
+    normalized = api_key.lower()
+    if normalized.startswith("your_"):
+        return False
+    return not (normalized.endswith("_here") or normalized.endswith("here"))
+
+
+def _embedding_credentials_available(provider: str) -> bool:
+    if provider == EMBEDDING_PROVIDER_GEMINI:
+        return _is_configured_api_key(settings.GEMINI_API_KEY)
+    if provider == EMBEDDING_PROVIDER_OPENAI:
+        return _is_configured_api_key(settings.OPENAI_API_KEY)
+    return False
+
+
+def _build_embedding_analyzer(provider: str) -> GeminiAnalyzer | OpenAIAnalyzer:
+    if provider == EMBEDDING_PROVIDER_OPENAI:
+        return OpenAIAnalyzer()
+    return GeminiAnalyzer()
+
+
+def _embedding_model_for_provider(provider: str) -> str:
+    if provider == EMBEDDING_PROVIDER_OPENAI:
+        return OPENAI_EMBEDDING_MODEL
+    return GEMINI_EMBEDDING_MODEL
+
+
+async def _close_embedding_analyzer(analyzer: Any) -> None:
+    aclose = getattr(analyzer, "aclose", None)
+    if callable(aclose):
+        await aclose()
+        return
+    close = getattr(analyzer, "close", None)
+    if callable(close):
+        close()
+
+
+async def _attempt_embedding_provider(
+    provider: str,
+    texts: list[str],
+    *,
+    task_type: str,
+) -> EmbeddingProviderAttempt:
+    model = _embedding_model_for_provider(provider)
+    if not texts:
+        return EmbeddingProviderAttempt(provider=provider, model=model, embeddings=[])
+
+    if not _embedding_credentials_available(provider):
+        return EmbeddingProviderAttempt(
+            provider=provider,
+            model=model,
+            error=EMBEDDING_ERROR_CREDENTIALS_MISSING,
+        )
+
+    analyzer = _build_embedding_analyzer(provider)
+    try:
+        embeddings = await analyzer.generate_embeddings(texts, task_type=task_type)
+    except AIProviderRateLimitError:
+        return EmbeddingProviderAttempt(
+            provider=provider,
+            model=model,
+            error=EMBEDDING_ERROR_RATE_LIMITED,
+        )
+    except Exception:
+        logger.exception("%s embedding generation failed.", provider)
+        return EmbeddingProviderAttempt(
+            provider=provider,
+            model=model,
+            error=EMBEDDING_ERROR_GENERATION_FAILED,
+        )
+    finally:
+        await _close_embedding_analyzer(analyzer)
+
+    return EmbeddingProviderAttempt(provider=provider, model=model, embeddings=embeddings)
+
+
+def _fallback_embedding_status(error: str) -> str:
+    if error == EMBEDDING_ERROR_RATE_LIMITED:
+        return EMBEDDING_STATUS_RATE_LIMITED
+    if error in {EMBEDDING_ERROR_CREDENTIALS_MISSING, EMBEDDING_ERROR_RUN_LIMIT_EXCEEDED}:
+        return EMBEDDING_STATUS_MISSING
+    return EMBEDDING_STATUS_FAILED
 
 
 async def _generate_embeddings(chunks: list[RawNewsChunk]) -> EmbeddingGenerationResult:
     if not chunks:
         return EmbeddingGenerationResult()
 
-    if not settings.GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY가 없어 문서를 임베딩 없이 인덱싱합니다.")
-        return _new_embedding_result(
-            chunks,
-            status=EMBEDDING_STATUS_MISSING,
-            error=EMBEDDING_ERROR_CREDENTIALS_MISSING,
-        )
-
-    texts = [f"{chunk.title}\n\n{chunk.content}" for chunk in chunks]
-    analyzer = GeminiAnalyzer()
     chunk_results: dict[str, ChunkEmbeddingResult] = {
         _build_chunk_id(chunk): ChunkEmbeddingResult(status=EMBEDDING_STATUS_MISSING)
         for chunk in chunks
     }
+    provider_errors: Counter[str] = Counter()
     representative_error: str | None = None
-    try:
-        for start_index in range(0, len(texts), GEMINI_EMBEDDING_BATCH_SIZE):
-            batch = texts[start_index : start_index + GEMINI_EMBEDDING_BATCH_SIZE]
-            batch_chunks = chunks[start_index : start_index + len(batch)]
-            try:
-                embedding_values = await analyzer.generate_embeddings(
-                    batch,
-                    task_type="RETRIEVAL_DOCUMENT",
-                )
-            except AIProviderRateLimitError as exc:
-                representative_error = EMBEDDING_ERROR_RATE_LIMITED
-                logger.warning("Gemini 임베딩 쿨다운으로 남은 청크를 임베딩 없이 인덱싱합니다: %s", exc)
-                for chunk in chunks[start_index:]:
-                    chunk_results[_build_chunk_id(chunk)] = ChunkEmbeddingResult(
-                        status=EMBEDDING_STATUS_RATE_LIMITED,
-                        error=EMBEDDING_ERROR_RATE_LIMITED,
-                    )
-                break
-            except Exception:
-                representative_error = EMBEDDING_ERROR_GENERATION_FAILED
-                logger.exception("Gemini 임베딩 생성 실패. 남은 청크를 임베딩 없이 인덱싱합니다.")
-                for chunk in chunks[start_index:]:
-                    chunk_results[_build_chunk_id(chunk)] = ChunkEmbeddingResult(
-                        status=EMBEDDING_STATUS_FAILED,
-                        error=EMBEDDING_ERROR_GENERATION_FAILED,
-                    )
-                break
+    fallback_used = False
 
-            generated_at = datetime.now(UTC)
-            if len(embedding_values) != len(batch_chunks):
-                representative_error = representative_error or EMBEDDING_ERROR_GENERATION_FAILED
-                logger.warning(
-                    "Gemini 임베딩 응답 개수가 요청 개수와 다릅니다: requested=%s received=%s",
-                    len(batch_chunks),
-                    len(embedding_values),
+    attempted_chunks = chunks[:EMBEDDING_REQUEST_LIMIT_PER_RUN]
+    limited_chunks = chunks[EMBEDDING_REQUEST_LIMIT_PER_RUN:]
+    if limited_chunks:
+        representative_error = EMBEDDING_ERROR_RUN_LIMIT_EXCEEDED
+        for chunk in limited_chunks:
+            chunk_results[_build_chunk_id(chunk)] = ChunkEmbeddingResult(
+                status=EMBEDDING_STATUS_MISSING,
+                error=EMBEDDING_ERROR_RUN_LIMIT_EXCEEDED,
+            )
+
+    texts = [f"{chunk.title}\n\n{chunk.content}" for chunk in attempted_chunks]
+    for start_index in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+        batch = texts[start_index : start_index + EMBEDDING_BATCH_SIZE]
+        batch_chunks = attempted_chunks[start_index : start_index + len(batch)]
+        attempt = await _attempt_embedding_provider(
+            EMBEDDING_PROVIDER_GEMINI,
+            batch,
+            task_type="RETRIEVAL_DOCUMENT",
+        )
+        if attempt.error in {
+            EMBEDDING_ERROR_CREDENTIALS_MISSING,
+            EMBEDDING_ERROR_RATE_LIMITED,
+            EMBEDDING_ERROR_GENERATION_FAILED,
+        }:
+            _record_embedding_provider_error(
+                provider_errors,
+                provider=EMBEDDING_PROVIDER_GEMINI,
+                error=attempt.error,
+                count=len(batch_chunks),
+            )
+            fallback_used = True
+            fallback_attempt = await _attempt_embedding_provider(
+                EMBEDDING_PROVIDER_OPENAI,
+                batch,
+                task_type="RETRIEVAL_DOCUMENT",
+            )
+            if fallback_attempt.error is not None:
+                _record_embedding_provider_error(
+                    provider_errors,
+                    provider=EMBEDDING_PROVIDER_OPENAI,
+                    error=fallback_attempt.error,
+                    count=len(batch_chunks),
                 )
+                representative_error = representative_error or fallback_attempt.error
+                status = _fallback_embedding_status(fallback_attempt.error)
                 for chunk in batch_chunks:
                     chunk_results[_build_chunk_id(chunk)] = ChunkEmbeddingResult(
-                        status=EMBEDDING_STATUS_FAILED,
-                        error=EMBEDDING_ERROR_GENERATION_FAILED,
+                        status=status,
+                        error=fallback_attempt.error,
                     )
                 continue
-
-            for index, embedding in enumerate(embedding_values):
-                chunk = batch_chunks[index]
-                chunk_id = _build_chunk_id(chunk)
-                if len(embedding) != EMBEDDING_DIMENSION:
-                    representative_error = representative_error or EMBEDDING_ERROR_INVALID_DIMENSION
-                    logger.warning("예상과 다른 Gemini 임베딩 차원입니다: chunk_id=%s", chunk_id)
-                    chunk_results[chunk_id] = ChunkEmbeddingResult(
-                        status=EMBEDDING_STATUS_FAILED,
-                        error=EMBEDDING_ERROR_INVALID_DIMENSION,
-                    )
-                    continue
-                chunk_results[chunk_id] = ChunkEmbeddingResult(
-                    status=EMBEDDING_STATUS_EMBEDDED,
-                    embedding=embedding,
-                    model=EMBEDDING_MODEL,
-                    generated_at=generated_at,
+            attempt = fallback_attempt
+        elif attempt.error is not None:
+            _record_embedding_provider_error(
+                provider_errors,
+                provider=attempt.provider,
+                error=attempt.error,
+                count=len(batch_chunks),
+            )
+            representative_error = representative_error or attempt.error
+            status = _fallback_embedding_status(attempt.error)
+            for chunk in batch_chunks:
+                chunk_results[_build_chunk_id(chunk)] = ChunkEmbeddingResult(
+                    status=status,
+                    error=attempt.error,
                 )
-    finally:
-        aclose = getattr(analyzer, "aclose", None)
-        if callable(aclose):
-            await aclose()
-        else:
-            analyzer.close()
+            continue
+
+        embedding_values = attempt.embeddings or []
+        if len(embedding_values) != len(batch_chunks):
+            representative_error = representative_error or EMBEDDING_ERROR_GENERATION_FAILED
+            _record_embedding_provider_error(
+                provider_errors,
+                provider=attempt.provider,
+                error=EMBEDDING_ERROR_GENERATION_FAILED,
+                count=len(batch_chunks),
+            )
+            for chunk in batch_chunks:
+                chunk_results[_build_chunk_id(chunk)] = ChunkEmbeddingResult(
+                    status=EMBEDDING_STATUS_FAILED,
+                    error=EMBEDDING_ERROR_GENERATION_FAILED,
+                )
+            continue
+
+        generated_at = datetime.now(UTC)
+        for index, embedding in enumerate(embedding_values):
+            chunk = batch_chunks[index]
+            chunk_id = _build_chunk_id(chunk)
+            if len(embedding) != EMBEDDING_DIMENSION:
+                representative_error = representative_error or EMBEDDING_ERROR_INVALID_DIMENSION
+                _record_embedding_provider_error(
+                    provider_errors,
+                    provider=attempt.provider,
+                    error=EMBEDDING_ERROR_INVALID_DIMENSION,
+                    count=1,
+                )
+                chunk_results[chunk_id] = ChunkEmbeddingResult(
+                    status=EMBEDDING_STATUS_FAILED,
+                    error=EMBEDDING_ERROR_INVALID_DIMENSION,
+                )
+                continue
+            chunk_results[chunk_id] = ChunkEmbeddingResult(
+                status=EMBEDDING_STATUS_EMBEDDED,
+                embedding=embedding,
+                provider=attempt.provider,
+                model=attempt.model,
+                generated_at=generated_at,
+            )
 
     return _finalize_embedding_result(
         chunk_results,
-        requested=len(chunks),
+        requested=len(attempted_chunks),
         error=representative_error,
+        fallback_used=fallback_used,
+        provider_error_breakdown=dict(provider_errors),
     )
 
 
@@ -1154,6 +1328,7 @@ def _embedding_update_doc(result: ChunkEmbeddingResult) -> dict[str, Any]:
         "embedding": result.embedding,
         "embedding_status": EMBEDDING_STATUS_EMBEDDED,
         "embedding_error": None,
+        "embedding_provider": result.provider,
         "embedding_model": result.model or EMBEDDING_MODEL,
         "embedding_generated_at": (result.generated_at or datetime.now(UTC)).isoformat(),
     }
@@ -1174,6 +1349,10 @@ def _initial_backfill_stats(skip_reason: str | None = None) -> dict[str, Any]:
 def _backfill_skip_reason(embeddings: EmbeddingGenerationResult) -> str | None:
     if embeddings.error in {EMBEDDING_ERROR_RATE_LIMITED, EMBEDDING_ERROR_CREDENTIALS_MISSING}:
         return embeddings.error
+    for provider_error in embeddings.provider_error_breakdown:
+        error = provider_error.split(":", 1)[-1]
+        if error in {EMBEDDING_ERROR_RATE_LIMITED, EMBEDDING_ERROR_CREDENTIALS_MISSING}:
+            return error
     return None
 
 
@@ -1416,6 +1595,10 @@ async def _store_ingestion_run(
         "embedding_missing": stats["embedding_missing"],
         "embedding_failed": stats["embedding_failed"],
         "embedding_error": stats["embedding_error"],
+        "embedding_primary_provider": stats["embedding_primary_provider"],
+        "embedding_fallback_provider": stats["embedding_fallback_provider"],
+        "embedding_fallback_used": stats["embedding_fallback_used"],
+        "embedding_provider_error_breakdown": stats["embedding_provider_error_breakdown"],
         "backfill_requested": stats["backfill_requested"],
         "backfill_succeeded": stats["backfill_succeeded"],
         "backfill_missing": stats["backfill_missing"],
@@ -1454,6 +1637,10 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
         "embedding_missing": 0,
         "embedding_failed": 0,
         "embedding_error": None,
+        "embedding_primary_provider": EMBEDDING_PROVIDER_GEMINI,
+        "embedding_fallback_provider": EMBEDDING_PROVIDER_OPENAI,
+        "embedding_fallback_used": False,
+        "embedding_provider_error_breakdown": {},
         "backfill_requested": 0,
         "backfill_succeeded": 0,
         "backfill_missing": 0,
@@ -1502,6 +1689,10 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
         stats["embedding_missing"] = embeddings.missing
         stats["embedding_failed"] = embeddings.failed
         stats["embedding_error"] = embeddings.error
+        stats["embedding_primary_provider"] = embeddings.primary_provider
+        stats["embedding_fallback_provider"] = embeddings.fallback_provider
+        stats["embedding_fallback_used"] = embeddings.fallback_used
+        stats["embedding_provider_error_breakdown"] = embeddings.provider_error_breakdown
 
         indexed_count, bulk_errors = await _bulk_upsert_chunks(chunks, embeddings)
         stats["indexed"] = indexed_count

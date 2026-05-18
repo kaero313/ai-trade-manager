@@ -15,8 +15,9 @@ from app.models.schemas import AIAnalysisResponse
 from app.schemas.portfolio import AssetItem
 from app.schemas.portfolio import PortfolioSummary
 from app.services.ai.analyzer import AIAnalyzerFactory
-from app.services.ai.providers.gemini import AIProviderRateLimitError
+from app.services.ai.providers.base import AIProviderRateLimitError
 from app.services.ai.providers.gemini import GeminiAnalyzer
+from app.services.ai.providers.openai import OpenAIAnalyzer
 from app.services.ai.provider_router import AIProviderRouter
 from app.services.ai.provider_router import AIProviderUnavailableError
 from app.services.brokers.factory import BrokerFactory
@@ -466,10 +467,9 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
 
             try:
                 query_text = _build_market_news_query_text(symbol, terms)
-                query_embedding = await _get_gemini_analyzer().generate_embedding(
-                    query_text,
-                    task_type="RETRIEVAL_QUERY",
-                )
+                query_embedding = await _generate_market_news_query_embedding(query_text)
+                if not query_embedding:
+                    raise RuntimeError("query embedding unavailable")
                 knn_response = await client.search(
                     index=INDEX_NAME,
                     body=_build_market_news_knn_query(query_embedding, candidate_limit),
@@ -880,6 +880,47 @@ def _build_fallback_analysis() -> AIAnalysisResponse:
         recommended_weight=0,
         reasoning="AI 분석 실패로 보수적으로 HOLD를 반환했습니다.",
     )
+
+
+async def _close_query_embedding_analyzer(analyzer: Any) -> None:
+    aclose = getattr(analyzer, "aclose", None)
+    if callable(aclose):
+        await aclose()
+        return
+    close = getattr(analyzer, "close", None)
+    if callable(close):
+        close()
+
+
+def _get_openai_analyzer() -> OpenAIAnalyzer:
+    analyzer = AIAnalyzerFactory.get_analyzer("openai")
+    if not isinstance(analyzer, OpenAIAnalyzer):
+        raise RuntimeError("OpenAI analyzer initialization failed.")
+    return analyzer
+
+
+async def _generate_market_news_query_embedding(query_text: str) -> list[float] | None:
+    provider_builders = (
+        ("gemini", _get_gemini_analyzer),
+        ("openai", _get_openai_analyzer),
+    )
+    for provider, builder in provider_builders:
+        analyzer: Any | None = None
+        try:
+            analyzer = builder()
+            return await analyzer.generate_embedding(
+                query_text,
+                task_type="RETRIEVAL_QUERY",
+            )
+        except AIProviderRateLimitError as exc:
+            logger.warning("%s query embedding rate limited. provider fallback is attempted. %s", provider, exc)
+        except Exception as exc:
+            logger.debug("%s query embedding failed. provider fallback is attempted. %s", provider, exc)
+        finally:
+            if analyzer is not None:
+                await _close_query_embedding_analyzer(analyzer)
+
+    return None
 
 
 def _get_gemini_analyzer() -> GeminiAnalyzer:

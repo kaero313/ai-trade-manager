@@ -44,6 +44,7 @@ def test_market_news_index_uses_opensearch_3_lucene_knn() -> None:
     assert properties["is_chunked"]["type"] == "boolean"
     assert properties["embedding_status"]["type"] == "keyword"
     assert properties["embedding_error"]["type"] == "keyword"
+    assert properties["embedding_provider"]["type"] == "keyword"
     assert properties["embedding_model"]["type"] == "keyword"
     assert properties["embedding_generated_at"]["type"] == "date"
 
@@ -63,6 +64,10 @@ def test_ingestion_runs_index_tracks_source_health() -> None:
     assert properties["embedding_missing"]["type"] == "integer"
     assert properties["embedding_failed"]["type"] == "integer"
     assert properties["embedding_error"]["type"] == "keyword"
+    assert properties["embedding_primary_provider"]["type"] == "keyword"
+    assert properties["embedding_fallback_provider"]["type"] == "keyword"
+    assert properties["embedding_fallback_used"]["type"] == "boolean"
+    assert properties["embedding_provider_error_breakdown"]["type"] == "object"
     assert properties["backfill_requested"]["type"] == "integer"
     assert properties["backfill_succeeded"]["type"] == "integer"
     assert properties["backfill_missing"]["type"] == "integer"
@@ -480,6 +485,7 @@ def test_chunk_serialization_includes_chunk_metadata() -> None:
         rag_ingestion.ChunkEmbeddingResult(
             status="embedded",
             embedding=[0.1] * EMBEDDING_DIMENSION,
+            provider="gemini",
             model="gemini-embedding-001",
             generated_at=generated_at,
         ),
@@ -496,6 +502,7 @@ def test_chunk_serialization_includes_chunk_metadata() -> None:
     assert payload["is_chunked"] is False
     assert payload["embedding_status"] == "embedded"
     assert payload["embedding_error"] is None
+    assert payload["embedding_provider"] == "gemini"
     assert payload["embedding_model"] == "gemini-embedding-001"
     assert payload["embedding_generated_at"] == generated_at.isoformat()
     assert len(payload["embedding"]) == EMBEDDING_DIMENSION
@@ -503,6 +510,7 @@ def test_chunk_serialization_includes_chunk_metadata() -> None:
 
 def test_generate_embeddings_returns_empty_without_gemini_key(monkeypatch) -> None:
     monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", None)
+    monkeypatch.setattr(rag_ingestion.settings, "OPENAI_API_KEY", None)
     document = rag_ingestion.RawNewsDocument(
         title="실제 시장 뉴스",
         content="임베딩 키가 없어도 문서 저장은 가능해야 합니다.",
@@ -521,6 +529,11 @@ def test_generate_embeddings_returns_empty_without_gemini_key(monkeypatch) -> No
     assert result.missing == 1
     assert result.failed == 1
     assert result.error == "credentials_missing"
+    assert result.fallback_used is True
+    assert result.provider_error_breakdown == {
+        "gemini:credentials_missing": 1,
+        "openai:credentials_missing": 1,
+    }
     assert chunk_state.status == "missing"
     assert chunk_state.error == "credentials_missing"
 
@@ -584,18 +597,58 @@ def test_generate_embeddings_batches_gemini_requests(monkeypatch) -> None:
                 link=f"https://example.com/news/embedding-batch/{index}",
             )
         )[0]
-        for index in range(rag_ingestion.GEMINI_EMBEDDING_BATCH_SIZE + 5)
+        for index in range(rag_ingestion.EMBEDDING_REQUEST_LIMIT_PER_RUN)
     ]
 
     result = asyncio.run(rag_ingestion._generate_embeddings(chunks))
 
-    assert batch_sizes == [rag_ingestion.GEMINI_EMBEDDING_BATCH_SIZE, 5]
-    assert result.succeeded == rag_ingestion.GEMINI_EMBEDDING_BATCH_SIZE + 5
+    assert batch_sizes == [rag_ingestion.GEMINI_EMBEDDING_BATCH_SIZE]
+    assert result.succeeded == rag_ingestion.EMBEDDING_REQUEST_LIMIT_PER_RUN
     assert result.missing == 0
+
+
+def test_generate_embeddings_marks_chunks_over_run_limit(monkeypatch) -> None:
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(rag_ingestion.settings, "OPENAI_API_KEY", None)
+    requested_batches: list[int] = []
+
+    class FakeAnalyzer:
+        async def generate_embeddings(self, texts: list[str], *, task_type: str) -> list[list[float]]:
+            requested_batches.append(len(texts))
+            return [[0.1] * EMBEDDING_DIMENSION for _ in texts]
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", FakeAnalyzer)
+    chunks = [
+        rag_ingestion._build_document_chunks(
+            rag_ingestion.RawNewsDocument(
+                title=f"Embedding limit test {index}",
+                content="Embedding content",
+                published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+                source="rss:tokenpost.kr",
+                link=f"https://example.com/news/embedding-limit/{index}",
+            )
+        )[0]
+        for index in range(rag_ingestion.EMBEDDING_REQUEST_LIMIT_PER_RUN + 2)
+    ]
+
+    result = asyncio.run(rag_ingestion._generate_embeddings(chunks))
+    limited_state = result.chunks[rag_ingestion._build_chunk_id(chunks[-1])]
+
+    assert requested_batches == [rag_ingestion.EMBEDDING_REQUEST_LIMIT_PER_RUN]
+    assert result.requested == rag_ingestion.EMBEDDING_REQUEST_LIMIT_PER_RUN
+    assert result.succeeded == rag_ingestion.EMBEDDING_REQUEST_LIMIT_PER_RUN
+    assert result.missing == 2
+    assert result.error == "run_limit_exceeded"
+    assert limited_state.status == "missing"
+    assert limited_state.error == "run_limit_exceeded"
 
 
 def test_generate_embeddings_records_rate_limited_chunks(monkeypatch) -> None:
     monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(rag_ingestion.settings, "OPENAI_API_KEY", None)
 
     class FakeAnalyzer:
         async def generate_embeddings(self, texts: list[str], *, task_type: str) -> list[list[float]]:
@@ -621,9 +674,58 @@ def test_generate_embeddings_records_rate_limited_chunks(monkeypatch) -> None:
     assert result.succeeded == 0
     assert result.missing == 1
     assert result.failed == 1
-    assert result.error == "rate_limited"
-    assert chunk_state.status == "rate_limited"
-    assert chunk_state.error == "rate_limited"
+    assert result.error == "credentials_missing"
+    assert result.fallback_used is True
+    assert result.provider_error_breakdown == {
+        "gemini:rate_limited": 1,
+        "openai:credentials_missing": 1,
+    }
+    assert chunk_state.status == "missing"
+    assert chunk_state.error == "credentials_missing"
+
+
+def test_generate_embeddings_uses_openai_fallback_when_gemini_rate_limited(monkeypatch) -> None:
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(rag_ingestion.settings, "OPENAI_API_KEY", "openai-key")
+
+    class FakeGeminiAnalyzer:
+        async def generate_embeddings(self, texts: list[str], *, task_type: str) -> list[list[float]]:
+            raise rag_ingestion.AIProviderRateLimitError("cooldown")
+
+        def close(self) -> None:
+            pass
+
+    class FakeOpenAIAnalyzer:
+        async def generate_embeddings(self, texts: list[str], *, task_type: str) -> list[list[float]]:
+            assert task_type == "RETRIEVAL_DOCUMENT"
+            return [[0.2] * EMBEDDING_DIMENSION for _ in texts]
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", FakeGeminiAnalyzer)
+    monkeypatch.setattr(rag_ingestion, "OpenAIAnalyzer", FakeOpenAIAnalyzer)
+    document = rag_ingestion.RawNewsDocument(
+        title="Embedding fallback test",
+        content="Embedding content",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:tokenpost.kr",
+        link="https://example.com/news/embedding-fallback",
+    )
+    chunks = rag_ingestion._build_document_chunks(document)
+
+    result = asyncio.run(rag_ingestion._generate_embeddings(chunks))
+    chunk_state = result.chunks[rag_ingestion._build_chunk_id(chunks[0])]
+
+    assert result.succeeded == 1
+    assert result.missing == 0
+    assert result.error is None
+    assert result.fallback_used is True
+    assert result.provider_error_breakdown == {"gemini:rate_limited": 1}
+    assert chunk_state.status == "embedded"
+    assert chunk_state.provider == "openai"
+    assert chunk_state.model == "text-embedding-3-small"
+    assert chunk_state.embedding == [0.2] * EMBEDDING_DIMENSION
 
 
 def test_generate_embeddings_records_invalid_dimension_per_chunk(monkeypatch) -> None:
@@ -785,6 +887,7 @@ def test_embedding_backfill_update_doc_contains_only_embedding_metadata() -> Non
         rag_ingestion.ChunkEmbeddingResult(
             status="embedded",
             embedding=[0.1] * EMBEDDING_DIMENSION,
+            provider="gemini",
             model="gemini-embedding-001",
             generated_at=generated_at,
         )
@@ -794,11 +897,13 @@ def test_embedding_backfill_update_doc_contains_only_embedding_metadata() -> Non
         "embedding",
         "embedding_status",
         "embedding_error",
+        "embedding_provider",
         "embedding_model",
         "embedding_generated_at",
     }
     assert payload["embedding_status"] == "embedded"
     assert payload["embedding_error"] is None
+    assert payload["embedding_provider"] == "gemini"
     assert payload["embedding_model"] == "gemini-embedding-001"
     assert payload["embedding_generated_at"] == generated_at.isoformat()
     assert len(payload["embedding"]) == EMBEDDING_DIMENSION
@@ -810,6 +915,21 @@ def test_missing_embedding_backfill_skips_when_embedding_rate_limited() -> None:
     assert stats["backfill_requested"] == 0
     assert stats["backfill_succeeded"] == 0
     assert stats["backfill_skipped_reason"] == "rate_limited"
+
+
+def test_missing_embedding_backfill_skip_reason_uses_provider_errors() -> None:
+    embeddings = rag_ingestion.EmbeddingGenerationResult(
+        requested=100,
+        missing=103,
+        failed=103,
+        error="run_limit_exceeded",
+        provider_error_breakdown={
+            "gemini:rate_limited": 100,
+            "openai:credentials_missing": 100,
+        },
+    )
+
+    assert rag_ingestion._backfill_skip_reason(embeddings) == "rate_limited"
 
 
 def test_missing_embedding_backfill_updates_successful_embeddings(monkeypatch) -> None:
@@ -881,6 +1001,7 @@ def test_missing_embedding_backfill_updates_successful_embeddings(monkeypatch) -
     assert actions[0]["_id"] == "parent-a:0"
     assert actions[0]["doc"]["embedding_status"] == "embedded"
     assert actions[0]["doc"]["embedding_error"] is None
+    assert actions[0]["doc"]["embedding_provider"] == "gemini"
     assert len(actions[0]["doc"]["embedding"]) == EMBEDDING_DIMENSION
 
 
@@ -948,6 +1069,13 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
                                     "embedding_missing": 2,
                                     "embedding_failed": 2,
                                     "embedding_error": "rate_limited",
+                                    "embedding_primary_provider": "gemini",
+                                    "embedding_fallback_provider": "openai",
+                                    "embedding_fallback_used": True,
+                                    "embedding_provider_error_breakdown": {
+                                        "gemini:rate_limited": 2,
+                                        "openai:credentials_missing": 2,
+                                    },
                                     "backfill_requested": 0,
                                     "backfill_succeeded": 0,
                                     "backfill_missing": 0,
@@ -1038,6 +1166,12 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
                             {"key": "rate_limited", "doc_count": 2},
                         ]
                     },
+                    "embedding_provider_breakdown": {
+                        "buckets": [
+                            {"key": "gemini", "doc_count": 1},
+                            {"key": "openai", "doc_count": 1},
+                        ]
+                    },
                     "crawl_error_by_source": {
                         "buckets": [
                             {
@@ -1101,6 +1235,10 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
         "rate_limited": 2,
     }
     assert response.embedding_error_breakdown == {"rate_limited": 2}
+    assert response.embedding_provider_breakdown == {
+        "gemini": 1,
+        "openai": 1,
+    }
     assert response.crawl_error_by_source == {
         "rss:tokenpost.kr": {"short_body": 2},
         "rss:news.google.com": {"google_news_aggregator": 1},
@@ -1108,6 +1246,11 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
     assert response.latest_ingestion is not None
     assert response.latest_ingestion["run_id"] == "run-1"
     assert response.latest_ingestion["embedding_error"] == "rate_limited"
+    assert response.latest_ingestion["embedding_fallback_used"] is True
+    assert response.latest_ingestion["embedding_provider_error_breakdown"] == {
+        "gemini:rate_limited": 2,
+        "openai:credentials_missing": 2,
+    }
     assert response.latest_ingestion["backfill_skipped_reason"] == "rate_limited"
     assert response.latest_ingestion["source_health"][0]["source"] == "rss:tokenpost.kr"
 
@@ -1224,6 +1367,36 @@ def test_hybrid_news_merge_deduplicates_parent_and_excludes_fallback() -> None:
     assert parent_ids.count("parent-a") == 1
     assert "fallback" not in parent_ids
     assert all("hybrid_score" in item for item in merged)
+
+
+def test_market_news_query_embedding_uses_openai_after_gemini_rate_limit(monkeypatch) -> None:
+    closed: list[str] = []
+
+    class FakeGeminiAnalyzer:
+        async def generate_embedding(self, text: str, *, task_type: str) -> list[float]:
+            assert text == "KRW-BTC Bitcoin"
+            assert task_type == "RETRIEVAL_QUERY"
+            raise ai_analyst.AIProviderRateLimitError("cooldown")
+
+        def close(self) -> None:
+            closed.append("gemini")
+
+    class FakeOpenAIAnalyzer:
+        async def generate_embedding(self, text: str, *, task_type: str) -> list[float]:
+            assert text == "KRW-BTC Bitcoin"
+            assert task_type == "RETRIEVAL_QUERY"
+            return [0.3] * EMBEDDING_DIMENSION
+
+        def close(self) -> None:
+            closed.append("openai")
+
+    monkeypatch.setattr(ai_analyst, "_get_gemini_analyzer", lambda: FakeGeminiAnalyzer())
+    monkeypatch.setattr(ai_analyst, "_get_openai_analyzer", lambda: FakeOpenAIAnalyzer())
+
+    embedding = asyncio.run(ai_analyst._generate_market_news_query_embedding("KRW-BTC Bitcoin"))
+
+    assert embedding == [0.3] * EMBEDDING_DIMENSION
+    assert closed == ["gemini", "openai"]
 
 
 def test_news_sentiment_provider_priority_supports_openai_fallback() -> None:

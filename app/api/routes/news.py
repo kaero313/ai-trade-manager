@@ -62,6 +62,7 @@ class RagStatusResponse(BaseModel):
     missing_embedding_documents: int = Field(...)
     embedding_status_breakdown: dict[str, int] = Field(default_factory=dict)
     embedding_error_breakdown: dict[str, int] = Field(default_factory=dict)
+    embedding_provider_breakdown: dict[str, int] = Field(default_factory=dict)
     latest_published_at: str | None = Field(default=None)
     source_breakdown: dict[str, int] = Field(default_factory=dict)
     content_source_breakdown: dict[str, int] = Field(default_factory=dict)
@@ -177,6 +178,7 @@ def _build_rag_status_query() -> dict[str, Any]:
             "crawl_error_breakdown": {"terms": {"field": "crawl_error", "size": 20}},
             "embedding_status_breakdown": {"terms": {"field": "embedding_status", "size": 10}},
             "embedding_error_breakdown": {"terms": {"field": "embedding_error", "size": 20}},
+            "embedding_provider_breakdown": {"terms": {"field": "embedding_provider", "size": 10}},
             "crawl_error_by_source": {
                 "terms": {"field": "source", "size": 20},
                 "aggs": {
@@ -367,6 +369,7 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
                 missing_embedding_documents=0,
                 embedding_status_breakdown={},
                 embedding_error_breakdown={},
+                embedding_provider_breakdown={},
                 source_breakdown={},
                 content_source_breakdown={},
                 crawl_status_breakdown={},
@@ -398,6 +401,7 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
             missing_embedding_documents=0,
             embedding_status_breakdown={},
             embedding_error_breakdown={},
+            embedding_provider_breakdown={},
             source_breakdown={},
             content_source_breakdown={},
             crawl_status_breakdown={},
@@ -486,6 +490,10 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
         embedding_error_breakdown=_extract_terms_breakdown(
             aggregations,
             "embedding_error_breakdown",
+        ),
+        embedding_provider_breakdown=_extract_terms_breakdown(
+            aggregations,
+            "embedding_provider_breakdown",
         ),
         crawl_error_by_source=_extract_nested_terms_breakdown(
             aggregations,

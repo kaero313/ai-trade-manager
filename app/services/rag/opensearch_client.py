@@ -37,6 +37,7 @@ MARKET_NEWS_INDEX_BODY = {
             "is_chunked": {"type": "boolean"},
             "embedding_status": {"type": "keyword"},
             "embedding_error": {"type": "keyword"},
+            "embedding_provider": {"type": "keyword"},
             "embedding_model": {"type": "keyword"},
             "embedding_generated_at": {"type": "date"},
             "embedding": {
@@ -75,6 +76,10 @@ INGESTION_RUNS_INDEX_BODY = {
             "embedding_missing": {"type": "integer"},
             "embedding_failed": {"type": "integer"},
             "embedding_error": {"type": "keyword"},
+            "embedding_primary_provider": {"type": "keyword"},
+            "embedding_fallback_provider": {"type": "keyword"},
+            "embedding_fallback_used": {"type": "boolean"},
+            "embedding_provider_error_breakdown": {"type": "object"},
             "backfill_requested": {"type": "integer"},
             "backfill_succeeded": {"type": "integer"},
             "backfill_missing": {"type": "integer"},
@@ -115,6 +120,7 @@ EXPECTED_CHUNK_FIELD_TYPES = {
     "is_chunked": "boolean",
     "embedding_status": "keyword",
     "embedding_error": "keyword",
+    "embedding_provider": "keyword",
     "embedding_model": "keyword",
     "embedding_generated_at": "date",
 }
