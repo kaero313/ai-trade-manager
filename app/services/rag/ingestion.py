@@ -46,6 +46,8 @@ EMBEDDING_MODEL = GEMINI_EMBEDDING_MODEL
 EMBEDDING_BATCH_SIZE = 100
 GEMINI_EMBEDDING_BATCH_SIZE = EMBEDDING_BATCH_SIZE
 EMBEDDING_REQUEST_LIMIT_PER_RUN = 100
+OPENAI_EMBEDDING_COST_USD_PER_1M_TOKENS = 0.02
+EMBEDDING_COST_ESTIMATE_METHOD = "ceil_chars_div_4_openai_success_tokens_only"
 MISSING_EMBEDDING_BACKFILL_LIMIT = 50
 EMBEDDING_STATUS_EMBEDDED = "embedded"
 EMBEDDING_STATUS_MISSING = "missing"
@@ -125,6 +127,8 @@ class EmbeddingGenerationResult:
     fallback_provider: str | None = EMBEDDING_PROVIDER_OPENAI
     fallback_used: bool = False
     provider_error_breakdown: dict[str, int] = field(default_factory=dict)
+    provider_stats: dict[str, dict[str, Any]] = field(default_factory=dict)
+    cost_summary: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -943,6 +947,8 @@ def _finalize_embedding_result(
     fallback_provider: str | None = EMBEDDING_PROVIDER_OPENAI,
     fallback_used: bool = False,
     provider_error_breakdown: dict[str, int] | None = None,
+    provider_stats: dict[str, dict[str, Any]] | None = None,
+    cost_summary: dict[str, Any] | None = None,
 ) -> EmbeddingGenerationResult:
     succeeded = sum(1 for result in chunk_results.values() if result.status == EMBEDDING_STATUS_EMBEDDED)
     missing = sum(1 for result in chunk_results.values() if result.status != EMBEDDING_STATUS_EMBEDDED)
@@ -958,6 +964,8 @@ def _finalize_embedding_result(
         fallback_provider=fallback_provider,
         fallback_used=fallback_used,
         provider_error_breakdown=dict(provider_error_breakdown or {}),
+        provider_stats=dict(provider_stats or {}),
+        cost_summary=dict(cost_summary or {}),
     )
 
 
@@ -1004,6 +1012,110 @@ def _embedding_model_for_provider(provider: str) -> str:
     if provider == EMBEDDING_PROVIDER_OPENAI:
         return OPENAI_EMBEDDING_MODEL
     return GEMINI_EMBEDDING_MODEL
+
+
+def _estimate_embedding_tokens(text: str) -> int:
+    normalized = str(text or "")
+    if not normalized:
+        return 0
+    return max(1, (len(normalized) + 3) // 4)
+
+
+def _build_embedding_text(chunk: RawNewsChunk) -> str:
+    return f"{chunk.title}\n\n{chunk.content}"
+
+
+def _initial_provider_stat(provider: str, model: str) -> dict[str, Any]:
+    return {
+        "provider": provider,
+        "model": model,
+        "chunks_attempted": 0,
+        "chunks_succeeded": 0,
+        "chunks_missing": 0,
+        "chunks_failed": 0,
+        "batches_attempted": 0,
+        "fallback_used": False,
+        "error_breakdown": {},
+        "estimated_tokens_attempted": 0,
+        "estimated_tokens_succeeded": 0,
+    }
+
+
+def _get_provider_stat(
+    provider_stats: dict[str, dict[str, Any]],
+    provider: str,
+    model: str | None = None,
+) -> dict[str, Any]:
+    stat = provider_stats.get(provider)
+    if not isinstance(stat, dict):
+        stat = _initial_provider_stat(provider, model or _embedding_model_for_provider(provider))
+        provider_stats[provider] = stat
+    elif model and not stat.get("model"):
+        stat["model"] = model
+    return stat
+
+
+def _record_provider_attempt(
+    provider_stats: dict[str, dict[str, Any]],
+    *,
+    provider: str,
+    model: str,
+    token_estimates: list[int],
+) -> None:
+    stat = _get_provider_stat(provider_stats, provider, model)
+    stat["chunks_attempted"] += len(token_estimates)
+    stat["batches_attempted"] += 1
+    stat["estimated_tokens_attempted"] += sum(token_estimates)
+
+
+def _record_provider_error(
+    provider_stats: dict[str, dict[str, Any]],
+    provider_errors: Counter[str],
+    *,
+    provider: str,
+    model: str,
+    error: str,
+    count: int,
+    failed: bool,
+) -> None:
+    _record_embedding_provider_error(
+        provider_errors,
+        provider=provider,
+        error=error,
+        count=count,
+    )
+    stat = _get_provider_stat(provider_stats, provider, model)
+    if failed:
+        stat["chunks_failed"] += count
+    else:
+        stat["chunks_missing"] += count
+    error_breakdown = stat["error_breakdown"]
+    error_breakdown[error] = int(error_breakdown.get(error, 0)) + count
+
+
+def _record_provider_success(
+    provider_stats: dict[str, dict[str, Any]],
+    *,
+    provider: str,
+    model: str,
+    token_count: int,
+) -> None:
+    stat = _get_provider_stat(provider_stats, provider, model)
+    stat["chunks_succeeded"] += 1
+    stat["estimated_tokens_succeeded"] += token_count
+
+
+def _build_embedding_cost_summary(provider_stats: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    total_tokens = sum(int(stat.get("estimated_tokens_attempted") or 0) for stat in provider_stats.values())
+    openai_tokens = int(
+        provider_stats.get(EMBEDDING_PROVIDER_OPENAI, {}).get("estimated_tokens_succeeded") or 0
+    )
+    openai_cost = openai_tokens * OPENAI_EMBEDDING_COST_USD_PER_1M_TOKENS / 1_000_000
+    return {
+        "estimated_openai_embedding_cost_usd": round(openai_cost, 8),
+        "estimated_total_tokens": total_tokens,
+        "cost_estimate_method": EMBEDDING_COST_ESTIMATE_METHOD,
+    }
 
 
 async def _close_embedding_analyzer(analyzer: Any) -> None:
@@ -1072,6 +1184,7 @@ async def _generate_embeddings(chunks: list[RawNewsChunk]) -> EmbeddingGeneratio
         for chunk in chunks
     }
     provider_errors: Counter[str] = Counter()
+    provider_stats: dict[str, dict[str, Any]] = {}
     representative_error: str | None = None
     fallback_used = False
 
@@ -1085,10 +1198,18 @@ async def _generate_embeddings(chunks: list[RawNewsChunk]) -> EmbeddingGeneratio
                 error=EMBEDDING_ERROR_RUN_LIMIT_EXCEEDED,
             )
 
-    texts = [f"{chunk.title}\n\n{chunk.content}" for chunk in attempted_chunks]
+    texts = [_build_embedding_text(chunk) for chunk in attempted_chunks]
+    token_estimates = [_estimate_embedding_tokens(text) for text in texts]
     for start_index in range(0, len(texts), EMBEDDING_BATCH_SIZE):
         batch = texts[start_index : start_index + EMBEDDING_BATCH_SIZE]
+        batch_token_estimates = token_estimates[start_index : start_index + len(batch)]
         batch_chunks = attempted_chunks[start_index : start_index + len(batch)]
+        _record_provider_attempt(
+            provider_stats,
+            provider=EMBEDDING_PROVIDER_GEMINI,
+            model=GEMINI_EMBEDDING_MODEL,
+            token_estimates=batch_token_estimates,
+        )
         attempt = await _attempt_embedding_provider(
             EMBEDDING_PROVIDER_GEMINI,
             batch,
@@ -1099,24 +1220,39 @@ async def _generate_embeddings(chunks: list[RawNewsChunk]) -> EmbeddingGeneratio
             EMBEDDING_ERROR_RATE_LIMITED,
             EMBEDDING_ERROR_GENERATION_FAILED,
         }:
-            _record_embedding_provider_error(
+            _record_provider_error(
+                provider_stats,
                 provider_errors,
                 provider=EMBEDDING_PROVIDER_GEMINI,
+                model=attempt.model,
                 error=attempt.error,
                 count=len(batch_chunks),
+                failed=attempt.error == EMBEDDING_ERROR_GENERATION_FAILED,
             )
             fallback_used = True
+            _get_provider_stat(provider_stats, EMBEDDING_PROVIDER_OPENAI, OPENAI_EMBEDDING_MODEL)[
+                "fallback_used"
+            ] = True
+            _record_provider_attempt(
+                provider_stats,
+                provider=EMBEDDING_PROVIDER_OPENAI,
+                model=OPENAI_EMBEDDING_MODEL,
+                token_estimates=batch_token_estimates,
+            )
             fallback_attempt = await _attempt_embedding_provider(
                 EMBEDDING_PROVIDER_OPENAI,
                 batch,
                 task_type="RETRIEVAL_DOCUMENT",
             )
             if fallback_attempt.error is not None:
-                _record_embedding_provider_error(
+                _record_provider_error(
+                    provider_stats,
                     provider_errors,
                     provider=EMBEDDING_PROVIDER_OPENAI,
+                    model=fallback_attempt.model,
                     error=fallback_attempt.error,
                     count=len(batch_chunks),
+                    failed=fallback_attempt.error == EMBEDDING_ERROR_GENERATION_FAILED,
                 )
                 representative_error = representative_error or fallback_attempt.error
                 status = _fallback_embedding_status(fallback_attempt.error)
@@ -1128,11 +1264,14 @@ async def _generate_embeddings(chunks: list[RawNewsChunk]) -> EmbeddingGeneratio
                 continue
             attempt = fallback_attempt
         elif attempt.error is not None:
-            _record_embedding_provider_error(
+            _record_provider_error(
+                provider_stats,
                 provider_errors,
                 provider=attempt.provider,
+                model=attempt.model,
                 error=attempt.error,
                 count=len(batch_chunks),
+                failed=attempt.error == EMBEDDING_ERROR_GENERATION_FAILED,
             )
             representative_error = representative_error or attempt.error
             status = _fallback_embedding_status(attempt.error)
@@ -1146,11 +1285,14 @@ async def _generate_embeddings(chunks: list[RawNewsChunk]) -> EmbeddingGeneratio
         embedding_values = attempt.embeddings or []
         if len(embedding_values) != len(batch_chunks):
             representative_error = representative_error or EMBEDDING_ERROR_GENERATION_FAILED
-            _record_embedding_provider_error(
+            _record_provider_error(
+                provider_stats,
                 provider_errors,
                 provider=attempt.provider,
+                model=attempt.model,
                 error=EMBEDDING_ERROR_GENERATION_FAILED,
                 count=len(batch_chunks),
+                failed=True,
             )
             for chunk in batch_chunks:
                 chunk_results[_build_chunk_id(chunk)] = ChunkEmbeddingResult(
@@ -1165,17 +1307,26 @@ async def _generate_embeddings(chunks: list[RawNewsChunk]) -> EmbeddingGeneratio
             chunk_id = _build_chunk_id(chunk)
             if len(embedding) != EMBEDDING_DIMENSION:
                 representative_error = representative_error or EMBEDDING_ERROR_INVALID_DIMENSION
-                _record_embedding_provider_error(
+                _record_provider_error(
+                    provider_stats,
                     provider_errors,
                     provider=attempt.provider,
+                    model=attempt.model,
                     error=EMBEDDING_ERROR_INVALID_DIMENSION,
                     count=1,
+                    failed=True,
                 )
                 chunk_results[chunk_id] = ChunkEmbeddingResult(
                     status=EMBEDDING_STATUS_FAILED,
                     error=EMBEDDING_ERROR_INVALID_DIMENSION,
                 )
                 continue
+            _record_provider_success(
+                provider_stats,
+                provider=attempt.provider,
+                model=attempt.model,
+                token_count=batch_token_estimates[index],
+            )
             chunk_results[chunk_id] = ChunkEmbeddingResult(
                 status=EMBEDDING_STATUS_EMBEDDED,
                 embedding=embedding,
@@ -1190,6 +1341,8 @@ async def _generate_embeddings(chunks: list[RawNewsChunk]) -> EmbeddingGeneratio
         error=representative_error,
         fallback_used=fallback_used,
         provider_error_breakdown=dict(provider_errors),
+        provider_stats=provider_stats,
+        cost_summary=_build_embedding_cost_summary(provider_stats),
     )
 
 
@@ -1599,6 +1752,8 @@ async def _store_ingestion_run(
         "embedding_fallback_provider": stats["embedding_fallback_provider"],
         "embedding_fallback_used": stats["embedding_fallback_used"],
         "embedding_provider_error_breakdown": stats["embedding_provider_error_breakdown"],
+        "embedding_provider_stats": stats["embedding_provider_stats"],
+        "embedding_cost_summary": stats["embedding_cost_summary"],
         "backfill_requested": stats["backfill_requested"],
         "backfill_succeeded": stats["backfill_succeeded"],
         "backfill_missing": stats["backfill_missing"],
@@ -1641,6 +1796,8 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
         "embedding_fallback_provider": EMBEDDING_PROVIDER_OPENAI,
         "embedding_fallback_used": False,
         "embedding_provider_error_breakdown": {},
+        "embedding_provider_stats": {},
+        "embedding_cost_summary": _build_embedding_cost_summary({}),
         "backfill_requested": 0,
         "backfill_succeeded": 0,
         "backfill_missing": 0,
@@ -1693,6 +1850,8 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
         stats["embedding_fallback_provider"] = embeddings.fallback_provider
         stats["embedding_fallback_used"] = embeddings.fallback_used
         stats["embedding_provider_error_breakdown"] = embeddings.provider_error_breakdown
+        stats["embedding_provider_stats"] = embeddings.provider_stats
+        stats["embedding_cost_summary"] = embeddings.cost_summary
 
         indexed_count, bulk_errors = await _bulk_upsert_chunks(chunks, embeddings)
         stats["indexed"] = indexed_count

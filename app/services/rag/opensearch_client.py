@@ -80,6 +80,8 @@ INGESTION_RUNS_INDEX_BODY = {
             "embedding_fallback_provider": {"type": "keyword"},
             "embedding_fallback_used": {"type": "boolean"},
             "embedding_provider_error_breakdown": {"type": "object"},
+            "embedding_provider_stats": {"type": "object"},
+            "embedding_cost_summary": {"type": "object"},
             "backfill_requested": {"type": "integer"},
             "backfill_succeeded": {"type": "integer"},
             "backfill_missing": {"type": "integer"},

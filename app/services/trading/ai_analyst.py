@@ -908,10 +908,12 @@ async def _generate_market_news_query_embedding(query_text: str) -> list[float] 
         analyzer: Any | None = None
         try:
             analyzer = builder()
-            return await analyzer.generate_embedding(
+            embedding = await analyzer.generate_embedding(
                 query_text,
                 task_type="RETRIEVAL_QUERY",
             )
+            logger.info("RAG query embedding provider selected: provider=%s", provider)
+            return embedding
         except AIProviderRateLimitError as exc:
             logger.warning("%s query embedding rate limited. provider fallback is attempted. %s", provider, exc)
         except Exception as exc:
@@ -920,6 +922,7 @@ async def _generate_market_news_query_embedding(query_text: str) -> list[float] 
             if analyzer is not None:
                 await _close_query_embedding_analyzer(analyzer)
 
+    logger.info("RAG query embedding unavailable. BM25 fallback will be used.")
     return None
 
 

@@ -68,6 +68,8 @@ def test_ingestion_runs_index_tracks_source_health() -> None:
     assert properties["embedding_fallback_provider"]["type"] == "keyword"
     assert properties["embedding_fallback_used"]["type"] == "boolean"
     assert properties["embedding_provider_error_breakdown"]["type"] == "object"
+    assert properties["embedding_provider_stats"]["type"] == "object"
+    assert properties["embedding_cost_summary"]["type"] == "object"
     assert properties["backfill_requested"]["type"] == "integer"
     assert properties["backfill_succeeded"]["type"] == "integer"
     assert properties["backfill_missing"]["type"] == "integer"
@@ -508,6 +510,29 @@ def test_chunk_serialization_includes_chunk_metadata() -> None:
     assert len(payload["embedding"]) == EMBEDDING_DIMENSION
 
 
+def test_embedding_token_and_cost_estimate_is_conservative() -> None:
+    assert rag_ingestion._estimate_embedding_tokens("") == 0
+    assert rag_ingestion._estimate_embedding_tokens("abcd") == 1
+    assert rag_ingestion._estimate_embedding_tokens("abcde") == 2
+
+    summary = rag_ingestion._build_embedding_cost_summary(
+        {
+            "gemini": {
+                "estimated_tokens_attempted": 100,
+                "estimated_tokens_succeeded": 0,
+            },
+            "openai": {
+                "estimated_tokens_attempted": 100,
+                "estimated_tokens_succeeded": 50,
+            },
+        }
+    )
+
+    assert summary["estimated_total_tokens"] == 200
+    assert summary["estimated_openai_embedding_cost_usd"] == 0.000001
+    assert summary["cost_estimate_method"] == "ceil_chars_div_4_openai_success_tokens_only"
+
+
 def test_generate_embeddings_returns_empty_without_gemini_key(monkeypatch) -> None:
     monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", None)
     monkeypatch.setattr(rag_ingestion.settings, "OPENAI_API_KEY", None)
@@ -533,6 +558,21 @@ def test_generate_embeddings_returns_empty_without_gemini_key(monkeypatch) -> No
     assert result.provider_error_breakdown == {
         "gemini:credentials_missing": 1,
         "openai:credentials_missing": 1,
+    }
+    token_count = rag_ingestion._estimate_embedding_tokens(rag_ingestion._build_embedding_text(chunks[0]))
+    assert result.provider_stats["gemini"]["chunks_attempted"] == 1
+    assert result.provider_stats["gemini"]["chunks_missing"] == 1
+    assert result.provider_stats["gemini"]["error_breakdown"] == {"credentials_missing": 1}
+    assert result.provider_stats["gemini"]["estimated_tokens_attempted"] == token_count
+    assert result.provider_stats["openai"]["chunks_attempted"] == 1
+    assert result.provider_stats["openai"]["chunks_missing"] == 1
+    assert result.provider_stats["openai"]["fallback_used"] is True
+    assert result.provider_stats["openai"]["error_breakdown"] == {"credentials_missing": 1}
+    assert result.provider_stats["openai"]["estimated_tokens_attempted"] == token_count
+    assert result.cost_summary == {
+        "estimated_openai_embedding_cost_usd": 0.0,
+        "estimated_total_tokens": token_count * 2,
+        "cost_estimate_method": "ceil_chars_div_4_openai_success_tokens_only",
     }
     assert chunk_state.status == "missing"
     assert chunk_state.error == "credentials_missing"
@@ -644,6 +684,9 @@ def test_generate_embeddings_marks_chunks_over_run_limit(monkeypatch) -> None:
     assert result.error == "run_limit_exceeded"
     assert limited_state.status == "missing"
     assert limited_state.error == "run_limit_exceeded"
+    assert result.provider_stats["gemini"]["chunks_attempted"] == rag_ingestion.EMBEDDING_REQUEST_LIMIT_PER_RUN
+    assert result.provider_stats["gemini"]["chunks_succeeded"] == rag_ingestion.EMBEDDING_REQUEST_LIMIT_PER_RUN
+    assert result.cost_summary["estimated_openai_embedding_cost_usd"] == 0.0
 
 
 def test_generate_embeddings_records_rate_limited_chunks(monkeypatch) -> None:
@@ -680,6 +723,13 @@ def test_generate_embeddings_records_rate_limited_chunks(monkeypatch) -> None:
         "gemini:rate_limited": 1,
         "openai:credentials_missing": 1,
     }
+    assert result.provider_stats["gemini"]["chunks_attempted"] == 1
+    assert result.provider_stats["gemini"]["chunks_missing"] == 1
+    assert result.provider_stats["gemini"]["error_breakdown"] == {"rate_limited": 1}
+    assert result.provider_stats["openai"]["chunks_attempted"] == 1
+    assert result.provider_stats["openai"]["chunks_missing"] == 1
+    assert result.provider_stats["openai"]["fallback_used"] is True
+    assert result.provider_stats["openai"]["error_breakdown"] == {"credentials_missing": 1}
     assert chunk_state.status == "missing"
     assert chunk_state.error == "credentials_missing"
 
@@ -722,6 +772,14 @@ def test_generate_embeddings_uses_openai_fallback_when_gemini_rate_limited(monke
     assert result.error is None
     assert result.fallback_used is True
     assert result.provider_error_breakdown == {"gemini:rate_limited": 1}
+    assert result.provider_stats["gemini"]["chunks_attempted"] == 1
+    assert result.provider_stats["gemini"]["chunks_missing"] == 1
+    assert result.provider_stats["gemini"]["error_breakdown"] == {"rate_limited": 1}
+    assert result.provider_stats["openai"]["chunks_attempted"] == 1
+    assert result.provider_stats["openai"]["chunks_succeeded"] == 1
+    assert result.provider_stats["openai"]["fallback_used"] is True
+    assert result.provider_stats["openai"]["estimated_tokens_succeeded"] > 0
+    assert result.cost_summary["estimated_openai_embedding_cost_usd"] > 0
     assert chunk_state.status == "embedded"
     assert chunk_state.provider == "openai"
     assert chunk_state.model == "text-embedding-3-small"
@@ -761,6 +819,10 @@ def test_generate_embeddings_records_invalid_dimension_per_chunk(monkeypatch) ->
     assert result.missing == 1
     assert result.failed == 1
     assert result.error == "invalid_dimension"
+    assert result.provider_stats["gemini"]["chunks_attempted"] == 2
+    assert result.provider_stats["gemini"]["chunks_succeeded"] == 1
+    assert result.provider_stats["gemini"]["chunks_failed"] == 1
+    assert result.provider_stats["gemini"]["error_breakdown"] == {"invalid_dimension": 1}
     assert first_state.status == "embedded"
     assert second_state.status == "failed"
     assert second_state.error == "invalid_dimension"
@@ -1076,6 +1138,41 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
                                         "gemini:rate_limited": 2,
                                         "openai:credentials_missing": 2,
                                     },
+                                    "embedding_provider_stats": {
+                                        "gemini": {
+                                            "provider": "gemini",
+                                            "model": "gemini-embedding-001",
+                                            "chunks_attempted": 2,
+                                            "chunks_succeeded": 0,
+                                            "chunks_missing": 2,
+                                            "chunks_failed": 0,
+                                            "batches_attempted": 1,
+                                            "fallback_used": False,
+                                            "error_breakdown": {"rate_limited": 2},
+                                            "estimated_tokens_attempted": 120,
+                                            "estimated_tokens_succeeded": 0,
+                                        },
+                                        "openai": {
+                                            "provider": "openai",
+                                            "model": "text-embedding-3-small",
+                                            "chunks_attempted": 2,
+                                            "chunks_succeeded": 0,
+                                            "chunks_missing": 2,
+                                            "chunks_failed": 0,
+                                            "batches_attempted": 1,
+                                            "fallback_used": True,
+                                            "error_breakdown": {"credentials_missing": 2},
+                                            "estimated_tokens_attempted": 120,
+                                            "estimated_tokens_succeeded": 0,
+                                        },
+                                    },
+                                    "embedding_cost_summary": {
+                                        "estimated_openai_embedding_cost_usd": 0.0,
+                                        "estimated_total_tokens": 240,
+                                        "cost_estimate_method": (
+                                            "ceil_chars_div_4_openai_success_tokens_only"
+                                        ),
+                                    },
                                     "backfill_requested": 0,
                                     "backfill_succeeded": 0,
                                     "backfill_missing": 0,
@@ -1250,6 +1347,13 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
     assert response.latest_ingestion["embedding_provider_error_breakdown"] == {
         "gemini:rate_limited": 2,
         "openai:credentials_missing": 2,
+    }
+    assert response.latest_ingestion["embedding_provider_stats"]["gemini"]["chunks_attempted"] == 2
+    assert response.latest_ingestion["embedding_provider_stats"]["openai"]["fallback_used"] is True
+    assert response.latest_ingestion["embedding_cost_summary"] == {
+        "estimated_openai_embedding_cost_usd": 0.0,
+        "estimated_total_tokens": 240,
+        "cost_estimate_method": "ceil_chars_div_4_openai_success_tokens_only",
     }
     assert response.latest_ingestion["backfill_skipped_reason"] == "rate_limited"
     assert response.latest_ingestion["source_health"][0]["source"] == "rss:tokenpost.kr"
