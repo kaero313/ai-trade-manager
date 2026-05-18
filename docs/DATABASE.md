@@ -189,7 +189,7 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 
 ## Phase 46.4 업데이트
 - PostgreSQL 스키마 변경은 없습니다. RAG 3.4는 OpenSearch `market_news`와 `market_news_ingestion_runs` 관측 필드만 확장합니다.
-- `market_news` 청크 문서는 `embedding_status`, `embedding_error`, `embedding_model`, `embedding_generated_at`을 추가로 저장합니다.
+- `market_news` 청크 문서는 `embedding_status`, `embedding_error`, `embedding_provider`, `embedding_model`, `embedding_generated_at`을 추가로 저장합니다.
 - `market_news_ingestion_runs`는 `embedding_requested`, `embedding_succeeded`, `embedding_missing`, `embedding_failed`, `embedding_error`를 저장합니다.
 - 기존 `market_news` 매핑에 임베딩 메타데이터 필드가 없으면 ingestion 경로에서 자동 재생성됩니다.
 
@@ -198,3 +198,10 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 - `market_news` backfill은 기존 청크 문서에 partial update로 임베딩 벡터와 임베딩 메타데이터만 추가합니다.
 - `market_news_ingestion_runs`는 `backfill_requested`, `backfill_succeeded`, `backfill_missing`, `backfill_failed`, `backfill_error`, `backfill_skipped_reason`을 저장합니다.
 - backfill은 `rate_limited`/`credentials_missing` run에서는 스킵되며, 이 상태는 최신 ingestion health에서 관측합니다.
+
+## Phase 46.6 업데이트
+- PostgreSQL 스키마 변경은 없습니다. RAG 3.6은 OpenSearch 캐시 인덱스와 애플리케이션 임베딩 provider 경로만 확장합니다.
+- `market_news.embedding`은 기존 1536차원 knn vector mapping을 유지하고, `embedding_provider`로 Gemini/OpenAI 생성 출처를 구분합니다.
+- 기존 `market_news` 매핑에 `embedding_provider`가 없으면 ingestion 경로에서 자동 재생성됩니다.
+- `market_news_ingestion_runs`는 `embedding_primary_provider`, `embedding_fallback_provider`, `embedding_fallback_used`, `embedding_provider_error_breakdown`을 저장합니다.
+- run당 100개를 초과한 신규 청크는 `embedding_error=run_limit_exceeded`로 저장되며, 이후 missing embedding backfill 대상이 됩니다.

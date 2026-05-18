@@ -180,7 +180,7 @@ ai-trade-manager/
 - `ai_provider_priority`, `ai_provider_settings`, `ai_provider_status` SystemConfig JSON 값으로 provider 순서, 모델명, 쿼터 차단 상태를 관리합니다.
 - Gemini 일일 쿼터 소진은 Pacific time 자정까지 차단 상태로 저장하고, OpenAI rate limit은 응답 reset 힌트 또는 기본 쿨다운을 사용합니다.
 - 포트폴리오 브리핑, AI 채팅, `/api/ai/analyze`, 뉴스 감성 분석, 트레이딩 구조화 분석은 같은 우선순위 fallback을 공유합니다.
-- RAG 임베딩은 OpenSearch 벡터 차원 호환성을 위해 기존 Gemini embedding 경로를 유지합니다.
+- RAG 임베딩은 OpenSearch 1536차원 벡터 호환성을 유지하면서 Gemini를 primary, OpenAI를 fallback provider로 사용합니다.
 
 ## Phase 42.6 업데이트
 - 포트폴리오 상단 자동 브리핑은 LangGraph 채팅 세션을 생성하지 않고 `/api/portfolio/briefing` 전용 REST API를 호출합니다.
@@ -250,3 +250,10 @@ ai-trade-manager/
 - backfill 후보는 실뉴스 청크 중 `embedding_status`가 `missing/rate_limited/failed`이거나 legacy `embedding` 필드가 없는 문서입니다.
 - backfill 성공 시 기존 문서 전체를 재색인하지 않고 `embedding`, `embedding_status`, `embedding_error`, `embedding_model`, `embedding_generated_at`만 partial update합니다.
 - 현재 run에서 `rate_limited` 또는 `credentials_missing`이 감지되면 backfill을 스킵해 즉시 재시도에 따른 Gemini 쿼터 낭비를 피합니다.
+
+## Phase 46.6 업데이트
+- RAG document/query embedding은 Gemini를 먼저 사용하고, 쿨다운/키 없음/생성 실패 시 OpenAI `text-embedding-3-small`로 fallback합니다.
+- OpenAI fallback도 1536차원 embedding을 사용하므로 `market_news.embedding` vector mapping은 유지합니다.
+- 신규 ingestion 임베딩 시도는 run당 최대 100개로 제한하며, 초과 청크는 저장 후 `run_limit_exceeded` 상태로 backfill 대상에 남깁니다.
+- `/api/news/rag/status`는 `embedding_provider_breakdown`을 반환하고, `latest_ingestion`은 provider fallback 사용 여부와 provider별 오류 분포를 노출합니다.
+- 두 embedding provider가 모두 실패하면 AI 뉴스 검색은 기존 BM25 후보 병합 경로로 계속 동작합니다.
