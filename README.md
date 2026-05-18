@@ -160,3 +160,10 @@ Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구
 - `market_news` 청크는 `embedding_provider`를 함께 저장하며, `/api/news/rag/status`는 `embedding_provider_breakdown`을 반환합니다.
 - AI 뉴스 검색 query embedding도 Gemini 실패 시 OpenAI로 fallback하고, 두 provider가 모두 실패하면 기존 BM25-only 경로로 최대 3개 parent 중복 없는 컨텍스트를 구성합니다.
 - `latest_ingestion`은 primary/fallback provider, fallback 사용 여부, provider별 오류 분포를 기록합니다.
+
+## RAG 3.7 운영 정책
+- `market_news_ingestion_runs`는 embedding provider/model별 시도/성공/누락/실패 chunk 수, batch 수, fallback 사용 여부, 오류 분포, 추정 token 수를 `embedding_provider_stats`로 저장합니다.
+- `embedding_cost_summary`는 OpenAI `text-embedding-3-small` 성공 token에 대해서만 `$0.02 / 1M tokens` 기준의 추정 비용을 계산합니다.
+- token 추정은 추가 의존성 없이 `ceil(len(text) / 4)` 방식으로 계산하며, 실제 청구 금액이나 hard budget 차단 기준이 아닙니다.
+- Gemini 비용은 가격 정책을 코드에 고정하지 않고 provider별 token 추정치만 관측합니다.
+- AI 뉴스 검색 query embedding은 Gemini 실패 후 OpenAI fallback, 최종 BM25-only 전환 여부를 구조화 로그로 남기며 별도 query event 인덱스는 만들지 않습니다.

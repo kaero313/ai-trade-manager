@@ -257,3 +257,10 @@ ai-trade-manager/
 - 신규 ingestion 임베딩 시도는 run당 최대 100개로 제한하며, 초과 청크는 저장 후 `run_limit_exceeded` 상태로 backfill 대상에 남깁니다.
 - `/api/news/rag/status`는 `embedding_provider_breakdown`을 반환하고, `latest_ingestion`은 provider fallback 사용 여부와 provider별 오류 분포를 노출합니다.
 - 두 embedding provider가 모두 실패하면 AI 뉴스 검색은 기존 BM25 후보 병합 경로로 계속 동작합니다.
+
+## Phase 46.7 업데이트
+- RAG ingestion은 provider/model별 embedding 시도 chunk 수, 성공/누락/실패 수, batch 수, fallback 사용 여부, 오류 분포, 추정 token 수를 run health에 저장합니다.
+- 비용 관측은 OpenAI `text-embedding-3-small` 성공 token에만 `$0.02 / 1M tokens` 기준 추정치를 적용하고, Gemini는 token 추정만 기록합니다.
+- token 추정은 `ceil(len(text) / 4)` 방식의 운영 추정값이며 실제 청구 금액이나 hard budget 차단 로직으로 사용하지 않습니다.
+- `/api/news/rag/status.latest_ingestion`은 `embedding_provider_stats`와 `embedding_cost_summary`를 그대로 반환합니다.
+- AI 뉴스 검색 query embedding은 Gemini/OpenAI provider 선택, 실패 사유, BM25-only fallback 전환을 로그로 남기고 별도 query event 저장소는 만들지 않습니다.

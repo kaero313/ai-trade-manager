@@ -205,3 +205,10 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 - 기존 `market_news` 매핑에 `embedding_provider`가 없으면 ingestion 경로에서 자동 재생성됩니다.
 - `market_news_ingestion_runs`는 `embedding_primary_provider`, `embedding_fallback_provider`, `embedding_fallback_used`, `embedding_provider_error_breakdown`을 저장합니다.
 - run당 100개를 초과한 신규 청크는 `embedding_error=run_limit_exceeded`로 저장되며, 이후 missing embedding backfill 대상이 됩니다.
+
+## Phase 46.7 업데이트
+- PostgreSQL 스키마 변경은 없습니다. RAG 3.7은 OpenSearch 관측용 캐시 인덱스 `market_news_ingestion_runs`만 확장합니다.
+- `market_news_ingestion_runs`는 `embedding_provider_stats` object에 provider/model별 chunk 시도/성공/누락/실패 수, batch 수, fallback 사용 여부, 오류 분포, 추정 token 수를 저장합니다.
+- `embedding_cost_summary` object는 OpenAI `text-embedding-3-small` 성공 token 기준 추정 비용, 전체 provider 시도 token 추정치, 추정 방식 문자열을 저장합니다.
+- token과 비용은 `ceil(len(text) / 4)` 기반 운영 추정치이며 실제 청구 금액, 예산 차단, 매매 게이트 하드 차단 조건으로 사용하지 않습니다.
+- `market_news` 검색 인덱스 mapping은 변경하지 않고, query embedding provider 전환은 애플리케이션 로그로만 관측합니다.
