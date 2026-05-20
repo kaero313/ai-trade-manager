@@ -42,6 +42,13 @@ class SentimentResponse(BaseModel):
     updated_at: datetime = Field(...)
 
 
+class RagStatusWarning(BaseModel):
+    code: str = Field(...)
+    severity: str = Field(...)
+    message: str = Field(...)
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
 class RagStatusResponse(BaseModel):
     status: str = Field(...)
     index_exists: bool = Field(...)
@@ -70,6 +77,7 @@ class RagStatusResponse(BaseModel):
     crawl_error_breakdown: dict[str, int] = Field(default_factory=dict)
     crawl_error_by_source: dict[str, dict[str, int]] = Field(default_factory=dict)
     latest_ingestion: dict[str, Any] | None = Field(default=None)
+    warnings: list[RagStatusWarning] = Field(default_factory=list)
     configured_sources: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = Field(default=None)
 
@@ -315,6 +323,181 @@ def _resolve_rag_status(
     return "healthy"
 
 
+def _rag_warning(
+    code: str,
+    severity: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> RagStatusWarning:
+    return RagStatusWarning(
+        code=code,
+        severity=severity,
+        message=message,
+        details=details or {},
+    )
+
+
+def _latest_provider_error_count(latest_ingestion: dict[str, Any] | None, key: str) -> int:
+    if not isinstance(latest_ingestion, dict):
+        return 0
+    breakdown = latest_ingestion.get("embedding_provider_error_breakdown")
+    if not isinstance(breakdown, dict):
+        return 0
+    return _to_int(breakdown.get(key))
+
+
+def _latest_openai_cost(latest_ingestion: dict[str, Any] | None) -> float:
+    if not isinstance(latest_ingestion, dict):
+        return 0.0
+    cost_summary = latest_ingestion.get("embedding_cost_summary")
+    if not isinstance(cost_summary, dict):
+        return 0.0
+    try:
+        return float(cost_summary.get("estimated_openai_embedding_cost_usd") or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _source_http_429_breakdown(latest_ingestion: dict[str, Any] | None) -> dict[str, int]:
+    if not isinstance(latest_ingestion, dict):
+        return {}
+    source_health = latest_ingestion.get("source_health")
+    if not isinstance(source_health, list):
+        return {}
+
+    source_counts: dict[str, int] = {}
+    for item in source_health:
+        if not isinstance(item, dict):
+            continue
+        crawl_errors = item.get("crawl_error_breakdown")
+        if not isinstance(crawl_errors, dict):
+            continue
+        count = _to_int(crawl_errors.get("http_429"))
+        if count > 0:
+            source = str(item.get("source") or "unknown")
+            source_counts[source] = count
+    return source_counts
+
+
+def _build_rag_status_warnings(
+    *,
+    real_documents: int,
+    fallback_documents: int,
+    embedded_documents: int,
+    missing_embedding_documents: int,
+    latest_ingestion: dict[str, Any] | None,
+) -> list[RagStatusWarning]:
+    warnings: list[RagStatusWarning] = []
+
+    if real_documents <= 0:
+        warnings.append(
+            _rag_warning(
+                "no_real_documents",
+                "critical",
+                "RAG 인덱스에 실뉴스 문서가 없습니다.",
+                {"real_documents": real_documents},
+            )
+        )
+
+    if fallback_documents > 0:
+        warnings.append(
+            _rag_warning(
+                "fallback_documents_present",
+                "warning",
+                "RAG 인덱스에 fallback 문서가 남아 있습니다.",
+                {"fallback_documents": fallback_documents},
+            )
+        )
+
+    embedding_total = embedded_documents + missing_embedding_documents
+    if real_documents > 0 and embedded_documents <= 0 and missing_embedding_documents > 0:
+        warnings.append(
+            _rag_warning(
+                "all_embeddings_missing",
+                "critical",
+                "실뉴스 문서가 있지만 사용 가능한 임베딩이 없습니다.",
+                {
+                    "embedded_documents": embedded_documents,
+                    "missing_embedding_documents": missing_embedding_documents,
+                },
+            )
+        )
+    if embedding_total > 0:
+        missing_ratio = missing_embedding_documents / embedding_total
+        if missing_ratio >= 0.5:
+            warnings.append(
+                _rag_warning(
+                    "missing_embedding_high",
+                    "warning",
+                    "임베딩 누락 비율이 50% 이상입니다.",
+                    {
+                        "embedded_documents": embedded_documents,
+                        "missing_embedding_documents": missing_embedding_documents,
+                        "missing_ratio": round(missing_ratio, 4),
+                    },
+                )
+            )
+
+    gemini_rate_limited = _latest_provider_error_count(latest_ingestion, "gemini:rate_limited")
+    if gemini_rate_limited > 0:
+        warnings.append(
+            _rag_warning(
+                "gemini_rate_limited",
+                "warning",
+                "Gemini 임베딩 provider가 rate limit 상태입니다.",
+                {"count": gemini_rate_limited},
+            )
+        )
+
+    openai_credentials_missing = _latest_provider_error_count(
+        latest_ingestion,
+        "openai:credentials_missing",
+    )
+    if openai_credentials_missing > 0:
+        warnings.append(
+            _rag_warning(
+                "openai_credentials_missing",
+                "warning",
+                "OpenAI fallback 임베딩 키가 설정되지 않았습니다.",
+                {"count": openai_credentials_missing},
+            )
+        )
+
+    if isinstance(latest_ingestion, dict) and latest_ingestion.get("backfill_skipped_reason") == "rate_limited":
+        warnings.append(
+            _rag_warning(
+                "backfill_skipped_rate_limited",
+                "warning",
+                "provider rate limit으로 missing embedding backfill이 건너뛰어졌습니다.",
+                {"backfill_skipped_reason": "rate_limited"},
+            )
+        )
+
+    http_429_by_source = _source_http_429_breakdown(latest_ingestion)
+    if http_429_by_source:
+        warnings.append(
+            _rag_warning(
+                "source_crawl_http_429",
+                "warning",
+                "일부 RSS source 본문 크롤링이 HTTP 429로 제한됐습니다.",
+                {"sources": http_429_by_source},
+            )
+        )
+
+    openai_cost = _latest_openai_cost(latest_ingestion)
+    if openai_cost > 0:
+        warnings.append(
+            _rag_warning(
+                "openai_cost_observed",
+                "info",
+                "OpenAI 임베딩 fallback 추정 비용이 관측됐습니다.",
+                {"estimated_openai_embedding_cost_usd": openai_cost},
+            )
+        )
+
+    return warnings
+
+
 async def _fetch_latest_ingestion_status(client: Any) -> dict[str, Any] | None:
     try:
         index_exists = await client.indices.exists(index=INGESTION_RUNS_INDEX_NAME)
@@ -376,6 +559,13 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
                 crawl_error_breakdown={},
                 crawl_error_by_source={},
                 latest_ingestion=latest_ingestion,
+                warnings=_build_rag_status_warnings(
+                    real_documents=0,
+                    fallback_documents=0,
+                    embedded_documents=0,
+                    missing_embedding_documents=0,
+                    latest_ingestion=latest_ingestion,
+                ),
                 configured_sources=configured_sources,
             )
 
@@ -501,6 +691,13 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
             "errors",
         ),
         latest_ingestion=latest_ingestion,
+        warnings=_build_rag_status_warnings(
+            real_documents=real_documents,
+            fallback_documents=fallback_documents,
+            embedded_documents=embedded_documents,
+            missing_embedding_documents=missing_embedding_documents,
+            latest_ingestion=latest_ingestion,
+        ),
         configured_sources=configured_sources,
     )
 

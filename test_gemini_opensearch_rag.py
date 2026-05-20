@@ -1340,6 +1340,15 @@ def test_rag_status_response_counts_real_fallback_and_embedding_documents() -> N
         "rss:tokenpost.kr": {"short_body": 2},
         "rss:news.google.com": {"google_news_aggregator": 1},
     }
+    warning_codes = [warning.code for warning in response.warnings]
+    assert warning_codes == [
+        "fallback_documents_present",
+        "missing_embedding_high",
+        "gemini_rate_limited",
+        "openai_credentials_missing",
+        "backfill_skipped_rate_limited",
+    ]
+    assert response.warnings[1].details["missing_ratio"] == 0.5
     assert response.latest_ingestion is not None
     assert response.latest_ingestion["run_id"] == "run-1"
     assert response.latest_ingestion["embedding_error"] == "rate_limited"
@@ -1387,6 +1396,58 @@ def test_rag_status_keeps_response_when_ingestion_run_index_is_unavailable() -> 
 
     assert response.status == "healthy"
     assert response.latest_ingestion is None
+    assert response.warnings == []
+
+
+def test_rag_status_warnings_surface_embedding_provider_and_crawl_issues() -> None:
+    warnings = news_route._build_rag_status_warnings(
+        real_documents=12,
+        fallback_documents=0,
+        embedded_documents=0,
+        missing_embedding_documents=12,
+        latest_ingestion={
+            "embedding_provider_error_breakdown": {
+                "gemini:rate_limited": 100,
+                "openai:credentials_missing": 100,
+            },
+            "embedding_cost_summary": {
+                "estimated_openai_embedding_cost_usd": 0.00001,
+            },
+            "backfill_skipped_reason": "rate_limited",
+            "source_health": [
+                {
+                    "source": "rss:coindesk.com",
+                    "crawl_error_breakdown": {"http_429": 8},
+                }
+            ],
+        },
+    )
+
+    by_code = {warning.code: warning for warning in warnings}
+
+    assert by_code["all_embeddings_missing"].severity == "critical"
+    assert by_code["missing_embedding_high"].details["missing_ratio"] == 1.0
+    assert by_code["gemini_rate_limited"].details["count"] == 100
+    assert by_code["openai_credentials_missing"].details["count"] == 100
+    assert by_code["backfill_skipped_rate_limited"].severity == "warning"
+    assert by_code["source_crawl_http_429"].details["sources"] == {"rss:coindesk.com": 8}
+    assert by_code["openai_cost_observed"].severity == "info"
+    assert by_code["openai_cost_observed"].details == {
+        "estimated_openai_embedding_cost_usd": 0.00001,
+    }
+
+
+def test_rag_status_warnings_report_missing_real_documents() -> None:
+    warnings = news_route._build_rag_status_warnings(
+        real_documents=0,
+        fallback_documents=0,
+        embedded_documents=0,
+        missing_embedding_documents=0,
+        latest_ingestion=None,
+    )
+
+    assert [warning.code for warning in warnings] == ["no_real_documents"]
+    assert warnings[0].severity == "critical"
 
 
 def test_market_news_mapping_validation_rejects_legacy_nmslib() -> None:
