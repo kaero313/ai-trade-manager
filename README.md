@@ -167,3 +167,9 @@ Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구
 - token 추정은 추가 의존성 없이 `ceil(len(text) / 4)` 방식으로 계산하며, 실제 청구 금액이나 hard budget 차단 기준이 아닙니다.
 - Gemini 비용은 가격 정책을 코드에 고정하지 않고 provider별 token 추정치만 관측합니다.
 - AI 뉴스 검색 query embedding은 Gemini 실패 후 OpenAI fallback, 최종 BM25-only 전환 여부를 구조화 로그로 남기며 별도 query event 인덱스는 만들지 않습니다.
+
+## RAG 3.8 운영 정책
+- `/api/news/rag/status`는 `warnings` 객체 리스트를 반환해 임베딩 누락, provider 장애, source 크롤 제한, fallback 문서 잔존 상태를 운영자가 바로 볼 수 있게 합니다.
+- warning은 `code`, `severity`, `message`, `details`로 구성되며 `severity`는 `info`, `warning`, `critical` 중 하나입니다.
+- warning은 기존 `healthy/degraded/empty/unavailable` 판정을 바꾸지 않고, 매매 하드 차단 조건으로도 사용하지 않습니다.
+- OpenAI 비용 warning은 hard budget 차단이 아니라 성공 token 기반 추정 비용이 관측됐다는 정보성 신호입니다.

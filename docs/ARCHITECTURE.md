@@ -264,3 +264,9 @@ ai-trade-manager/
 - token 추정은 `ceil(len(text) / 4)` 방식의 운영 추정값이며 실제 청구 금액이나 hard budget 차단 로직으로 사용하지 않습니다.
 - `/api/news/rag/status.latest_ingestion`은 `embedding_provider_stats`와 `embedding_cost_summary`를 그대로 반환합니다.
 - AI 뉴스 검색 query embedding은 Gemini/OpenAI provider 선택, 실패 사유, BM25-only fallback 전환을 로그로 남기고 별도 query event 저장소는 만들지 않습니다.
+
+## Phase 46.8 업데이트
+- `/api/news/rag/status`는 기존 상태 판정과 별도로 운영 warning 리스트를 계산해 반환합니다.
+- warning은 실뉴스 부재, 전체 임베딩 누락, 높은 임베딩 누락률, Gemini rate limit, OpenAI 키 없음, backfill skip, source HTTP 429, fallback 문서 잔존, OpenAI 비용 관측을 표현합니다.
+- warning은 OpenSearch의 기존 집계와 최신 ingestion run 문서에서 계산하며 별도 저장소나 query event 인덱스를 만들지 않습니다.
+- warning은 운영 가시성 신호이며 AI 매매 게이트나 hard budget 차단 정책으로 연결하지 않습니다.

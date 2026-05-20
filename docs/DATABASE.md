@@ -212,3 +212,9 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 - `embedding_cost_summary` object는 OpenAI `text-embedding-3-small` 성공 token 기준 추정 비용, 전체 provider 시도 token 추정치, 추정 방식 문자열을 저장합니다.
 - token과 비용은 `ceil(len(text) / 4)` 기반 운영 추정치이며 실제 청구 금액, 예산 차단, 매매 게이트 하드 차단 조건으로 사용하지 않습니다.
 - `market_news` 검색 인덱스 mapping은 변경하지 않고, query embedding provider 전환은 애플리케이션 로그로만 관측합니다.
+
+## Phase 46.8 업데이트
+- PostgreSQL 및 OpenSearch mapping 변경은 없습니다. RAG 3.8 warning은 `/api/news/rag/status` 응답 생성 시 계산합니다.
+- `warnings` 응답 필드는 `market_news` 집계와 `market_news_ingestion_runs` 최신 문서의 provider/source health 값을 조합해 만듭니다.
+- warning에는 임베딩 누락, provider 설정/쿼터 문제, source 크롤 제한, fallback 문서 잔존, OpenAI 추정 비용 관측 신호가 포함됩니다.
+- warning은 운영 관측용 필드이며 매매 차단, 예산 차단, DB 영속 상태 변경으로 사용하지 않습니다.
