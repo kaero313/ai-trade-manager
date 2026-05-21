@@ -20,6 +20,8 @@ BUY_FEE_MULTIPLIER = 1.0005
 SELL_FEE_MULTIPLIER = 0.9995
 UPBIT_KEY_MISSING_ERROR = "UPBIT_KEY_MISSING"
 UPBIT_API_ERROR_CODE = "UPBIT_API_ERROR"
+UPBIT_AUTH_IP_NOT_ALLOWED_ERROR = "UPBIT_AUTH_IP_NOT_ALLOWED"
+UPBIT_AUTH_ERROR_CODE = "UPBIT_AUTH_ERROR"
 PORTFOLIO_AGGREGATION_FAILED_ERROR = "PORTFOLIO_AGGREGATION_FAILED"
 
 
@@ -41,6 +43,14 @@ def _empty_portfolio(error: str | None = None) -> PortfolioSummary:
 
 def _is_missing_upbit_key_error(exc: ValueError) -> bool:
     return "key not configured" in str(exc).lower()
+
+
+def _resolve_upbit_portfolio_error(exc: UpbitAPIError) -> str:
+    if exc.error_name == "no_authorization_ip":
+        return UPBIT_AUTH_IP_NOT_ALLOWED_ERROR
+    if exc.status_code in {401, 403}:
+        return UPBIT_AUTH_ERROR_CODE
+    return UPBIT_API_ERROR_CODE
 
 
 class PortfolioService:
@@ -164,8 +174,12 @@ class PortfolioService:
             logger.error("Portfolio aggregation failed due to JWT decode error: %s", exc, exc_info=True)
             return _empty_portfolio(error=UPBIT_API_ERROR_CODE)
         except UpbitAPIError as exc:
-            logger.error("Portfolio aggregation failed due to Upbit API error: %s", exc, exc_info=True)
-            return _empty_portfolio(error=UPBIT_API_ERROR_CODE)
+            logger.error(
+                "Portfolio aggregation failed due to Upbit API error: %s",
+                exc.to_dict(),
+                exc_info=True,
+            )
+            return _empty_portfolio(error=_resolve_upbit_portfolio_error(exc))
         except Exception as exc:
             logger.error("Portfolio aggregation failed due to unexpected error: %s", exc, exc_info=True)
             return _empty_portfolio(error=PORTFOLIO_AGGREGATION_FAILED_ERROR)
