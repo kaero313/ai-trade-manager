@@ -1,3 +1,119 @@
 @custom-variant dark (&:is(.dark *));
 @config "../tailwind.config.js";
 @import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  background: #10141a;
+  color: #dfe2eb;
+  font-family: "Noto Sans KR", sans-serif;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  background: #10141a;
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden;
+  font-family: "Noto Sans KR", sans-serif;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.font-mono,
+code,
+pre {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.quantum-card {
+  background: rgba(22, 27, 34, 0.7);
+  border: 1px solid rgba(59, 73, 75, 0.34);
+  box-shadow: none;
+  backdrop-filter: blur(12px);
+}
+
+.quantum-panel {
+  background: rgba(10, 14, 20, 0.78);
+}
+
+.quantum-surface {
+  background: rgba(38, 42, 49, 0.64);
+}
+
+.quantum-chip {
+  background: rgba(0, 219, 233, 0.1);
+  color: #00dbe9;
+}
+
+.quantum-tab {
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  transition: color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.quantum-tab-active {
+  background: rgba(0, 219, 233, 0.14);
+  color: #7df4ff;
+  box-shadow: none;
+}
+
+.quantum-tab-inactive {
+  color: #b9cacb;
+}
+
+.quantum-tab-inactive:hover {
+  background: rgba(38, 42, 49, 0.8);
+  color: #dfe2eb;
+}
+
+.dashboard-quantum {
+  color: #dfe2eb;
+}
+
+.quantum-ticker-scroll {
+  animation: quantum-ticker 30s linear infinite;
+}
+
+.quantum-ticker-scroll:hover {
+  animation-play-state: paused;
+}
+
+.quantum-nav-scroll {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.quantum-nav-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.macro-panel-shell > .quantum-card,
+.macro-panel-shell > div > .quantum-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+@keyframes quantum-ticker {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(-50%);
+  }
+}
