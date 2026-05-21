@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
-import { Loader2, Star } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { fetchFavorites, fetchTickers, removeFavorite, type TickerItem } from '../../api/markets'
@@ -33,12 +33,6 @@ function formatSignedPercent(rate: number): string {
   const percent = rate * 100
   const sign = percent > 0 ? '+' : ''
   return `${sign}${percent.toFixed(2)}%`
-}
-
-function formatTradeAmount(value: number): string {
-  return `${new Intl.NumberFormat('ko-KR', {
-    maximumFractionDigits: 0,
-  }).format(value)}원`
 }
 
 function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
@@ -97,13 +91,13 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
   }
 
   return (
-    <aside className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+    <aside className="quantum-card flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-xl p-5">
       <header className="mb-4 shrink-0 flex items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">관심 종목</h2>
-        <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+        <h2 className="text-lg font-bold text-[#dfe2eb]">관심 종목</h2>
+        <span className="inline-flex items-center gap-2 rounded-md bg-[#00dbe9]/10 px-2.5 py-1 text-xs font-bold text-[#00dbe9]">
           <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#00dbe9] opacity-70" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-[#00dbe9]" />
           </span>
           LIVE 3s
         </span>
@@ -111,37 +105,37 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
 
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {favoritesQuery.isLoading && (
-        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-300">
+        <div className="rounded-lg bg-[#0a0e14]/80 px-3 py-3 text-sm text-[#849495]">
           <Loader2 className="h-4 w-4 animate-spin" />
-          관심 종목을 불러오는 중입니다.
+          <span className="ml-2">관심 종목을 불러오는 중입니다.</span>
         </div>
       )}
 
       {favoritesQuery.isError && (
-        <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+        <p className="rounded-lg bg-[#0a0e14]/75 px-3 py-2 text-xs font-semibold text-[#ffb4ab]">
           {resolveErrorMessage(favoritesQuery.error, '관심 종목 목록을 불러오지 못했습니다.')}
         </p>
       )}
 
       {!favoritesQuery.isLoading && !favoritesQuery.isError && symbols.length === 0 && (
-        <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-300">
+        <p className="rounded-lg bg-[#0a0e14]/75 px-3 py-3 text-sm leading-6 text-[#849495]">
           아직 등록된 관심 종목이 없습니다. 검색창에서 별표를 눌러 추가해 주세요.
         </p>
       )}
 
       {!favoritesQuery.isLoading && !favoritesQuery.isError && symbols.length > 0 && (
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-          <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2">
           {(favoritesQuery.data ?? []).map((favorite) => {
             const symbol = favorite.symbol.toUpperCase()
             const ticker = tickerMap.get(symbol)
             const changeRate = ticker?.signed_change_rate ?? 0
             const changeClass =
               changeRate > 0
-                ? 'text-rose-600'
+                ? 'bg-[#ffb4ab]/12 text-[#ffb4ab]'
                 : changeRate < 0
-                  ? 'text-blue-600'
-                  : 'text-gray-600 dark:text-gray-300'
+                  ? 'bg-[#7df4ff]/12 text-[#7df4ff]'
+                  : 'bg-[#262a31] text-[#849495]'
             const isPending = pendingSymbol === symbol
             const isSelected = selected === symbol
 
@@ -149,27 +143,14 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
               <article
                 key={favorite.id}
                 onClick={() => onSelectSymbol?.(symbol)}
-                className={`cursor-pointer rounded-xl border px-3 py-2.5 transition ${
+                className={`min-w-0 cursor-pointer rounded-lg p-3 transition-colors ${
                   isSelected
-                    ? 'border-emerald-300 bg-emerald-50/60 ring-1 ring-emerald-200 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:ring-emerald-500/30'
-                    : 'border-gray-200 bg-gray-50/60 hover:border-gray-300 hover:bg-gray-100/70 dark:border-gray-700 dark:bg-gray-700/40 dark:hover:border-gray-600 dark:hover:bg-gray-700/70'
+                    ? 'bg-[#00363a]/65 text-[#dfe2eb]'
+                    : 'bg-[#262a31]/50 hover:bg-[#262a31]/80'
                 }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">{symbol}</p>
-                    {ticker ? (
-                      <>
-                        <p className="mt-0.5 text-sm text-gray-700 dark:text-gray-200">{formatPrice(ticker.current_price)}</p>
-                        <p className={`text-xs font-semibold ${changeClass}`}>{formatSignedPercent(changeRate)}</p>
-                      </>
-                    ) : (
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-300">
-                        {tickersQuery.isLoading ? '시세 로딩 중...' : '시세를 아직 가져오지 못했습니다.'}
-                      </p>
-                    )}
-                  </div>
-
+                <div className="flex min-w-0 items-start justify-between gap-2">
+                  <p className="min-w-0 truncate text-sm font-bold text-[#dfe2eb]">{symbol}</p>
                   <button
                     type="button"
                     aria-label="관심 종목 삭제"
@@ -179,18 +160,31 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
                       void handleRemove(symbol)
                     }}
                     disabled={removeMutation.isPending && !isPending}
-                    className="rounded-md p-1 text-amber-500 transition hover:bg-amber-50 hover:text-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="shrink-0 rounded bg-[#0a0e14]/75 px-1.5 py-0.5 text-[10px] font-bold text-[#849495] transition hover:bg-[#ffb4ab]/10 hover:text-[#ffb4ab] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-gray-500 dark:text-gray-300" />
+                      <Loader2 className="h-4 w-4 animate-spin text-[#849495]" />
                     ) : (
-                      <Star className="h-4 w-4 fill-amber-400 text-amber-500" />
+                      '제거'
                     )}
                   </button>
                 </div>
 
-                {ticker && (
-                  <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-300">24h 거래대금: {formatTradeAmount(ticker.acc_trade_price_24h)}</p>
+                {ticker ? (
+                  <div className="mt-3 min-w-0">
+                    <p className="truncate font-mono text-sm font-semibold text-[#b9cacb]">
+                      {formatPrice(ticker.current_price)}
+                    </p>
+                    <span
+                      className={`mt-2 inline-flex rounded px-2 py-1 font-mono text-[10px] font-bold ${changeClass}`}
+                    >
+                      {formatSignedPercent(changeRate)}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs leading-5 text-[#849495]">
+                    {tickersQuery.isLoading ? '시세 로딩 중...' : '시세 대기'}
+                  </p>
                 )}
               </article>
             )
@@ -200,12 +194,12 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
       )}
 
       {tickersQuery.isError && (
-        <p className="mt-3 shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+        <p className="mt-3 shrink-0 rounded-lg bg-[#0a0e14]/75 px-3 py-2 text-xs font-semibold text-[#ffe179]">
           {resolveErrorMessage(tickersQuery.error, '티커 시세를 불러오지 못했습니다.')}
         </p>
       )}
       {actionError && (
-        <p className="mt-3 shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+        <p className="mt-3 shrink-0 rounded-lg bg-[#0a0e14]/75 px-3 py-2 text-xs font-semibold text-[#ffe179]">
           {actionError}
         </p>
       )}
