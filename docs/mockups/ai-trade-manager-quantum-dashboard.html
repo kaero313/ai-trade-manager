@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html class="dark" lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>AI-Trade-Manager | Quantum Dashboard Mockup</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            background: "#10141a",
+            surface: "#0a0e14",
+            "surface-low": "#181c22",
+            "surface-high": "#262a31",
+            "surface-line": "#29363a",
+            primary: "#00dbe9",
+            "primary-soft": "#7df4ff",
+            secondary: "#cdbdff",
+            warning: "#ffe179",
+            success: "#77e2a8",
+            danger: "#ffb4ab",
+            muted: "#b9cacb",
+            text: "#dfe2eb"
+          },
+          fontFamily: {
+            sans: ["Noto Sans KR", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"]
+          },
+          borderRadius: {
+            DEFAULT: "0.25rem",
+            lg: "0.375rem",
+            xl: "0.5rem"
+          },
+          boxShadow: {
+            glow: "0 0 20px rgba(0, 219, 233, 0.1)",
+            violet: "0 0 20px rgba(205, 189, 255, 0.1)"
+          }
+        }
+      }
+    };
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <style>
+    body {
+      min-height: 100vh;
+      background-color: #10141a;
+      color: #dfe2eb;
+      font-family: "Noto Sans KR", sans-serif;
+      overflow-x: hidden;
+    }
+
+    .glass-panel {
+      background: rgba(22, 27, 34, 0.7);
+      border: 1px solid rgba(0, 219, 233, 0.1);
+      box-shadow: 0 0 20px rgba(0, 219, 233, 0.1);
+      backdrop-filter: blur(12px);
+    }
+
+    .terminal-grid {
+      background-image:
+        linear-gradient(rgba(59, 73, 75, 0.5) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59, 73, 75, 0.5) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    .ticker-scroll {
+      animation: ticker 32s linear infinite;
+    }
+
+    @keyframes ticker {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    .ticker-wrap:hover .ticker-scroll {
+      animation-play-state: paused;
+    }
+
+    .pulse-dot {
+      animation: pulse-dot 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 0.45; box-shadow: 0 0 0 0 rgba(0, 219, 233, 0.35); }
+      50% { opacity: 1; box-shadow: 0 0 0 8px rgba(0, 219, 233, 0); }
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(16, 22, 31, 0.8);
+    }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #33434a;
+      border-radius: 999px;
+    }
+
+    .material-symbols-outlined {
+      font-variation-settings: "FILL" 0, "wght" 500, "GRAD" 0, "opsz" 24;
+    }
+  </style>
+</head>
+<body class="font-sans text-text">
+  <header class="fixed inset-x-0 top-0 z-50 border-b border-surface-line/80 bg-surface-low/80 backdrop-blur-xl shadow-sm">
+    <div class="mx-auto flex h-16 max-w-[1920px] items-center justify-between gap-4 px-4 sm:px-6">
+      <div class="flex min-w-0 items-center gap-5 lg:gap-8">
+        <div class="flex items-center gap-3">
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-high">
+            <span class="material-symbols-outlined text-primary">query_stats</span>
+          </div>
+          <div class="min-w-0">
+            <h1 class="truncate text-base font-extrabold tracking-tight text-primary-soft sm:text-lg">AI-Trade-Manager</h1>
+            <p class="hidden text-[10px] uppercase tracking-[0.22em] text-muted sm:block">Quantum Dashboard Mockup</p>
+          </div>
+        </div>
+        <nav class="hidden h-16 items-center gap-1 lg:flex">
+          <a class="flex h-full items-center border-b-2 border-primary px-3 text-sm font-semibold text-primary" href="#">Dashboard</a>
+          <a class="flex h-full items-center border-b-2 border-transparent px-3 text-sm font-semibold text-muted transition hover:text-text" href="#">Portfolio</a>
+          <a class="flex h-full items-center border-b-2 border-transparent px-3 text-sm font-semibold text-muted transition hover:text-text" href="#">AI Banker</a>
+          <a class="flex h-full items-center border-b-2 border-transparent px-3 text-sm font-semibold text-muted transition hover:text-text" href="#">Laboratory</a>
+          <a class="flex h-full items-center border-b-2 border-transparent px-3 text-sm font-semibold text-muted transition hover:text-text" href="#">Settings</a>
+        </nav>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <label class="hidden items-center gap-2 rounded-lg border border-surface-line/60 bg-surface-low px-3 py-2 md:flex">
+          <span class="material-symbols-outlined text-base text-muted">search</span>
+          <input class="w-44 border-0 bg-transparent p-0 text-sm text-text placeholder:text-muted focus:ring-0" placeholder="KRW-BTC, KRW-ETH..." type="search" />
+        </label>
+        <button class="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-low text-muted transition hover:text-primary" type="button" aria-label="알림">
+          <span class="material-symbols-outlined text-[20px]">notifications</span>
+        </button>
+        <button class="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-low text-muted transition hover:text-primary" type="button" aria-label="차트">
+          <span class="material-symbols-outlined text-[20px]">candlestick_chart</span>
+        </button>
+        <div class="hidden items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-xs font-semibold text-primary sm:flex">
+          <span class="h-2 w-2 rounded-full bg-primary pulse-dot"></span>
+          LIVE PAPER
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto mt-16 flex max-w-[1920px] flex-col gap-5 px-4 py-5 sm:px-6">
+    <section class="ticker-wrap relative h-11 overflow-hidden rounded-lg border border-surface-line bg-surface">
+      <div class="absolute inset-y-0 left-0 z-10 flex w-32 items-center border-r border-surface-line bg-surface-high px-3">
+        <span class="whitespace-nowrap font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-primary">Live Flow</span>
+      </div>
+      <div class="ticker-scroll flex h-full min-w-max items-center gap-10 pl-40 font-mono text-xs">
+        <div class="flex items-center gap-2"><span>KRW-BTC</span><span class="text-primary">143,280,000</span><span class="text-success">+1.42%</span></div>
+        <div class="flex items-center gap-2"><span>KRW-ETH</span><span class="text-primary">5,142,000</span><span class="text-success">+0.84%</span></div>
+        <div class="flex items-center gap-2"><span>KRW-XRP</span><span class="text-danger">3,184</span><span class="text-danger">-0.62%</span></div>
+        <div class="flex items-center gap-2"><span>KRW-SOL</span><span class="text-primary">256,900</span><span class="text-success">+2.18%</span></div>
+        <div class="flex items-center gap-2"><span>Fear & Greed</span><span class="text-warning">72 Greed</span><span class="text-muted">5m</span></div>
+        <div class="flex items-center gap-2"><span>RAG News</span><span class="text-primary">real_news 28</span><span class="text-warning">fallback 0</span></div>
+        <div class="flex items-center gap-2"><span>KRW-BTC</span><span class="text-primary">143,280,000</span><span class="text-success">+1.42%</span></div>
+        <div class="flex items-center gap-2"><span>KRW-ETH</span><span class="text-primary">5,142,000</span><span class="text-success">+0.84%</span></div>
+        <div class="flex items-center gap-2"><span>KRW-XRP</span><span class="text-danger">3,184</span><span class="text-danger">-0.62%</span></div>
+        <div class="flex items-center gap-2"><span>KRW-SOL</span><span class="text-primary">256,900</span><span class="text-success">+2.18%</span></div>
+      </div>
+    </section>
+
+    <section class="glass-panel rounded-xl p-4 sm:p-6">
+      <div class="grid grid-cols-1 gap-5 xl:grid-cols-[1.1fr_1.4fr_0.9fr]">
+        <div class="flex flex-col justify-between gap-5">
+          <div>
+            <p class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-primary">
+              <span class="h-2 w-2 rounded-full bg-primary pulse-dot"></span>
+              AI Decision Command Center
+            </p>
+            <h2 class="text-2xl font-extrabold tracking-tight text-text sm:text-3xl">AI가 먼저 판단하고, 시스템이 한 번 더 막습니다</h2>
+            <p class="mt-3 text-sm leading-6 text-muted">
+              LangGraph 에이전트가 뉴스 문맥, 기술 지표, 포트폴리오 상태를 모아 결론을 만들고 Entry Policy가 실제 주문 가능 여부를 최종 검증합니다.
+            </p>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="rounded-lg bg-primary/10 p-3">
+              <p class="text-[10px] uppercase tracking-[0.16em] text-muted">AI Verdict</p>
+              <p class="mt-1 font-mono text-2xl font-semibold text-warning">HOLD</p>
+            </div>
+            <div class="rounded-lg bg-surface-high/70 p-3">
+              <p class="text-[10px] uppercase tracking-[0.16em] text-muted">Order Guard</p>
+              <p class="mt-1 font-mono text-2xl font-semibold text-danger">BLOCKED</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div class="rounded-lg bg-surface-high/60 p-4">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <span class="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Supervisor</span>
+              <span class="rounded bg-primary/10 px-2 py-1 font-mono text-[10px] text-primary">ACTIVE</span>
+            </div>
+            <p class="text-sm leading-6 text-muted">RAG, Quant, Portfolio tool 결과를 모아 최종 응답 경로를 선택합니다.</p>
+          </div>
+          <div class="rounded-lg bg-surface-high/60 p-4">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <span class="text-xs font-semibold uppercase tracking-[0.18em] text-success">RAG Agent</span>
+              <span class="rounded bg-success/10 px-2 py-1 font-mono text-[10px] text-success">REAL NEWS</span>
+            </div>
+            <p class="text-sm leading-6 text-muted">OpenSearch `market_news`에서 실제 뉴스 28건을 검색하고 fallback 문서는 제외합니다.</p>
+          </div>
+          <div class="rounded-lg bg-surface-high/60 p-4">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <span class="text-xs font-semibold uppercase tracking-[0.18em] text-warning">Quant Agent</span>
+              <span class="rounded bg-warning/10 px-2 py-1 font-mono text-[10px] text-warning">REVIEWING</span>
+            </div>
+            <p class="text-sm leading-6 text-muted">RSI, 변동성, 추세 조건은 통과했지만 단기 과열 구간을 감시합니다.</p>
+          </div>
+          <div class="rounded-lg bg-surface-high/60 p-4">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <span class="text-xs font-semibold uppercase tracking-[0.18em] text-secondary">Reviewer</span>
+              <span class="rounded bg-secondary/10 px-2 py-1 font-mono text-[10px] text-secondary">SAFE</span>
+            </div>
+            <p class="text-sm leading-6 text-muted">환각 표현과 과도한 매수 권고를 걸러내고 면책 문구를 강제합니다.</p>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-3">
+          <div class="rounded-lg bg-surface/80 p-4">
+            <p class="text-[10px] uppercase tracking-[0.16em] text-muted">Decision Reason</p>
+            <p class="mt-2 text-sm leading-6 text-text">BUY 후보지만 `live_buy_enabled=false`와 `shadow mode=ON` 정책 때문에 실제 주문은 실행하지 않습니다.</p>
+          </div>
+          <div class="rounded-lg bg-surface/80 p-4">
+            <p class="text-[10px] uppercase tracking-[0.16em] text-muted">AI Confidence</p>
+            <div class="mt-3 flex items-center gap-3">
+              <span class="font-mono text-2xl font-semibold text-primary">87.4%</span>
+              <div class="h-2 flex-1 overflow-hidden rounded-full bg-surface-high">
+                <div class="h-full rounded-full bg-primary shadow-glow" style="width: 87.4%"></div>
+              </div>
+            </div>
+          </div>
+          <div class="rounded-lg bg-surface/80 p-4">
+            <p class="text-[10px] uppercase tracking-[0.16em] text-muted">Next Action</p>
+            <p class="mt-2 font-mono text-sm text-warning">observe -> score -> log</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid grid-cols-12 gap-5">
+      <div class="col-span-12 flex flex-col gap-5 xl:col-span-8">
+        <article class="glass-panel relative min-h-[520px] overflow-hidden rounded-xl p-4 sm:p-6">
+          <div class="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p class="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-primary">
+                <span class="h-2 w-2 rounded-full bg-primary pulse-dot"></span>
+                AI Reasoning Layer
+              </p>
+              <h2 class="text-2xl font-extrabold tracking-tight text-text sm:text-3xl">KRW-BTC 판단 근거 차트</h2>
+              <p class="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                AI 커맨드 센터의 HOLD 결론을 만든 시세 흐름, RAG 뉴스 점수, Entry Policy 통과 여부를 한 화면에서 확인합니다.
+              </p>
+            </div>
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[460px]">
+              <div class="rounded-lg bg-surface-high/70 p-3">
+                <p class="text-[10px] uppercase tracking-[0.16em] text-muted">Confidence</p>
+                <p class="mt-1 font-mono text-xl font-semibold text-primary">87.4%</p>
+              </div>
+              <div class="rounded-lg bg-surface-high/70 p-3">
+                <p class="text-[10px] uppercase tracking-[0.16em] text-muted">Shadow Mode</p>
+                <p class="mt-1 font-mono text-xl font-semibold text-warning">ON</p>
+              </div>
+              <div class="rounded-lg bg-surface-high/70 p-3">
+                <p class="text-[10px] uppercase tracking-[0.16em] text-muted">RAG Score</p>
+                <p class="mt-1 font-mono text-xl font-semibold text-success">22/25</p>
+              </div>
+              <div class="rounded-lg bg-surface-high/70 p-3">
+                <p class="text-[10px] uppercase tracking-[0.16em] text-muted">BUY Limit</p>
+                <p class="mt-1 font-mono text-xl font-semibold text-secondary">30%</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="terminal-grid relative z-10 mt-6 h-[330px] overflow-hidden rounded-xl bg-background/72">
+            <svg class="absolute inset-0 h-full w-full" preserveAspectRatio="none" viewBox="0 0 900 330" aria-hidden="true">
+              <defs>
+                <linearGradient id="areaGradient" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stop-color="#00dbe9" stop-opacity="0.24" />
+                  <stop offset="100%" stop-color="#00dbe9" stop-opacity="0" />
+                </linearGradient>
+                <filter id="cyanGlow">
+                  <feGaussianBlur stdDeviation="3.5" result="coloredBlur" />
+                  <feMerge>
+                    <feMergeNode in="coloredBlur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+              <path d="M0,242 C60,224 82,182 138,196 C184,207 210,250 258,232 C308,213 315,158 367,166 C418,174 428,214 482,196 C535,178 558,121 610,133 C662,146 669,194 718,166 C766,139 802,87 900,103 L900,330 L0,330 Z" fill="url(#areaGradient)" />
+              <path d="M0,242 C60,224 82,182 138,196 C184,207 210,250 258,232 C308,213 315,158 367,166 C418,174 428,214 482,196 C535,178 558,121 610,133 C662,146 669,194 718,166 C766,139 802,87 900,103" fill="none" filter="url(#cyanGlow)" stroke="#00dbe9" stroke-width="3" />
+              <path d="M482,196 C540,140 598,172 648,124 C705,70 762,112 900,52" fill="none" stroke="#ffe179" stroke-dasharray="8 8" stroke-width="2.5" />
+              <line stroke="#33434a" stroke-dasharray="4 6" x1="482" x2="482" y1="42" y2="292" />
+              <circle cx="482" cy="196" fill="#00dbe9" r="5" />
+              <text fill="#00dbe9" font-family="JetBrains Mono" font-size="13" x="496" y="190">NOW</text>
+              <text fill="#ffe179" font-family="JetBrains Mono" font-size="13" x="680" y="76">shadow signal: watch only</text>
+            </svg>
+            <div class="absolute left-4 top-4 rounded-lg bg-background/80 px-3 py-2 backdrop-blur">
+              <p class="font-mono text-[11px] text-muted">EMA/RSI Gate</p>
+              <p class="mt-1 text-sm font-semibold text-success">통과 - 변동성 정상</p>
+            </div>
+            <div class="absolute bottom-4 right-4 w-[min(280px,calc(100%-2rem))] rounded-lg border border-primary/10 bg-background/80 p-4 shadow-glow backdrop-blur">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">Entry Policy</span>
+                <span class="rounded bg-primary/15 px-2 py-0.5 font-mono text-[10px] text-primary">PASSED</span>
+              </div>
+              <div class="mt-3 h-2 overflow-hidden rounded-full bg-surface-high">
+                <div class="h-full rounded-full bg-primary shadow-glow" style="width: 87.4%"></div>
+              </div>
+              <p class="mt-3 text-xs leading-5 text-muted">live_buy_enabled=false 설정으로 실제 신규 매수는 차단되고 로그만 기록됩니다.</p>
+            </div>
+          </div>
+        </article>
+
+        <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <article class="glass-panel rounded-xl p-5">
+            <div class="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">Portfolio Dashboard</p>
+                <h3 class="mt-2 text-xl font-bold text-text">AI 포트폴리오 요약</h3>
+              </div>
+              <span class="rounded bg-success/10 px-2 py-1 text-xs font-semibold text-success">SYNCED</span>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="rounded-lg bg-surface/72 p-3">
+                <p class="text-xs text-muted">총 순자산</p>
+                <p class="mt-2 font-mono text-lg font-semibold text-text">₩18,420,000</p>
+              </div>
+              <div class="rounded-lg bg-surface/72 p-3">
+                <p class="text-xs text-muted">평가손익</p>
+                <p class="mt-2 font-mono text-lg font-semibold text-success">+₩742,100</p>
+              </div>
+            </div>
+            <div class="mt-5 grid grid-cols-[160px_1fr] items-center gap-5 max-sm:grid-cols-1">
+              <div class="relative mx-auto h-40 w-40">
+                <svg class="h-full w-full -rotate-90" viewBox="0 0 160 160">
+                  <circle cx="80" cy="80" fill="transparent" r="64" stroke="#26323d" stroke-width="12"></circle>
+                  <circle cx="80" cy="80" fill="transparent" r="64" stroke="#00dbe9" stroke-dasharray="402" stroke-dashoffset="112" stroke-linecap="round" stroke-width="12"></circle>
+                  <circle cx="80" cy="80" fill="transparent" r="64" stroke="#cdbdff" stroke-dasharray="402" stroke-dashoffset="312" stroke-linecap="round" stroke-width="12"></circle>
+                  <circle cx="80" cy="80" fill="transparent" r="49" stroke="#ffe179" stroke-dasharray="308" stroke-dashoffset="256" stroke-linecap="round" stroke-width="8"></circle>
+                </svg>
+                <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                  <span class="text-xs text-muted">Risk Score</span>
+                  <span class="font-mono text-3xl font-semibold text-primary">82</span>
+                </div>
+              </div>
+              <div class="space-y-3 text-sm">
+                <div class="flex items-center justify-between gap-3"><span class="text-muted">BTC 비중</span><span class="font-mono text-primary">54%</span></div>
+                <div class="h-1.5 overflow-hidden rounded-full bg-surface-high"><div class="h-full rounded-full bg-primary" style="width:54%"></div></div>
+                <div class="flex items-center justify-between gap-3"><span class="text-muted">ETH 비중</span><span class="font-mono text-secondary">24%</span></div>
+                <div class="h-1.5 overflow-hidden rounded-full bg-surface-high"><div class="h-full rounded-full bg-secondary" style="width:24%"></div></div>
+                <div class="flex items-center justify-between gap-3"><span class="text-muted">KRW 대기자금</span><span class="font-mono text-warning">22%</span></div>
+                <div class="h-1.5 overflow-hidden rounded-full bg-surface-high"><div class="h-full rounded-full bg-warning" style="width:22%"></div></div>
+              </div>
+            </div>
+            <p class="mt-5 rounded-lg bg-primary/10 p-3 text-sm leading-6 text-muted">
+              AI 브리핑: 고변동 구간이지만 대형 자산 중심의 보유 구조는 안정적입니다. 신규 진입보다 리밸런싱 후보 관찰이 우선입니다.
+            </p>
+          </article>
+
+          <article class="glass-panel rounded-xl p-5">
+            <div class="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-primary">RAG News Quality</p>
+                <h3 class="mt-2 text-xl font-bold text-text">뉴스 문맥 관측</h3>
+              </div>
+              <span class="rounded bg-warning/10 px-2 py-1 text-xs font-semibold text-warning">PARTIAL</span>
+            </div>
+            <div class="grid grid-cols-3 gap-3">
+              <div class="rounded-lg bg-success/10 p-3 text-center">
+                <p class="font-mono text-xl font-semibold text-success">28</p>
+                <p class="mt-1 text-[11px] text-muted">real_news</p>
+              </div>
+              <div class="rounded-lg bg-warning/10 p-3 text-center">
+                <p class="font-mono text-xl font-semibold text-warning">0</p>
+                <p class="mt-1 text-[11px] text-muted">fallback</p>
+              </div>
+              <div class="rounded-lg bg-danger/10 p-3 text-center">
+                <p class="font-mono text-xl font-semibold text-danger">3</p>
+                <p class="mt-1 text-[11px] text-muted">embedding_missing</p>
+              </div>
+            </div>
+            <div class="custom-scrollbar mt-5 max-h-60 space-y-4 overflow-y-auto pr-1">
+              <div class="border-l-2 border-success pl-3">
+                <div class="mb-1 flex items-center justify-between gap-3">
+                  <span class="text-xs font-semibold uppercase text-success">Positive</span>
+                  <span class="font-mono text-[10px] text-muted">2m ago</span>
+                </div>
+                <p class="text-sm leading-6 text-text">기관 디지털 자산 수탁 프레임워크 개선 소식이 대형 코인 수급 기대를 높임.</p>
+              </div>
+              <div class="border-l-2 border-warning pl-3">
+                <div class="mb-1 flex items-center justify-between gap-3">
+                  <span class="text-xs font-semibold uppercase text-warning">Watch</span>
+                  <span class="font-mono text-[10px] text-muted">15m ago</span>
+                </div>
+                <p class="text-sm leading-6 text-text">미국 물가 지표 발표 전 단기 변동성 확대 가능성. 신규 BUY는 confidence 상향 필요.</p>
+              </div>
+              <div class="border-l-2 border-danger pl-3">
+                <div class="mb-1 flex items-center justify-between gap-3">
+                  <span class="text-xs font-semibold uppercase text-danger">Risk</span>
+                  <span class="font-mono text-[10px] text-muted">42m ago</span>
+                </div>
+                <p class="text-sm leading-6 text-text">일부 거래소 현물 엔진 지연 보고. Upbit 체결가 검증 로직 유지 필요.</p>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <aside class="col-span-12 flex flex-col gap-5 xl:col-span-4">
+        <article class="glass-panel rounded-xl p-5">
+          <div class="mb-6 flex items-center justify-between gap-3">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">AI Terminal</p>
+              <h3 class="mt-2 text-xl font-bold text-text">LangGraph Runtime</h3>
+            </div>
+            <span class="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">ACTIVE</span>
+          </div>
+          <div class="flex flex-col items-center">
+            <div class="relative h-44 w-44">
+              <svg class="h-full w-full -rotate-90" viewBox="0 0 176 176">
+                <circle cx="88" cy="88" fill="transparent" r="72" stroke="#18222c" stroke-width="10"></circle>
+                <circle cx="88" cy="88" fill="transparent" r="72" stroke="#00dbe9" stroke-dasharray="452" stroke-dashoffset="58" stroke-linecap="round" stroke-width="10"></circle>
+                <circle cx="88" cy="88" fill="transparent" r="54" stroke="#cdbdff" stroke-dasharray="339" stroke-dashoffset="112" stroke-linecap="round" stroke-width="7"></circle>
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span class="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">AI Confidence</span>
+                <span class="font-mono text-4xl font-semibold text-primary">87.4%</span>
+              </div>
+            </div>
+            <p class="mt-4 max-w-sm text-center text-sm leading-6 text-muted">신규 BUY 후보는 모든 조건을 통과했지만 shadow mode 정책에 따라 주문 대신 분석 로그로 기록됩니다.</p>
+          </div>
+        </article>
+
+        <article class="glass-panel rounded-xl p-5">
+          <h3 class="mb-4 text-lg font-bold text-text">Agent Activity</h3>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between gap-3 rounded-lg bg-surface-high/50 p-3 transition-colors hover:bg-surface-high">
+              <div class="flex min-w-0 items-center gap-3">
+                <span class="material-symbols-outlined shrink-0 text-primary">hub</span>
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-semibold text-text">LangGraph Supervisor</p>
+                  <p class="text-xs text-muted">RAG + Quant 결과 병합</p>
+                </div>
+              </div>
+              <span class="rounded bg-primary/15 px-2 py-1 font-mono text-[10px] text-primary">ACTIVE</span>
+            </div>
+            <div class="flex items-center justify-between gap-3 rounded-lg bg-surface-high/50 p-3 transition-colors hover:bg-surface-high">
+              <div class="flex min-w-0 items-center gap-3">
+                <span class="material-symbols-outlined shrink-0 text-success">travel_explore</span>
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-semibold text-text">RAG Agent</p>
+                  <p class="text-xs text-muted">OpenSearch market_news</p>
+                </div>
+              </div>
+              <span class="rounded bg-success/15 px-2 py-1 font-mono text-[10px] text-success">PASSED</span>
+            </div>
+            <div class="flex items-center justify-between gap-3 rounded-lg bg-surface-high/50 p-3 transition-colors hover:bg-surface-high">
+              <div class="flex min-w-0 items-center gap-3">
+                <span class="material-symbols-outlined shrink-0 text-warning">monitoring</span>
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-semibold text-text">Quant Agent</p>
+                  <p class="text-xs text-muted">RSI, BB, volatility</p>
+                </div>
+              </div>
+              <span class="rounded bg-warning/15 px-2 py-1 font-mono text-[10px] text-warning">REVIEWING</span>
+            </div>
+            <div class="flex items-center justify-between gap-3 rounded-lg bg-surface-high/50 p-3 transition-colors hover:bg-surface-high">
+              <div class="flex min-w-0 items-center gap-3">
+                <span class="material-symbols-outlined shrink-0 text-secondary">verified_user</span>
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-semibold text-text">Reviewer Agent</p>
+                  <p class="text-xs text-muted">면책 조항 + 환각 검수</p>
+                </div>
+              </div>
+              <span class="rounded bg-secondary/15 px-2 py-1 font-mono text-[10px] text-secondary">FALLBACK</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="glass-panel rounded-xl p-5">
+          <div class="mb-4 flex items-center justify-between gap-3">
+            <h3 class="text-lg font-bold text-text">AI 성과 요약</h3>
+            <span class="rounded bg-success/10 px-2 py-1 text-xs font-semibold text-success">TRACKING</span>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="rounded-lg bg-surface/72 p-3">
+              <p class="text-xs text-muted">최근 30건 적중률</p>
+              <p class="mt-2 font-mono text-2xl font-semibold text-primary">63.3%</p>
+            </div>
+            <div class="rounded-lg bg-surface/72 p-3">
+              <p class="text-xs text-muted">Paper PnL</p>
+              <p class="mt-2 font-mono text-2xl font-semibold text-success">+4.8%</p>
+            </div>
+            <div class="rounded-lg bg-surface/72 p-3">
+              <p class="text-xs text-muted">최근 판단</p>
+              <p class="mt-2 font-mono text-lg font-semibold text-warning">HOLD</p>
+            </div>
+            <div class="rounded-lg bg-surface/72 p-3">
+              <p class="text-xs text-muted">자동 BUY</p>
+              <p class="mt-2 font-mono text-lg font-semibold text-muted">BLOCKED</p>
+            </div>
+          </div>
+        </article>
+      </aside>
+    </section>
+
+    <section class="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <article class="glass-panel rounded-xl p-5">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Backtest Lab</p>
+            <h3 class="mt-2 text-lg font-bold text-text">AI 정책 검증</h3>
+          </div>
+          <span class="material-symbols-outlined text-primary">science</span>
+        </div>
+        <p class="text-sm leading-6 text-muted">EMA/RSI/TP/SL 조합을 과거 캔들에 적용하고 AI 결과 브리핑으로 전략 품질을 빠르게 점검합니다.</p>
+        <div class="mt-4 grid grid-cols-3 gap-2 font-mono text-xs">
+          <span class="rounded bg-surface-high px-2 py-2 text-center text-primary">RSI 45</span>
+          <span class="rounded bg-surface-high px-2 py-2 text-center text-success">TP 5%</span>
+          <span class="rounded bg-surface-high px-2 py-2 text-center text-danger">SL -3%</span>
+        </div>
+      </article>
+
+      <article class="glass-panel rounded-xl p-5">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-warning">Bot Control</p>
+            <h3 class="mt-2 text-lg font-bold text-text">실시간 파라미터 제어</h3>
+          </div>
+          <span class="material-symbols-outlined text-warning">tune</span>
+        </div>
+        <p class="text-sm leading-6 text-muted">프론트엔드에서 watchlist, confidence, live buy, paper mode를 변경하고 모든 상태는 PostgreSQL을 기준으로 유지합니다.</p>
+        <div class="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
+          <span class="rounded bg-success/10 px-2 py-1 text-success">paper</span>
+          <span class="rounded bg-warning/10 px-2 py-1 text-warning">shadow</span>
+          <span class="rounded bg-danger/10 px-2 py-1 text-danger">live buy off</span>
+        </div>
+      </article>
+
+      <article class="glass-panel rounded-xl p-5">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-secondary">Provider Router</p>
+            <h3 class="mt-2 text-lg font-bold text-text">Gemini/OpenAI Fallback</h3>
+          </div>
+          <span class="material-symbols-outlined text-secondary">route</span>
+        </div>
+        <p class="text-sm leading-6 text-muted">텍스트 생성과 임베딩 경로는 공통 라우터를 거치며, 쿨다운이나 rate limit 시 보조 provider로 전환됩니다.</p>
+        <div class="mt-4 h-2 overflow-hidden rounded-full bg-surface-high">
+          <div class="h-full rounded-full bg-secondary shadow-violet" style="width: 76%"></div>
+        </div>
+        <p class="mt-2 font-mono text-xs text-muted">Gemini primary / OpenAI fallback</p>
+      </article>
+    </section>
+  </main>
+
+  <button class="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-background shadow-glow transition hover:scale-105 active:scale-95" type="button" aria-label="AI 브리핑 생성">
+    <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+  </button>
+
+  <script>
+    const priceNodes = document.querySelectorAll(".ticker-scroll .text-primary");
+    setInterval(() => {
+      const node = priceNodes[0];
+      if (!node) return;
+      const current = Number(node.textContent.replaceAll(",", ""));
+      if (!Number.isFinite(current)) return;
+      const next = current + Math.round((Math.random() - 0.5) * 72000);
+      node.textContent = next.toLocaleString("ko-KR");
+    }, 2800);
+  </script>
+</body>
+</html>
