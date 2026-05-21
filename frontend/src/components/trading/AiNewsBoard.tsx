@@ -15,6 +15,81 @@ interface NewsResponse {
   items: NewsItem[]
 }
 
+type NewsContextTone = {
+  label: string
+  badgeClassName: string
+  borderClassName: string
+  textClassName: string
+}
+
+function resolveNewsContextTone(article: NewsItem, index: number): NewsContextTone {
+  const corpus = `${article.title} ${article.summary}`.toLowerCase()
+  const riskKeywords = [
+    'risk',
+    'down',
+    'fall',
+    'outage',
+    'hack',
+    'lawsuit',
+    '하락',
+    '급락',
+    '위험',
+    '리스크',
+    '소송',
+    '해킹',
+    '장애',
+    '규제',
+  ]
+  const positiveKeywords = [
+    'positive',
+    'rise',
+    'up',
+    'approve',
+    'adoption',
+    'institutional',
+    '상승',
+    '반등',
+    '승인',
+    '호재',
+    '유입',
+    '기관',
+  ]
+
+  if (riskKeywords.some((keyword) => corpus.includes(keyword))) {
+    return {
+      label: 'Risk',
+      badgeClassName: 'bg-[#ffb4ab]/10 text-[#ffb4ab]',
+      borderClassName: 'border-[#ffb4ab]',
+      textClassName: 'text-[#ffb4ab]',
+    }
+  }
+
+  if (positiveKeywords.some((keyword) => corpus.includes(keyword))) {
+    return {
+      label: 'Positive',
+      badgeClassName: 'bg-[#77e2a8]/10 text-[#77e2a8]',
+      borderClassName: 'border-[#77e2a8]',
+      textClassName: 'text-[#77e2a8]',
+    }
+  }
+
+  if (index === 0) {
+    return {
+      label: 'Watch',
+      badgeClassName: 'bg-[#ffe179]/10 text-[#ffe179]',
+      borderClassName: 'border-[#ffe179]',
+      textClassName: 'text-[#ffe179]',
+    }
+  }
+
+  return {
+    label: 'Context',
+    badgeClassName: 'bg-[#00dbe9]/10 text-[#7df4ff]',
+    borderClassName: 'border-[#00dbe9]',
+    textClassName: 'text-[#7df4ff]',
+  }
+}
+
 function resolveErrorMessage(error: unknown): string {
   if (isAxiosError(error)) {
     const detail = error.response?.data?.detail
@@ -46,6 +121,12 @@ function formatUpdatedAt(value: string): string {
   return `${year}-${month}-${day} ${hours}:${minutes}`
 }
 
+function compactSummary(article: NewsItem): string {
+  const source = article.summary.trim() || article.title.trim()
+  const firstSentence = source.split(/(?<=[.!?。！？])\s+/)[0] ?? source
+  return firstSentence.length > 118 ? `${firstSentence.slice(0, 118)}...` : firstSentence
+}
+
 function AiNewsBoard() {
   const newsQuery = useQuery({
     queryKey: ['ai-news-board'],
@@ -65,62 +146,113 @@ function AiNewsBoard() {
   const articles = newsQuery.data?.items ?? []
   const articleCount = newsQuery.data?.count ?? articles.length
   const updatedAt = formatUpdatedAt(newsQuery.data?.analysis_completed_at ?? '')
+  const visibleArticles = articles.slice(0, 3)
+  const missingContextCount = articles.filter(
+    (article) => !article.summary.trim() || !article.link.trim(),
+  ).length
+  const fallbackCount = newsQuery.isError && articles.length === 0 ? 1 : 0
+  const statusLabel =
+    newsQuery.isError && articles.length === 0
+      ? 'ERROR'
+      : missingContextCount > 0
+        ? 'PARTIAL'
+        : articles.length > 0
+          ? 'SYNCED'
+          : 'EMPTY'
+  const statusClassName =
+    statusLabel === 'SYNCED'
+      ? 'bg-[#77e2a8]/10 text-[#77e2a8]'
+      : statusLabel === 'PARTIAL'
+        ? 'bg-[#ffe179]/10 text-[#ffe179]'
+        : statusLabel === 'ERROR'
+          ? 'bg-[#ffb4ab]/10 text-[#ffb4ab]'
+          : 'bg-[#262a31] text-[#849495]'
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <header className="shrink-0 border-b border-gray-200 px-4 py-4 dark:border-gray-700">
+    <section className="quantum-card flex h-full min-h-0 flex-col overflow-hidden rounded-xl p-4 sm:p-5">
+      <header className="shrink-0">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600 dark:text-sky-300">
-              글로벌 뉴스
-            </p>
-            <h2 className="mt-2 break-words text-lg font-bold text-gray-900 dark:text-gray-100">
-              글로벌 시황 뉴스
+            <h2 className="break-words text-lg font-bold text-[#dfe2eb]">
+              뉴스 문맥 관측
             </h2>
+            <p className="mt-2 text-xs text-[#849495]">업데이트: {updatedAt}</p>
           </div>
-          <span className="shrink-0 rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20">
-            {articleCount}건
+          <span className={`shrink-0 rounded-md px-2.5 py-1 text-[10px] font-bold ${statusClassName}`}>
+            {statusLabel}
           </span>
         </div>
-        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">업데이트: {updatedAt}</p>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4">
+      <div className="mt-4 grid shrink-0 grid-cols-3 gap-2">
+        <div className="rounded-lg bg-[#77e2a8]/10 p-3 text-center">
+          <p className="font-mono text-xl font-semibold text-[#77e2a8]">{articleCount}</p>
+          <p className="mt-1 break-words text-[11px] text-[#849495]">real_news</p>
+        </div>
+        <div className="rounded-lg bg-[#ffe179]/10 p-3 text-center">
+          <p className="font-mono text-xl font-semibold text-[#ffe179]">{fallbackCount}</p>
+          <p className="mt-1 break-words text-[11px] text-[#849495]">fallback</p>
+        </div>
+        <div className="rounded-lg bg-[#ffb4ab]/10 p-3 text-center">
+          <p className="font-mono text-xl font-semibold text-[#ffb4ab]">
+            {missingContextCount}
+          </p>
+          <p className="mt-1 break-words text-[11px] text-[#849495]">context_gap</p>
+        </div>
+      </div>
+
+      <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
         {newsQuery.isLoading && !newsQuery.data ? (
           <div className="space-y-3">
-            <div className="h-4 w-1/2 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
-            <div className="h-20 animate-pulse rounded-xl bg-gray-100 dark:bg-gray-700/50" />
-            <div className="h-20 animate-pulse rounded-xl bg-gray-100 dark:bg-gray-700/50" />
+            <div className="h-16 animate-pulse rounded-lg bg-[#262a31]/50" />
+            <div className="h-16 animate-pulse rounded-lg bg-[#262a31]/50" />
+            <div className="h-16 animate-pulse rounded-lg bg-[#262a31]/50" />
           </div>
         ) : newsQuery.isError ? (
-          <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+          <p className="rounded-lg bg-[#0a0e14]/80 px-4 py-3 text-sm font-semibold text-[#ffb4ab]">
             {resolveErrorMessage(newsQuery.error)}
           </p>
         ) : articles.length === 0 ? (
-          <p className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-300">
-            표시할 글로벌 시황 뉴스가 없습니다.
+          <p className="rounded-lg bg-[#0a0e14]/80 px-4 py-3 text-sm leading-6 text-[#849495]">
+            관측 가능한 뉴스 문맥이 없습니다. RAG 수집기가 새 문서를 확보하면 이 영역에 요약됩니다.
           </p>
         ) : (
           <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-            <div className="space-y-3">
-              {articles.map((article, index) => (
-                <article
-                  key={`${article.link}-${index}`}
-                  className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-700/40"
-                >
-                  <a
-                    href={article.link}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="block text-sm font-semibold leading-6 text-gray-900 transition hover:text-sky-600 dark:text-gray-100 dark:hover:text-sky-300"
+            <div className="space-y-4">
+              {visibleArticles.map((article, index) => {
+                const tone = resolveNewsContextTone(article, index)
+
+                return (
+                  <article
+                    key={`${article.link}-${index}`}
+                    className={`border-l-2 ${tone.borderClassName} pl-3`}
                   >
-                    {article.title}
-                  </a>
-                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-600 dark:text-gray-300">
-                    {article.summary}
-                  </p>
-                </article>
-              ))}
+                    <div className="mb-1 flex items-center justify-between gap-3">
+                      <span
+                        className={`shrink-0 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${tone.badgeClassName}`}
+                      >
+                        {tone.label}
+                      </span>
+                      {article.link.trim() && (
+                        <a
+                          href={article.link}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className={`font-mono text-[10px] transition hover:text-[#dfe2eb] ${tone.textClassName}`}
+                        >
+                          SOURCE
+                        </a>
+                      )}
+                    </div>
+                    <p className="line-clamp-2 break-words text-sm font-bold leading-6 text-[#dfe2eb]">
+                      {article.title}
+                    </p>
+                    <p className="mt-1 line-clamp-2 break-words text-sm leading-6 text-[#b9cacb]">
+                      {compactSummary(article)}
+                    </p>
+                  </article>
+                )
+              })}
             </div>
           </div>
         )}
