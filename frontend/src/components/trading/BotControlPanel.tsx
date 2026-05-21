@@ -2,7 +2,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 
 import { getBotStatus, startBot, stopBot } from '../../services/api'
 
@@ -39,12 +38,17 @@ function resolvePortfolioWarningMessage(portfolioError: string | null | undefine
   if (portfolioError === 'UPBIT_KEY_MISSING') {
     return '업비트 API 키가 설정되지 않아 자산 조회 및 매매 기능이 제한됩니다.'
   }
+  if (portfolioError === 'UPBIT_AUTH_IP_NOT_ALLOWED') {
+    return '현재 서버 IP가 업비트 API 허용 목록에 없어 자산 조회 및 매매 기능이 제한됩니다.'
+  }
+  if (portfolioError === 'UPBIT_AUTH_ERROR') {
+    return '업비트 API 인증 또는 권한 설정 문제로 자산 조회 및 매매 기능이 제한됩니다.'
+  }
 
   return '업비트 자산 정보를 불러오지 못해 자산 조회 및 매매 기능이 제한됩니다.'
 }
 
 function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [activeAction, setActiveAction] = useState<ActionType>(null)
   const [notice, setNotice] = useState<NoticeState | null>(null)
@@ -75,19 +79,12 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
   const isError = botStatusQuery.isError
   const isActive = botStatusQuery.data?.running ?? false
   const isSubmitting = activeAction !== null
-  const badgeLabel = isError ? '오류' : isLoading ? '확인 중' : isActive ? '가동 중' : '정지'
+  const badgeLabel = isError ? 'ERROR' : isLoading ? 'CHECK' : isActive ? 'ACTIVE' : 'STOP'
   const badgeClassName = isError
-    ? 'border border-rose-200 bg-rose-100 text-rose-700'
+    ? 'bg-[#ffb4ab]/10 text-[#ffb4ab]'
     : isActive
-      ? 'border border-emerald-200 bg-emerald-100 text-emerald-700'
-      : 'border border-gray-300 bg-gray-200 text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300'
-  const description = isError
-    ? '봇 상태를 확인하지 못했습니다.'
-    : isLoading
-      ? '봇 상태를 확인하고 있습니다.'
-      : isActive
-        ? '트레이딩 봇이 현재 가동 중입니다.'
-        : '트레이딩 봇이 현재 정지 상태입니다.'
+      ? 'bg-[#00dbe9]/10 text-[#7df4ff]'
+      : 'bg-[#262a31] text-[#b9cacb]'
   const portfolioWarningMessage = resolvePortfolioWarningMessage(portfolioError)
 
   const handleStart = async () => {
@@ -123,30 +120,58 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
   }
 
   return (
-    <aside className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+    <aside className="quantum-card rounded-xl p-5">
       <header className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">봇 상태</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">5초 주기로 실시간 상태를 자동 갱신합니다.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#ffe179]">
+            Bot Control
+          </p>
+          <h2 className="mt-2 text-lg font-bold text-[#dfe2eb]">실시간 파라미터 제어</h2>
         </div>
-        <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${badgeClassName}`}>
+        <span className={`inline-flex shrink-0 items-center whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] font-bold ${badgeClassName}`}>
           {badgeLabel}
         </span>
       </header>
 
-      <div className="mt-4 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-        <span className={`h-2.5 w-2.5 rounded-full ${isError ? 'bg-rose-500' : isActive ? 'bg-emerald-500' : 'bg-gray-400 dark:bg-gray-500'}`} />
-        <p>{description}</p>
+      <p className="mt-3 text-sm leading-6 text-[#849495]">
+        봇 런타임과 매매 잠금 상태를 확인하고, 원격 시작/정지를 즉시 전송합니다.
+      </p>
+
+      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+        <div className="border-l-2 border-[#00dbe9] pl-3">
+          <p className="font-semibold uppercase tracking-[0.16em] text-[#849495]">Runtime</p>
+          <p className="mt-2 font-mono text-base font-bold text-[#dfe2eb]">
+            {isActive ? 'RUNNING' : isError ? 'UNKNOWN' : 'STOPPED'}
+          </p>
+        </div>
+        <div className="border-l-2 border-[#ffe179] pl-3">
+          <p className="font-semibold uppercase tracking-[0.16em] text-[#849495]">Refresh</p>
+          <p className="mt-2 font-mono text-base font-bold text-[#dfe2eb]">
+            {isError ? '30s retry' : '5s live'}
+          </p>
+        </div>
+        <div className="border-l-2 border-[#cdbdff] pl-3">
+          <p className="font-semibold uppercase tracking-[0.16em] text-[#849495]">Mode</p>
+          <p className="mt-2 font-mono text-base font-bold text-[#dfe2eb]">SHADOW</p>
+        </div>
+        <div className="border-l-2 border-[#ffb4ab] pl-3">
+          <p className="font-semibold uppercase tracking-[0.16em] text-[#849495]">Live Buy</p>
+          <p className="mt-2 font-mono text-base font-bold text-[#ffb4ab]">LOCKED</p>
+        </div>
       </div>
 
       {portfolioWarningMessage && (
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-          {portfolioWarningMessage}
+        <div className="mt-4 rounded-lg bg-[#0a0e14]/75 px-3 py-2 text-xs font-semibold leading-5 text-[#ffe179]">
+          자산 연결 제한
         </div>
       )}
 
-      <section className="mt-5 border-t border-gray-200 pt-5 dark:border-gray-700">
-        <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">봇 원격 제어</p>
+      <section className="mt-5 border-t border-[#29363a]/80 pt-5">
+        <div className="mb-3 flex flex-wrap gap-2 text-xs font-semibold">
+          <span className="rounded bg-[#77e2a8]/10 px-2 py-1 text-[#77e2a8]">paper</span>
+          <span className="rounded bg-[#ffe179]/10 px-2 py-1 text-[#ffe179]">shadow</span>
+          <span className="rounded bg-[#ffb4ab]/10 px-2 py-1 text-[#ffb4ab]">live buy off</span>
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -154,8 +179,8 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
             disabled={isSubmitting || isLoading || isActive}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
               isActive
-                ? 'cursor-not-allowed bg-emerald-100 text-emerald-700'
-                : 'bg-emerald-600 text-white hover:bg-emerald-500'
+                ? 'cursor-not-allowed bg-[#00dbe9]/10 text-[#00dbe9]/45'
+                : 'bg-[#00dbe9]/14 text-[#7df4ff] hover:bg-[#00dbe9]/22'
             } disabled:opacity-70`}
           >
             {activeAction === 'start' && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -167,29 +192,22 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
             disabled={isSubmitting || isLoading || !isActive}
             className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
               !isActive
-                ? 'cursor-not-allowed bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-                : 'bg-slate-900 text-white hover:bg-slate-700'
+                ? 'cursor-not-allowed bg-[#0a0e14]/75 text-[#849495]'
+                : 'bg-[#0a0e14] text-[#dfe2eb] hover:bg-[#262a31]'
             } disabled:opacity-70`}
           >
             {activeAction === 'stop' && <Loader2 className="h-4 w-4 animate-spin" />}
             <span>{activeAction === 'stop' ? '정지 중...' : '봇 정지'}</span>
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => navigate('/settings')}
-          className="mt-3 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
-        >
-          시스템 설정으로 이동
-        </button>
       </section>
 
       {notice && (
         <p
-          className={`mt-4 rounded-lg px-3 py-2 text-xs ${
+          className={`mt-4 rounded-lg bg-[#0a0e14]/75 px-3 py-2 text-xs font-semibold ${
             notice.type === 'success'
-              ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border border-rose-200 bg-rose-50 text-rose-700'
+              ? 'text-[#77e2a8]'
+              : 'text-[#ffb4ab]'
           }`}
         >
           {notice.message}

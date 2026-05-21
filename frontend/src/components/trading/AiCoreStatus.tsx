@@ -84,20 +84,18 @@ function AiCoreStatus() {
   )
 
   const containerClassName = isActive
-    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 ring-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20'
-    : 'border-rose-200 bg-rose-50 text-rose-700 ring-rose-100 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20'
-  const pulseClassName = isActive ? 'animate-pulse bg-sky-400/50' : 'bg-rose-400/30'
-  const coreClassName = isActive
-    ? 'bg-emerald-400 shadow-[0_0_18px_rgba(74,222,128,0.85)]'
-    : 'bg-rose-400 shadow-[0_0_14px_rgba(251,113,133,0.65)]'
+    ? 'border-[#00dbe9]/20 bg-[#00dbe9]/10 text-[#7df4ff]'
+    : 'border-[#ffb4ab]/20 bg-[#ffb4ab]/10 text-[#ffb4ab]'
+  const pulseClassName = isActive ? 'animate-pulse bg-[#00dbe9]/45' : 'bg-[#ffb4ab]/30'
+  const coreClassName = isActive ? 'bg-[#00dbe9]' : 'bg-[#ffb4ab]'
   const badgeClassName = isActive
-    ? 'bg-white/80 text-emerald-700 dark:bg-gray-900/60 dark:text-emerald-300'
-    : 'bg-white/80 text-rose-700 dark:bg-gray-900/60 dark:text-rose-300'
-  const badgeText = isActive ? '● 가동' : '◶ 중지'
+    ? 'bg-[#00dbe9]/10 text-[#7df4ff]'
+    : 'bg-[#ffb4ab]/10 text-[#ffb4ab]'
+  const badgeText = isActive ? 'ACTIVE' : 'STOP'
 
   return (
     <section
-      className={`inline-flex min-w-0 max-w-[240px] items-center gap-2.5 rounded-full border px-3 py-2 text-sm font-semibold shadow-sm ring-1 lg:max-w-[360px] ${containerClassName}`}
+      className={`inline-flex min-w-0 max-w-[240px] items-center gap-2.5 rounded-full border px-3 py-2 text-sm font-semibold lg:max-w-[360px] ${containerClassName}`}
     >
       <span className="relative flex h-3.5 w-3.5 shrink-0 items-center justify-center">
         <span className={`absolute inline-flex h-full w-full rounded-full ${pulseClassName}`} />

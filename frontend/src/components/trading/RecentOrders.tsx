@@ -57,18 +57,18 @@ function resolveSideStyle(side: string): { label: string; className: string } {
   if (normalized === 'buy' || normalized === 'bid') {
     return {
       label: 'Buy',
-      className: 'bg-rose-100 text-rose-700',
+      className: 'bg-[#ffb4ab]/10 text-[#ffb4ab]',
     }
   }
   if (normalized === 'sell' || normalized === 'ask') {
     return {
       label: 'Sell',
-      className: 'bg-blue-100 text-blue-700',
+      className: 'bg-[#00dbe9]/10 text-[#7df4ff]',
     }
   }
   return {
     label: side.toUpperCase(),
-    className: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+    className: 'bg-[#262a31] text-[#b9cacb]',
   }
 }
 
@@ -82,84 +82,84 @@ function RecentOrders({
   const updatedAtLabel = formatUpdatedAt(updatedAt)
 
   return (
-    <section className="rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <header className="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+    <section className="quantum-card rounded-xl p-4 sm:p-5">
+      <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">최근 체결</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">
+          <h2 className="text-lg font-bold text-[#dfe2eb]">최근 체결</h2>
+          <p className="mt-1 text-sm text-[#849495]">
             {updatedAtLabel ? `마지막 정상 조회 ${updatedAtLabel}` : '최근 체결된 매매 내역입니다.'}
           </p>
         </div>
         {isStale && (
-          <span className="inline-flex shrink-0 items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          <span className="inline-flex shrink-0 items-center rounded-md bg-[#ffe179]/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#ffe179]">
             지연
           </span>
         )}
       </header>
 
       {errorMessage && (
-        <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-700">
+        <div className="mt-4 rounded-lg bg-[#0a0e14]/80 px-3 py-3 text-sm font-semibold text-[#ffe179]">
           {errorMessage}
         </div>
       )}
 
       {isStale && !errorMessage && (
-        <div className="border-b border-amber-200 bg-amber-50 px-5 py-3 text-sm font-medium text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+        <div className="mt-4 rounded-lg bg-[#0a0e14]/80 px-3 py-3 text-sm font-semibold text-[#ffe179]">
           최근 체결 새로고침에 실패해 마지막 정상 조회값을 유지하고 있습니다.
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
-          <thead className="bg-gray-100 text-left text-gray-600 dark:bg-gray-700 dark:text-gray-300">
-            <tr>
-              <th className="px-5 py-3 font-semibold">체결 시간</th>
-              <th className="px-5 py-3 font-semibold">종목</th>
-              <th className="px-5 py-3 font-semibold">구분</th>
-              <th className="px-5 py-3 font-semibold">체결가</th>
-              <th className="px-5 py-3 font-semibold">수량</th>
-              <th className="px-5 py-3 font-semibold">브로커</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100 bg-white dark:divide-gray-700 dark:bg-gray-800">
-            {isLoading && (
-              <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-gray-500 dark:text-gray-300">
-                  최근 체결 내역을 불러오는 중입니다.
-                </td>
-              </tr>
-            )}
+      <div className="mt-4 space-y-2">
+        {isLoading && (
+          <div className="rounded-lg bg-[#0a0e14]/80 p-4">
+            <div className="h-3 w-28 animate-pulse rounded bg-[#3b494b]/50" />
+            <div className="mt-3 h-4 w-full animate-pulse rounded bg-[#3b494b]/50" />
+            <div className="mt-2 h-4 w-4/5 animate-pulse rounded bg-[#3b494b]/50" />
+          </div>
+        )}
 
-            {!isLoading && orders.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-gray-500 dark:text-gray-300">
-                  체결 내역이 없습니다.
-                </td>
-              </tr>
-            )}
+        {!isLoading && orders.length === 0 && (
+          <div className="rounded-lg bg-[#0a0e14]/80 px-4 py-5 text-center">
+            <p className="text-sm font-bold text-[#dfe2eb]">체결 내역 없음</p>
+            <p className="mt-2 text-xs leading-5 text-[#849495]">
+              전략 엔진의 체결 로그가 쌓이면 이 영역에 표시됩니다.
+            </p>
+          </div>
+        )}
 
-            {!isLoading &&
-              orders.map((order) => {
-                const sideStyle = resolveSideStyle(order.side)
-                return (
-                  <tr key={order.id} className="text-gray-700 dark:text-gray-200">
-                    <td className="px-5 py-3">{formatExecutedAt(order.executed_at)}</td>
-                    <td className="px-5 py-3 font-medium text-gray-900 dark:text-gray-100">{order.symbol}</td>
-                    <td className="px-5 py-3">
+        {!isLoading &&
+          orders.map((order) => {
+            const sideStyle = resolveSideStyle(order.side)
+            return (
+              <article key={order.id} className="rounded-lg bg-[#0a0e14]/80 px-3 py-3">
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="break-words text-sm font-bold text-[#dfe2eb]">
+                        {order.symbol}
+                      </span>
                       <span
-                        className={`inline-flex min-w-14 items-center justify-center rounded-full px-2.5 py-1 text-xs font-semibold ${sideStyle.className}`}
+                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${sideStyle.className}`}
                       >
                         {sideStyle.label}
                       </span>
-                    </td>
-                    <td className="px-5 py-3 font-semibold text-gray-900 dark:text-gray-100">{formatKrw(order.price)}</td>
-                    <td className="px-5 py-3">{formatQty(order.qty)}</td>
-                    <td className="px-5 py-3">{order.broker}</td>
-                  </tr>
-                )
-              })}
-          </tbody>
-        </table>
+                    </div>
+                    <p className="mt-1 break-words text-xs text-[#849495]">
+                      {formatExecutedAt(order.executed_at)} · {order.broker}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="font-mono text-sm font-bold text-[#dfe2eb]">
+                      {formatKrw(order.price)}
+                    </p>
+                    <p className="mt-1 font-mono text-[11px] text-[#849495]">
+                      {formatQty(order.qty)}
+                    </p>
+                  </div>
+                </div>
+              </article>
+            )
+          })}
       </div>
     </section>
   )

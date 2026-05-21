@@ -56,9 +56,9 @@ function ControlPanel() {
   }
 
   return (
-    <aside className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+    <aside className="quantum-card rounded-xl p-5">
       <header className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">비상 제어</h2>
+        <h2 className="text-lg font-bold text-[#dfe2eb]">비상 제어</h2>
       </header>
 
       <section>
@@ -73,12 +73,12 @@ function ControlPanel() {
       </section>
 
       {successMessage && (
-        <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+        <p className="mt-4 rounded-lg bg-[#0a0e14]/75 px-3 py-2 text-xs font-semibold text-[#77e2a8]">
           {successMessage}
         </p>
       )}
       {errorMessage && (
-        <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+        <p className="mt-4 rounded-lg bg-[#0a0e14]/75 px-3 py-2 text-xs font-semibold text-[#ffb4ab]">
           {errorMessage}
         </p>
       )}
