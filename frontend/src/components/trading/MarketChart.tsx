@@ -30,6 +30,12 @@ const TIMEFRAME_OPTIONS: ReadonlyArray<{ label: string; value: MarketTimeframe }
   { label: '1D', value: 'days' },
 ]
 
+function resolveChartControlClassName(isActive: boolean, isDisabled = false): string {
+  return `quantum-tab ${isActive ? 'quantum-tab-active' : 'quantum-tab-inactive'} ${
+    isDisabled ? 'cursor-not-allowed opacity-40' : ''
+  }`
+}
+
 function resolveErrorMessage(error: unknown, fallback: string): string {
   if (isAxiosError(error)) {
     const detail = error.response?.data?.detail
@@ -87,24 +93,24 @@ function MarketChart({ symbol }: MarketChartProps) {
 
     const getMainChartHeight = () => {
       const wrapperHeight = wrapper.clientHeight
-      const reservedHeight = Math.floor(rsiContainer.clientHeight || 150) + 12
+      const reservedHeight = Math.floor(rsiContainer.clientHeight || 96) + 12
       const measuredHeight = mainContainer.clientHeight || wrapperHeight - reservedHeight
       const safeHeight = measuredHeight > 0 ? measuredHeight : 240
       return Math.max(60, Math.floor(safeHeight))
     }
 
-    const getRsiChartHeight = () => Math.max(150, Math.floor(rsiContainer.clientHeight || 150))
+    const getRsiChartHeight = () => Math.max(96, Math.floor(rsiContainer.clientHeight || 96))
 
     const width = wrapper.clientWidth || mainContainer.clientWidth || 800
     const mainHeight = getMainChartHeight()
     const rsiHeight = getRsiChartHeight()
     const priceScaleWidth = 72
 
-    const chartBgColor = isDarkMode ? '#1f2937' : '#ffffff'
-    const chartTextColor = isDarkMode ? '#9ca3af' : '#4b5563'
-    const gridColor = isDarkMode ? 'rgba(75, 85, 99, 0.2)' : 'rgba(229, 231, 235, 0.6)'
-    const crosshairColor = isDarkMode ? 'rgba(59, 130, 246, 0.35)' : 'rgba(59, 130, 246, 0.4)'
-    const borderColor = isDarkMode ? 'rgba(75, 85, 99, 0.4)' : 'rgba(229, 231, 235, 1)'
+    const chartBgColor = isDarkMode ? '#0a0e14' : '#10141a'
+    const chartTextColor = isDarkMode ? '#b9cacb' : '#dfe2eb'
+    const gridColor = 'rgba(59, 73, 75, 0.42)'
+    const crosshairColor = 'rgba(0, 219, 233, 0.42)'
+    const borderColor = 'rgba(0, 219, 233, 0.12)'
 
     const chart = createChart(mainContainer, {
       width,
@@ -134,10 +140,10 @@ function MarketChart({ symbol }: MarketChartProps) {
     })
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#22c55e',
-      downColor: '#ef4444',
-      wickUpColor: '#22c55e',
-      wickDownColor: '#ef4444',
+      upColor: '#00dbe9',
+      downColor: '#ffb4ab',
+      wickUpColor: '#00dbe9',
+      wickDownColor: '#ffb4ab',
       borderVisible: false,
       priceLineVisible: true,
       lastValueVisible: true,
@@ -155,28 +161,28 @@ function MarketChart({ symbol }: MarketChartProps) {
     })
 
     const sma20Series = chart.addSeries(LineSeries, {
-      color: '#f59e0b',
+      color: '#ffe179',
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
     })
 
     const sma60Series = chart.addSeries(LineSeries, {
-      color: '#38bdf8',
+      color: '#cdbdff',
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
     })
 
     const bbUpperSeries = chart.addSeries(LineSeries, {
-      color: 'rgba(244, 114, 182, 0.9)',
+      color: 'rgba(255, 180, 171, 0.9)',
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
     })
 
     const bbLowerSeries = chart.addSeries(LineSeries, {
-      color: 'rgba(45, 212, 191, 0.9)',
+      color: 'rgba(0, 219, 233, 0.9)',
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -210,7 +216,7 @@ function MarketChart({ symbol }: MarketChartProps) {
     })
 
     const rsiSeries = rsiChart.addSeries(LineSeries, {
-      color: '#a78bfa',
+      color: '#cdbdff',
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -224,7 +230,7 @@ function MarketChart({ symbol }: MarketChartProps) {
 
     rsiSeries.createPriceLine({
       price: 70,
-      color: 'rgba(248, 113, 113, 0.75)',
+      color: 'rgba(255, 180, 171, 0.75)',
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       axisLabelVisible: false,
@@ -232,7 +238,7 @@ function MarketChart({ symbol }: MarketChartProps) {
     })
     rsiSeries.createPriceLine({
       price: 30,
-      color: 'rgba(45, 212, 191, 0.75)',
+      color: 'rgba(0, 219, 233, 0.75)',
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       axisLabelVisible: false,
@@ -368,7 +374,7 @@ function MarketChart({ symbol }: MarketChartProps) {
     const volumeData: HistogramData<Time>[] = candlesQuery.data.map((item) => ({
       time: toChartTime(item.time),
       value: item.volume,
-      color: item.close >= item.open ? 'rgba(34, 197, 94, 0.45)' : 'rgba(239, 68, 68, 0.45)',
+      color: item.close >= item.open ? 'rgba(0, 219, 233, 0.35)' : 'rgba(255, 180, 171, 0.35)',
     }))
 
     const sma20Data: LineData<Time>[] = []
@@ -429,66 +435,37 @@ function MarketChart({ symbol }: MarketChartProps) {
   const isEmpty = !candlesQuery.isLoading && !candlesQuery.isError && (candlesQuery.data?.length ?? 0) === 0
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+    <section className="quantum-card flex h-full min-h-0 flex-col overflow-hidden rounded-xl p-4">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">트레이딩 차트</h2>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <h2 className="text-lg font-semibold text-[#dfe2eb]">트레이딩 차트</h2>
+          <p className="mt-1 text-xs text-[#849495]">
             {normalizedSymbol ? normalizedSymbol : '종목을 선택하면 차트가 표시됩니다.'}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          <div className="inline-flex rounded-lg bg-gray-100 p-1 ring-1 ring-gray-200 dark:bg-gray-900 dark:ring-gray-700">
-            {TIMEFRAME_OPTIONS.map((option) => {
-              const active = option.value === timeframe
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setTimeframe(option.value)}
-                  disabled={!normalizedSymbol}
-                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
-                    active
-                      ? 'bg-blue-500 text-white shadow-sm dark:bg-blue-600'
-                      : 'text-gray-500 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-400 dark:hover:bg-gray-800'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              )
-            })}
-          </div>
-
-          <div className="flex flex-col items-end gap-1">
+        <div className="flex flex-wrap items-center justify-end">
+          <div className="inline-flex w-fit shrink-0 rounded-xl bg-[#0a0e14] p-1">
+            {TIMEFRAME_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setTimeframe(option.value)}
+                disabled={!normalizedSymbol}
+                className={resolveChartControlClassName(option.value === timeframe, !normalizedSymbol)}
+              >
+                {option.label}
+              </button>
+            ))}
             <button
               type="button"
               aria-pressed={isAiOverlayEnabled}
+              title={isAiOverlayEnabled ? 'AI 오버레이 켜짐' : 'AI 오버레이 꺼짐'}
               onClick={() => setIsAiOverlayEnabled((previousValue) => !previousValue)}
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition ${
-                isAiOverlayEnabled
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300'
-                  : 'border-gray-300 bg-white text-gray-600 hover:border-sky-300 hover:text-sky-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-sky-500/40 dark:hover:text-sky-300'
-              }`}
+              className={resolveChartControlClassName(isAiOverlayEnabled)}
             >
-              <span
-                className={`flex h-4 w-4 items-center justify-center rounded border text-[10px] ${
-                  isAiOverlayEnabled
-                    ? 'border-emerald-400 bg-emerald-400 text-white'
-                    : 'border-gray-400 bg-transparent text-transparent dark:border-gray-500'
-                }`}
-              >
-                ✓
-              </span>
-              <span>AI 예측선 보기</span>
+              AI 예측선
             </button>
-            <p
-              className={`text-[11px] font-medium ${
-                isAiOverlayEnabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'
-              }`}
-            >
-              {isAiOverlayEnabled ? 'AI 오버레이 켜짐' : 'AI 오버레이 꺼짐'}
-            </p>
           </div>
         </div>
       </header>
@@ -496,26 +473,26 @@ function MarketChart({ symbol }: MarketChartProps) {
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div ref={chartsWrapperRef} className="flex min-h-0 flex-1 flex-col gap-3">
           <div ref={mainChartContainerRef} className="min-h-0 w-full flex-1 overflow-hidden rounded-xl" />
-          <div ref={rsiChartContainerRef} className="h-[150px] w-full shrink-0 overflow-hidden rounded-xl" />
+          <div ref={rsiChartContainerRef} className="h-24 w-full shrink-0 overflow-hidden rounded-xl" />
         </div>
 
         {!normalizedSymbol && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-white/80 text-sm text-gray-500 backdrop-blur-sm dark:bg-gray-900/80 dark:text-gray-400">
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-[#0a0e14]/80 text-sm text-[#849495] backdrop-blur-sm">
             검색창 또는 Watchlist에서 종목을 선택해 주세요.
           </div>
         )}
         {normalizedSymbol && candlesQuery.isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-white/70 text-sm text-gray-900 backdrop-blur-sm dark:bg-gray-900/70 dark:text-gray-100">
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-[#0a0e14]/70 text-sm text-[#dfe2eb] backdrop-blur-sm">
             캔들 데이터를 불러오는 중입니다...
           </div>
         )}
         {normalizedSymbol && candlesQuery.isError && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-white/70 px-4 text-center text-sm text-rose-600 backdrop-blur-sm dark:bg-gray-900/70 dark:text-rose-400">
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-[#0a0e14]/70 px-4 text-center text-sm text-[#ffb4ab] backdrop-blur-sm">
             {resolveErrorMessage(candlesQuery.error, '캔들 데이터를 불러오지 못했습니다.')}
           </div>
         )}
         {normalizedSymbol && isEmpty && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-white/70 text-sm text-gray-500 backdrop-blur-sm dark:bg-gray-900/70 dark:text-gray-400">
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-[#0a0e14]/70 text-sm text-[#849495] backdrop-blur-sm">
             표시할 캔들 데이터가 없습니다.
           </div>
         )}
@@ -526,7 +503,7 @@ function MarketChart({ symbol }: MarketChartProps) {
           href="https://www.tradingview.com/"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-gray-400 transition hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+          className="text-xs text-[#849495] transition hover:text-[#b9cacb]"
         >
           Charts by TradingView
         </a>
