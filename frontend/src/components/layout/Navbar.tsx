@@ -1,11 +1,9 @@
-import { MessageSquare, type LucideIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 
 import ThemeToggle from '../common/ThemeToggle'
+import MarketSearchBar from '../trading/MarketSearchBar'
 
 interface NavbarProps {
-  aiStatus: ReactNode
   totalNetWorth: number
   totalPnl: number
   isPortfolioLoading: boolean
@@ -19,13 +17,12 @@ interface NavItem {
   to: string
   label: string
   end?: boolean
-  icon?: LucideIcon
 }
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: '대시보드', end: true },
-  { to: '/portfolio', label: '📊 포트폴리오' },
-  { to: '/chat', label: 'AI 뱅커', icon: MessageSquare },
+  { to: '/portfolio', label: '포트폴리오' },
+  { to: '/chat', label: 'AI 뱅커' },
   { to: '/settings', label: '설정' },
   { to: '/laboratory', label: '연구소/백테스트' },
 ]
@@ -55,21 +52,33 @@ function formatUpdatedAt(value: string | null): string | null {
   })
 }
 
+function resolvePortfolioUnavailableLabel(errorCode: string | null): string {
+  if (errorCode === 'UPBIT_AUTH_IP_NOT_ALLOWED') {
+    return 'IP 미허용'
+  }
+  if (errorCode === 'UPBIT_AUTH_ERROR') {
+    return '인증 오류'
+  }
+  if (errorCode === 'UPBIT_KEY_MISSING') {
+    return '키 없음'
+  }
+  return '조회 불가'
+}
+
 function resolveNavLinkClassName({ isActive }: { isActive: boolean }): string {
-  return `inline-flex items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-[13px] transition-colors sm:px-3 sm:text-sm ${
+  return `inline-flex items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-[13px] font-semibold transition-colors sm:px-3 sm:text-sm ${
     isActive
-      ? 'bg-emerald-500 text-white shadow-sm'
-      : 'text-gray-600 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+      ? 'bg-[#00363a]/70 text-[#7df4ff]'
+      : 'text-[#b9cacb] hover:bg-[#262a31] hover:text-[#dfe2eb]'
   }`
 }
 
 function renderNavLinks() {
-  return NAV_ITEMS.map(({ to, label, end, icon: Icon }) => {
+  return NAV_ITEMS.map(({ to, label, end }) => {
     const visibleLabel = to === '/laboratory' ? '정책 검증' : label
 
     return (
       <NavLink key={to} to={to} end={end} className={resolveNavLinkClassName}>
-        {Icon ? <Icon className="h-4 w-4" /> : null}
         <span>{visibleLabel}</span>
       </NavLink>
     )
@@ -77,7 +86,6 @@ function renderNavLinks() {
 }
 
 function Navbar({
-  aiStatus,
   totalNetWorth,
   totalPnl,
   isPortfolioLoading,
@@ -86,50 +94,57 @@ function Navbar({
   portfolioUpdatedAt,
   portfolioSource,
 }: NavbarProps) {
+  const navigate = useNavigate()
+  const location = useLocation()
   const isPortfolioUnavailable =
     portfolioSource === 'empty' || (portfolioError !== null && portfolioSource === null)
   const updatedAtLabel = formatUpdatedAt(portfolioUpdatedAt)
   const pnlTextColor = isPortfolioUnavailable
-    ? 'text-gray-500 dark:text-gray-400'
+    ? 'text-[#849495]'
     : totalPnl >= 0
-      ? 'text-emerald-600 dark:text-emerald-400'
-      : 'text-rose-600 dark:text-rose-400'
+      ? 'text-[#77e2a8]'
+      : 'text-[#ffb4ab]'
   const totalNetWorthLabel = isPortfolioLoading
     ? '...'
     : isPortfolioUnavailable
-      ? '조회 불가'
+      ? resolvePortfolioUnavailableLabel(portfolioError)
       : formatKrw(totalNetWorth)
   const totalPnlLabel = isPortfolioLoading
     ? '...'
     : isPortfolioUnavailable
       ? '-'
       : formatSignedKrw(totalPnl)
+  const handleSelectSymbol = (symbol: string) => {
+    const nextParams = new URLSearchParams(location.pathname === '/' ? location.search : '')
+    nextParams.set('symbol', symbol)
+    navigate({
+      pathname: '/',
+      search: nextParams.toString(),
+    })
+  }
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-gray-200 bg-white/95 text-gray-900 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100">
-      <div className="mx-auto flex w-full max-w-full flex-col gap-3 px-4 py-3 sm:px-6 lg:grid lg:h-16 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-center lg:gap-4 lg:px-8 lg:py-0">
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-[#29363a]/80 bg-[#181c22]/90 text-[#dfe2eb] backdrop-blur-xl">
+      <div className="mx-auto flex w-full max-w-full flex-col gap-3 px-4 py-3 sm:px-6 lg:grid lg:h-16 lg:grid-cols-[minmax(0,1fr)_minmax(220px,320px)_auto_auto] lg:items-center lg:gap-4 lg:px-8 lg:py-0">
         <div className="flex min-w-0 items-center justify-between gap-3 lg:hidden">
           <NavLink
             to="/"
-            className="shrink-0 text-lg font-semibold tracking-tight transition-colors hover:text-emerald-600 dark:hover:text-emerald-300"
+            className="shrink-0 text-lg font-extrabold tracking-tight text-[#7df4ff] transition-colors hover:text-[#00dbe9]"
           >
             AI Trade Manager
           </NavLink>
 
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="min-w-0">{aiStatus}</div>
-            <ThemeToggle />
-          </div>
+          <ThemeToggle />
         </div>
 
-        <nav className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium lg:hidden">
+        <nav className="quantum-nav-scroll flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto text-sm font-medium lg:hidden">
           {renderNavLinks()}
         </nav>
 
         <div className="hidden min-w-0 items-center gap-3 lg:flex lg:gap-4">
           <NavLink
             to="/"
-            className="shrink-0 text-lg font-semibold tracking-tight transition-colors hover:text-emerald-600 dark:hover:text-emerald-300"
+            className="shrink-0 text-lg font-extrabold tracking-tight text-[#7df4ff] transition-colors hover:text-[#00dbe9]"
           >
             AI Trade Manager
           </NavLink>
@@ -139,12 +154,14 @@ function Navbar({
           </nav>
         </div>
 
-        <div className="hidden min-w-0 items-center justify-center gap-3 justify-self-center lg:flex lg:gap-4">
-          {aiStatus}
-          <div className="hidden items-center gap-4 xl:flex">
-            <span className="whitespace-nowrap text-xs font-semibold text-gray-600 dark:text-gray-300">
+        <div className="hidden min-w-0 justify-self-stretch lg:block">
+          <MarketSearchBar compact onSelectSymbol={handleSelectSymbol} />
+        </div>
+
+        <div className="hidden min-w-0 items-center justify-center gap-4 justify-self-center xl:flex">
+            <span className="whitespace-nowrap text-xs font-semibold text-[#b9cacb]">
               총 자산:{' '}
-              <span className={isPortfolioUnavailable ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100'}>
+              <span className={isPortfolioUnavailable ? 'text-[#849495]' : 'text-[#dfe2eb]'}>
                 {totalNetWorthLabel}
               </span>
             </span>
@@ -153,13 +170,12 @@ function Navbar({
             </span>
             {portfolioIsStale && !isPortfolioUnavailable && (
               <span
-                className="whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+                className="whitespace-nowrap rounded-full bg-[#ffe179]/10 px-2 py-0.5 text-[11px] font-semibold text-[#ffe179]"
                 title={portfolioError ?? undefined}
               >
                 지연{updatedAtLabel ? ` · ${updatedAtLabel}` : ''}
               </span>
             )}
-          </div>
         </div>
 
         <div className="hidden justify-self-end lg:block">
