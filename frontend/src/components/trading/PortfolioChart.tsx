@@ -1,6 +1,3 @@
-import { useEffect, useRef, useState } from 'react'
-import { Cell, Legend, Pie, PieChart, Tooltip } from 'recharts'
-
 import type { AssetItem, PortfolioSummary } from '../../services/portfolioService'
 
 interface PortfolioChartProps {
@@ -10,83 +7,41 @@ interface PortfolioChartProps {
   isStale: boolean
   updatedAt: string | null
   errorCode?: string | null
+  totalNetWorth?: number
+  totalPnl?: number
 }
 
-interface ChartDatum {
+interface AllocationDatum {
   name: string
   value: number
   percent: number
   color: string
 }
 
-interface TooltipPayloadItem {
-  payload: ChartDatum
-}
-
-interface CustomTooltipProps {
-  active?: boolean
-  payload?: TooltipPayloadItem[]
-}
-
-const COLORS = [
-  '#f59e0b', // 황금 (KRW: 현금)
-  '#3b82f6', // 하늘 파랑 (BTC)
-  '#10b981', // 에메랄드 초록
-  '#ef4444', // 선명한 빨강
-  '#8b5cf6', // 보라
-  '#06b6d4', // 시안
-  '#f97316', // 주황
-  '#ec4899', // 핫핑크
-  '#a3e635', // 라임 초록
-  '#64748b', // 슬레이트 회색
-]
-
-const CHART_HEIGHT = 320
-const MIN_CHART_WIDTH = 240
-
 type StatusTone = 'success' | 'warning' | 'danger' | 'neutral'
 
 interface PortfolioStatusView {
   label: string
   tone: StatusTone
-  description: string
   notice: string | null
 }
 
-function useMeasuredWidth() {
-  const ref = useRef<HTMLDivElement | null>(null)
-  const [width, setWidth] = useState(0)
-
-  useEffect(() => {
-    const node = ref.current
-    if (!node) {
-      return
-    }
-
-    let frameId = 0
-    const measure = () => {
-      window.cancelAnimationFrame(frameId)
-      frameId = window.requestAnimationFrame(() => {
-        const nextWidth = Math.floor(node.getBoundingClientRect().width)
-        setWidth((previousWidth) => (previousWidth === nextWidth ? previousWidth : nextWidth))
-      })
-    }
-
-    measure()
-    const resizeObserver = new ResizeObserver(measure)
-    resizeObserver.observe(node)
-
-    return () => {
-      window.cancelAnimationFrame(frameId)
-      resizeObserver.disconnect()
-    }
-  }, [])
-
-  return [ref, width] as const
-}
+const COLORS = ['#00dbe9', '#cdbdff', '#ffe179', '#ffb4ab', '#77e2a8', '#849495']
+const RING_RADIUS = 64
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 
 function formatKrw(value: number): string {
   return `₩${new Intl.NumberFormat('ko-KR').format(Math.round(value))}`
+}
+
+function formatSignedKrw(value: number): string {
+  if (value > 0) {
+    return `+${formatKrw(value)}`
+  }
+  if (value < 0) {
+    return `-${formatKrw(Math.abs(value))}`
+  }
+  return formatKrw(value)
 }
 
 function formatUpdatedAt(value: string | null): string | null {
@@ -109,28 +64,34 @@ function formatUpdatedAt(value: string | null): string | null {
 
 function resolveErrorMessage(errorCode?: string | null): string {
   if (errorCode === 'PORTFOLIO_FETCH_TIMEOUT') {
-    return '실시간 자산 조회가 지연되어 마지막 스냅샷을 표시하고 있습니다.'
+    return '실시간 자산 조회가 지연되어 마지막 정상 값을 표시하고 있습니다.'
   }
   if (errorCode === 'UPBIT_KEY_MISSING') {
     return 'Upbit API 키가 없어 실시간 자산을 조회할 수 없습니다.'
   }
-  if (errorCode) {
-    return '실시간 자산 조회에 실패해 마지막 정상값을 유지하고 있습니다.'
+  if (errorCode === 'UPBIT_AUTH_IP_NOT_ALLOWED') {
+    return 'Upbit API 허용 IP 목록에 현재 서버 IP가 없어 자산 조회가 차단되었습니다.'
   }
-  return '최신 자산 조회가 지연되어 마지막 정상값을 유지하고 있습니다.'
+  if (errorCode === 'UPBIT_AUTH_ERROR') {
+    return 'Upbit API 인증 또는 권한 설정 문제로 자산 조회가 차단되었습니다.'
+  }
+  if (errorCode) {
+    return '실시간 자산 조회에 실패해 마지막 정상 값을 유지하고 있습니다.'
+  }
+  return '최신 자산 조회가 지연되어 마지막 정상 값을 유지하고 있습니다.'
 }
 
-function resolveStatusClassName(tone: StatusTone): string {
+function resolveStatusStyle(tone: StatusTone): { bg: string; text: string } {
   if (tone === 'success') {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200'
+    return { bg: 'bg-[#77e2a8]/10', text: 'text-[#77e2a8]' }
   }
   if (tone === 'warning') {
-    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'
+    return { bg: 'bg-[#ffe179]/10', text: 'text-[#ffe179]' }
   }
   if (tone === 'danger') {
-    return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200'
+    return { bg: 'bg-[#ffb4ab]/10', text: 'text-[#ffb4ab]' }
   }
-  return 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-600 dark:bg-gray-700/40 dark:text-gray-300'
+  return { bg: 'bg-[#262a31]/80', text: 'text-[#b9cacb]' }
 }
 
 function resolvePortfolioStatus({
@@ -145,53 +106,40 @@ function resolvePortfolioStatus({
   errorCode?: string | null
 }): PortfolioStatusView {
   const updatedAtLabel = formatUpdatedAt(updatedAt)
-  const suffix = updatedAtLabel ? ` 마지막 갱신 ${updatedAtLabel}` : ' 마지막 갱신 없음'
+  const staleSuffix = updatedAtLabel ? ` 마지막 갱신 ${updatedAtLabel}` : ''
 
   if (source === 'live' && !isStale) {
-    return {
-      label: '실시간',
-      tone: 'success',
-      description: `실시간 자산 기준입니다.${suffix}`,
-      notice: null,
-    }
+    return { label: 'SYNCED', tone: 'success', notice: null }
   }
 
   if (source === 'snapshot') {
     return {
-      label: '스냅샷',
+      label: 'SNAPSHOT',
       tone: 'warning',
-      description: `저장된 마지막 자산 스냅샷 기준입니다.${suffix}`,
-      notice: resolveErrorMessage(errorCode),
+      notice: `${resolveErrorMessage(errorCode)}${staleSuffix}`,
     }
   }
 
   if (source === 'empty') {
     return {
-      label: '조회 불가',
+      label: 'DEGRADED',
       tone: 'danger',
-      description: '실시간 자산과 스냅샷을 모두 불러오지 못했습니다.',
       notice: resolveErrorMessage(errorCode),
     }
   }
 
   if (isStale) {
     return {
-      label: '지연',
+      label: 'STALE',
       tone: 'warning',
-      description: `마지막 정상 조회값을 표시하고 있습니다.${suffix}`,
-      notice: resolveErrorMessage(errorCode),
+      notice: `${resolveErrorMessage(errorCode)}${staleSuffix}`,
     }
   }
 
-  return {
-    label: '대기',
-    tone: 'neutral',
-    description: '자산 조회를 준비하고 있습니다.',
-    notice: null,
-  }
+  return { label: 'WAITING', tone: 'neutral', notice: '자산 조회를 준비하고 있습니다.' }
 }
 
-function buildChartData(items: AssetItem[]): ChartDatum[] {
+function buildAllocationData(items: AssetItem[]): AllocationDatum[] {
   const grouped = new Map<string, number>()
 
   for (const item of items) {
@@ -220,17 +168,89 @@ function buildChartData(items: AssetItem[]): ChartDatum[] {
   }))
 }
 
-function CustomTooltip({ active, payload }: CustomTooltipProps) {
-  if (!active || !payload || payload.length === 0) {
-    return null
+function resolvePortfolioBriefing(data: AllocationDatum[], status: PortfolioStatusView): string {
+  if (data.length === 0) {
+    return `AI 브리핑: ${
+      status.notice ??
+      '자산 비중 데이터가 확보되면 AI 브리핑과 리밸런싱 관찰 포인트를 표시합니다.'
+    }`
   }
 
-  const item = payload[0].payload
+  const [topAsset, secondAsset] = data
+  const krwPercent = data.find((item) => item.name === 'KRW')?.percent ?? 0
+
+  if (topAsset.percent >= 70) {
+    return `AI 브리핑: ${topAsset.name} 비중이 ${topAsset.percent.toFixed(
+      1,
+    )}%로 높습니다. 신규 진입보다 변동성 확인과 리밸런싱 후보 관찰이 우선입니다.`
+  }
+
+  if (krwPercent >= 35) {
+    return `AI 브리핑: KRW 대기자금이 ${krwPercent.toFixed(
+      1,
+    )}%로 충분합니다. 추격 매수보다 Entry Policy 통과 신호를 기다리는 구성이 적절합니다.`
+  }
+
+  if (secondAsset) {
+    return `AI 브리핑: ${topAsset.name}/${secondAsset.name} 중심의 보유 구조입니다. 대형 자산 흐름은 유지되지만 급격한 비중 쏠림 여부를 계속 확인합니다.`
+  }
+
+  return `AI 브리핑: ${topAsset.name} 단일 중심 포트폴리오입니다. 추가 매수보다 리스크 한도와 손익 변동성을 먼저 평가합니다.`
+}
+
+function resolveRiskScore(data: AllocationDatum[]): number {
+  if (data.length === 0) {
+    return 0
+  }
+
+  const topPercent = data[0]?.percent ?? 0
+  const krwPercent = data.find((item) => item.name === 'KRW')?.percent ?? 0
+  const diversificationBonus = Math.min(18, Math.max(0, data.length - 1) * 6)
+  const cashBufferBonus = Math.min(12, krwPercent / 3)
+  const concentrationPenalty = Math.max(0, topPercent - 45) * 0.7
+  const score = 72 + diversificationBonus + cashBufferBonus - concentrationPenalty
+
+  return Math.max(0, Math.min(99, Math.round(score)))
+}
+
+function AllocationRing({ data, riskScore }: { data: AllocationDatum[]; riskScore: number }) {
+  const visibleData = data.slice(0, 4)
+  const segments = visibleData.map((item, index) => {
+    const offset = visibleData
+      .slice(0, index)
+      .reduce((acc, previousItem) => acc + (previousItem.percent / 100) * RING_CIRCUMFERENCE, 0)
+    const dash = (item.percent / 100) * RING_CIRCUMFERENCE
+
+    return {
+      dashLength: Math.max(0, dash - 2),
+      item,
+      offset,
+    }
+  })
+
   return (
-    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-md dark:border-gray-700 dark:bg-gray-800">
-      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{item.name}</p>
-      <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">평가금액: {formatKrw(item.value)}</p>
-      <p className="text-xs text-gray-600 dark:text-gray-300">비중: {item.percent.toFixed(1)}%</p>
+    <div className="relative mx-auto h-40 w-40">
+      <svg className="h-full w-full -rotate-90" viewBox="0 0 160 160" aria-hidden="true">
+        <circle cx="80" cy="80" fill="transparent" r={RING_RADIUS} stroke="#26323d" strokeWidth="12" />
+        {segments.map(({ dashLength, item, offset }) => (
+          <circle
+            key={item.name}
+            cx="80"
+            cy="80"
+            fill="transparent"
+            r={RING_RADIUS}
+            stroke={item.color}
+            strokeDasharray={`${dashLength} ${RING_CIRCUMFERENCE - dashLength}`}
+            strokeDashoffset={-offset}
+            strokeLinecap="round"
+            strokeWidth="12"
+          />
+        ))}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+        <span className="text-xs text-[#849495]">Risk Score</span>
+        <span className="font-mono text-3xl font-semibold text-[#00dbe9]">{riskScore}</span>
+      </div>
     </div>
   )
 }
@@ -242,84 +262,101 @@ function PortfolioChart({
   isStale,
   updatedAt,
   errorCode = null,
+  totalNetWorth = 0,
+  totalPnl = 0,
 }: PortfolioChartProps) {
-  const chartData = buildChartData(items)
-  const hasData = chartData.length > 0
-  const [chartContainerRef, measuredWidth] = useMeasuredWidth()
-  const chartWidth = measuredWidth > 0 ? Math.max(MIN_CHART_WIDTH, measuredWidth) : 0
+  const allocationData = buildAllocationData(items)
+  const hasData = allocationData.length > 0
   const status = resolvePortfolioStatus({ source, isStale, updatedAt, errorCode })
+  const statusStyle = resolveStatusStyle(status.tone)
+  const briefing = resolvePortfolioBriefing(allocationData, status)
+  const riskScore = resolveRiskScore(allocationData)
+  const summaryNetWorth =
+    totalNetWorth > 0 ? totalNetWorth : allocationData.reduce((acc, item) => acc + item.value, 0)
+  const topAllocations = allocationData.slice(0, 3)
 
   return (
-    <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <header className="mb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">자산 배분</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">{status.description}</p>
-        </div>
+    <section className="quantum-card rounded-xl p-5">
+      <header className="mb-5 flex items-start justify-between gap-4">
+        <h2 className="min-w-0 text-xl font-bold text-[#dfe2eb]">AI 포트폴리오 요약</h2>
         <span
-          className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${resolveStatusClassName(
-            status.tone,
-          )}`}
+          className={`shrink-0 rounded px-2 py-1 font-mono text-[10px] font-bold ${statusStyle.bg} ${statusStyle.text}`}
         >
           {status.label}
         </span>
       </header>
 
       {status.notice && (
-        <div
-          className={`mb-4 rounded-xl border px-3 py-2.5 text-sm font-medium ${resolveStatusClassName(
-            status.tone,
-          )}`}
-        >
+        <p className={`mb-4 rounded-lg bg-[#0a0e14]/72 p-3 text-sm font-semibold leading-6 ${statusStyle.text}`}>
           {status.notice}
-        </div>
+        </p>
       )}
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-lg bg-[#0a0e14]/72 p-3">
+          <p className="text-xs text-[#849495]">총 순자산</p>
+          <p className="mt-2 break-words font-mono text-lg font-semibold text-[#dfe2eb]">
+            {formatKrw(summaryNetWorth)}
+          </p>
+        </div>
+        <div className="rounded-lg bg-[#0a0e14]/72 p-3">
+          <p className="text-xs text-[#849495]">평가손익</p>
+          <p
+            className={`mt-2 break-words font-mono text-lg font-semibold ${
+              totalPnl > 0 ? 'text-[#77e2a8]' : totalPnl < 0 ? 'text-[#ffb4ab]' : 'text-[#849495]'
+            }`}
+          >
+            {formatSignedKrw(totalPnl)}
+          </p>
+        </div>
+      </div>
 
       {isLoading && (
-        <div className="flex h-72 items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-300">
-          자산 비중 차트를 불러오는 중입니다.
+        <div className="mt-5 flex min-h-48 items-center justify-center rounded-lg bg-[#0a0e14]/72 text-sm text-[#849495]">
+          자산 비중을 불러오는 중입니다.
         </div>
       )}
 
-      {!isLoading && !hasData && (
-        <div className="flex h-72 items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-700/40 dark:text-gray-300">
-          비중 데이터를 표시할 수 없습니다.
-        </div>
-      )}
+      {!isLoading && (
+        <div className="mt-5 grid grid-cols-[160px_1fr] items-center gap-5 max-sm:grid-cols-1">
+          <AllocationRing data={allocationData} riskScore={riskScore} />
 
-      {!isLoading && hasData && (
-        <div ref={chartContainerRef} className="h-80 w-full">
-          {chartWidth > 0 && (
-            <PieChart width={chartWidth} height={CHART_HEIGHT}>
-              <Pie
-                data={chartData}
-                dataKey="value"
-                nameKey="name"
-                cx="50%"
-                cy="45%"
-                innerRadius={68}
-                outerRadius={112}
-                paddingAngle={2}
-                stroke="#ffffff"
-                strokeWidth={2}
-              >
-                {chartData.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-              <Legend
-                verticalAlign="bottom"
-                align="center"
-                formatter={(value, _entry, index) => {
-                  const item = chartData[index]
-                  return `${value} (${item.percent.toFixed(1)}%)`
-                }}
-              />
-            </PieChart>
+          {hasData ? (
+            <div className="space-y-3 text-sm">
+              {topAllocations.map((item) => (
+                <div key={item.name}>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 truncate text-[#849495]">{item.name} 비중</span>
+                    <span className="shrink-0 font-mono" style={{ color: item.color }}>
+                      {item.percent.toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#262a31]">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${Math.min(100, item.percent)}%`, backgroundColor: item.color }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-lg bg-[#0a0e14]/72 p-4 text-sm leading-6 text-[#849495]">
+              <p className="font-semibold text-[#dfe2eb]">비중 데이터 대기</p>
+              <p className="mt-2">
+                실시간 자산 또는 마지막 스냅샷을 확보하면 상위 보유 비중이 여기에 표시됩니다.
+              </p>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#262a31]">
+                <div className="h-full w-0 rounded-full bg-[#00dbe9]" />
+              </div>
+            </div>
           )}
         </div>
       )}
+
+      <p className="mt-5 rounded-lg bg-[#00dbe9]/10 p-3 text-sm leading-6 text-[#b9cacb]">
+        {briefing}
+      </p>
     </section>
   )
 }

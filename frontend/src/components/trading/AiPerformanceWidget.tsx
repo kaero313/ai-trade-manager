@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react'
 import { Loader2 } from 'lucide-react'
 
 import { useAIPerformance } from '../../hooks/useAIPerformance'
+import { useSystemConfigs } from '../../hooks/useSystemConfigs'
 
 function formatKrw(value: number): string {
   const rounded = Math.round(Math.abs(value))
@@ -17,148 +19,142 @@ function formatSignedKrw(value: number): string {
   return formatKrw(value)
 }
 
-function formatCount(value: number): string {
-  return `${new Intl.NumberFormat('ko-KR').format(Math.round(value))}건`
-}
-
 function formatPercentage(value: number): string {
   return `${value.toFixed(1)}%`
 }
 
-function formatQty(value: number): string {
-  return new Intl.NumberFormat('ko-KR', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 8,
-  }).format(value)
+function parseBooleanConfig(value: string | undefined): boolean {
+  return ['true', '1', 'yes', 'on'].includes(String(value ?? '').trim().toLowerCase())
 }
 
-function formatExecutedAt(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return value
+function resolveValueClassName(tone: 'primary' | 'success' | 'warning' | 'danger' | 'muted'): string {
+  if (tone === 'success') {
+    return 'text-[#77e2a8]'
   }
-
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  const seconds = String(date.getSeconds()).padStart(2, '0')
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+  if (tone === 'warning') {
+    return 'text-[#ffe179]'
+  }
+  if (tone === 'danger') {
+    return 'text-[#ffb4ab]'
+  }
+  if (tone === 'muted') {
+    return 'text-[#849495]'
+  }
+  return 'text-[#00dbe9]'
 }
 
-function resolveWinRateTone(winRate: number): string {
-  if (winRate >= 50) {
-    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+function resolvePnlTone(value: number): 'success' | 'danger' | 'muted' {
+  if (value > 0) {
+    return 'success'
   }
-  return 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300'
+  if (value < 0) {
+    return 'danger'
+  }
+  return 'muted'
 }
 
-function resolveAccuracyRateTone(accuracyRate: number): string {
-  if (accuracyRate >= 50) {
-    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
-  }
-  return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
-}
-
-function resolvePnlTone(totalRealizedPnlKrw: number): string {
-  if (totalRealizedPnlKrw > 0) {
-    return 'text-emerald-600 dark:text-emerald-300'
-  }
-  if (totalRealizedPnlKrw < 0) {
-    return 'text-rose-600 dark:text-rose-300'
-  }
-  return 'text-gray-900 dark:text-gray-100'
-}
-
-function resolveSideStyle(side: string): { label: string; className: string } {
-  const normalized = side.toUpperCase()
+function resolveDecisionTone(decision: string): 'primary' | 'warning' | 'danger' | 'muted' {
+  const normalized = decision.toUpperCase()
   if (normalized === 'BUY') {
-    return {
-      label: 'BUY',
-      className: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
-    }
+    return 'primary'
   }
   if (normalized === 'SELL') {
-    return {
-      label: 'SELL',
-      className: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
-    }
+    return 'danger'
   }
-  return {
-    label: normalized,
-    className: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+  if (normalized === 'HOLD') {
+    return 'warning'
   }
+  return 'muted'
 }
 
-function KpiCard({
-  title,
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0
+  }
+  return Math.max(0, Math.min(100, value))
+}
+
+function MetricTile({
+  label,
   value,
-  hint,
-  valueClassName = 'text-gray-900 dark:text-gray-100',
-  badge,
+  tone = 'primary',
+  size = 'lg',
 }: {
-  title: string
+  label: string
   value: string
-  hint: string
-  valueClassName?: string
-  badge?: { label: string; className: string }
+  tone?: 'primary' | 'success' | 'warning' | 'danger' | 'muted'
+  size?: 'lg' | 'xl'
 }) {
   return (
-    <article className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/60">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
-            {title}
-          </p>
-          <p className={`mt-3 text-2xl font-semibold ${valueClassName}`}>{value}</p>
-        </div>
-        {badge && (
-          <span
-            className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-semibold ${badge.className}`}
-          >
-            {badge.label}
-          </span>
-        )}
-      </div>
-      <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">{hint}</p>
+    <article className="rounded-lg bg-[#0a0e14]/72 p-3">
+      <p className="text-xs text-[#849495]">{label}</p>
+      <p
+        className={`mt-2 break-words font-mono font-semibold ${resolveValueClassName(tone)} ${
+          size === 'xl' ? 'text-2xl' : 'text-lg'
+        }`}
+      >
+        {value}
+      </p>
     </article>
+  )
+}
+
+function PerformanceShell({
+  badge,
+  badgeTone = 'primary',
+  children,
+}: {
+  badge: string
+  badgeTone?: 'primary' | 'success' | 'warning' | 'danger'
+  children: ReactNode
+}) {
+  return (
+    <section className="quantum-card flex min-h-0 flex-col overflow-hidden rounded-xl p-5">
+      <header className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="min-w-0 text-lg font-bold text-[#dfe2eb]">AI 성과 요약</h2>
+        <span
+          className={`shrink-0 rounded px-2 py-1 text-xs font-semibold ${resolveValueClassName(badgeTone)} ${
+            badgeTone === 'success'
+              ? 'bg-[#77e2a8]/10'
+              : badgeTone === 'warning'
+                ? 'bg-[#ffe179]/10'
+                : badgeTone === 'danger'
+                  ? 'bg-[#ffb4ab]/10'
+                  : 'bg-[#00dbe9]/10'
+          }`}
+        >
+          {badge}
+        </span>
+      </header>
+      {children}
+    </section>
   )
 }
 
 function AiPerformanceWidget() {
   const performanceQuery = useAIPerformance()
+  const systemConfigsQuery = useSystemConfigs()
   const performance = performanceQuery.data
   const hasData = performance !== undefined
 
   if (performanceQuery.isLoading && !hasData) {
     return (
-      <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-        <header className="border-b border-gray-200 px-5 py-4 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI 성과</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">AI 자율 체결 성과 요약</p>
-        </header>
-        <div className="flex h-80 items-center justify-center gap-3 px-5 py-8 text-sm text-gray-500 dark:text-gray-300">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          AI 매매 성과를 불러오는 중입니다.
+      <PerformanceShell badge="LOADING">
+        <div className="flex h-44 items-center justify-center gap-3 rounded-lg bg-[#0a0e14]/72 px-5 py-8 text-sm text-[#b9cacb]">
+          <Loader2 className="h-5 w-5 animate-spin text-[#00dbe9]" />
+          AI 성과 데이터를 불러오는 중입니다.
         </div>
-      </section>
+      </PerformanceShell>
     )
   }
 
   if (performanceQuery.isError && !hasData) {
     return (
-      <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-        <header className="border-b border-gray-200 px-5 py-4 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI 성과</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">AI 자율 체결 성과 요약</p>
-        </header>
-        <div className="p-5">
-          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
-            AI 매매 성과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
-          </div>
+      <PerformanceShell badge="DEGRADED" badgeTone="danger">
+        <div className="rounded-lg bg-[#0a0e14]/72 px-4 py-3 text-sm font-semibold leading-6 text-[#ffb4ab]">
+          AI 매매 성과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
         </div>
-      </section>
+      </PerformanceShell>
     )
   }
 
@@ -172,111 +168,45 @@ function AiPerformanceWidget() {
     avg_confidence: 0,
     recent_trades: [],
   }
+  const latestTrade = summary.recent_trades[0] ?? null
+  const latestDecision = latestTrade?.decision ?? '대기'
+  const statusBadge = performanceQuery.isError ? 'CACHED' : 'TRACKING'
+  const statusTone = performanceQuery.isError ? 'warning' : 'success'
+  const accuracy = clampPercent(summary.accuracy_rate)
+  const liveBuyConfig = systemConfigsQuery.data?.find((item) => item.config_key === 'live_buy_enabled')
+  const liveBuyEnabled = parseBooleanConfig(liveBuyConfig?.config_value)
+  const autoBuyLabel = systemConfigsQuery.isLoading ? 'CHECKING' : liveBuyEnabled ? 'ENABLED' : 'BLOCKED'
+  const autoBuyTone = systemConfigsQuery.isLoading ? 'muted' : liveBuyEnabled ? 'success' : 'muted'
 
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <header className="border-b border-gray-200 px-5 py-4 dark:border-gray-700">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI 성과</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-300">AI 자율 체결 성과 요약</p>
-      </header>
-
-      <div className="flex min-h-0 flex-1 flex-col gap-5 p-5">
-        {performanceQuery.isError && hasData && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-            최신 성과 데이터를 다시 가져오지 못했습니다. 최근 캐시 기준으로 표시합니다.
-          </div>
-        )}
-
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <KpiCard title="총 거래 건수" value={formatCount(summary.total_trades)} hint="AI 체결 완료 건수" />
-          <KpiCard
-            title="승률"
-            value={formatPercentage(summary.win_rate)}
-            hint={`${summary.winning_trades}승 / ${summary.losing_trades}패`}
-            badge={{
-              label: summary.win_rate >= 50 ? '양호' : '주의',
-              className: resolveWinRateTone(summary.win_rate),
-            }}
-          />
-          <KpiCard
-            title="분석 적중률"
-            value={formatPercentage(summary.accuracy_rate)}
-            hint="검증 완료된 BUY/SELL 분석 중 적중 비율"
-            badge={{
-              label: summary.accuracy_rate >= 50 ? '우수' : '낮음',
-              className: resolveAccuracyRateTone(summary.accuracy_rate),
-            }}
-          />
-          <KpiCard
-            title="총 실현 손익"
-            value={formatSignedKrw(summary.total_realized_pnl_krw)}
-            hint="포지션 종료 기준 누적 손익"
-            valueClassName={resolvePnlTone(summary.total_realized_pnl_krw)}
-          />
-          <KpiCard
-            title="평균 확신도"
-            value={formatPercentage(summary.avg_confidence)}
-            hint="AI 분석 confidence 평균"
-          />
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/50">
-          <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-700">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">최근 AI 체결</h3>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">최근 20건 기준 체결 로그</p>
-          </div>
-
-          <div className="max-h-[320px] overflow-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
-              <thead className="bg-gray-100 text-left text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">종목</th>
-                  <th className="px-4 py-3 font-semibold">방향</th>
-                  <th className="px-4 py-3 font-semibold">체결가</th>
-                  <th className="px-4 py-3 font-semibold">수량</th>
-                  <th className="px-4 py-3 font-semibold">AI 확신도</th>
-                  <th className="px-4 py-3 font-semibold">시각</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white dark:divide-gray-700 dark:bg-gray-800">
-                {summary.recent_trades.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-500 dark:text-gray-300">
-                      최근 AI 체결 내역이 없습니다.
-                    </td>
-                  </tr>
-                )}
-
-                {summary.recent_trades.map((trade, index) => {
-                  const sideStyle = resolveSideStyle(trade.side)
-                  return (
-                    <tr
-                      key={`${trade.symbol}-${trade.side}-${trade.executed_at}-${index}`}
-                      className="text-gray-700 dark:text-gray-200"
-                    >
-                      <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">{trade.symbol}</td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex min-w-14 items-center justify-center rounded-full px-2.5 py-1 text-xs font-semibold ${sideStyle.className}`}
-                        >
-                          {sideStyle.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-gray-900 dark:text-gray-100">
-                        {formatKrw(trade.price)}
-                      </td>
-                      <td className="px-4 py-3">{formatQty(trade.qty)}</td>
-                      <td className="px-4 py-3">{formatPercentage(trade.confidence)}</td>
-                      <td className="whitespace-nowrap px-4 py-3">{formatExecutedAt(trade.executed_at)}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+    <PerformanceShell badge={statusBadge} badgeTone={statusTone}>
+      <div className="grid grid-cols-2 gap-3">
+        <MetricTile
+          label="AI 적중률"
+          value={formatPercentage(accuracy)}
+          tone={accuracy > 0 ? 'primary' : 'muted'}
+          size="xl"
+        />
+        <MetricTile
+          label="Paper PnL"
+          value={formatSignedKrw(summary.total_realized_pnl_krw)}
+          tone={resolvePnlTone(summary.total_realized_pnl_krw)}
+          size="xl"
+        />
+        <MetricTile
+          label="최근 판단"
+          value={latestDecision}
+          tone={resolveDecisionTone(latestDecision)}
+        />
+        <MetricTile label="자동 BUY" value={autoBuyLabel} tone={autoBuyTone} />
       </div>
-    </section>
+
+      {performanceQuery.isError && hasData && (
+        <p className="mt-4 rounded-lg bg-[#ffe179]/10 p-3 text-sm font-semibold leading-6 text-[#ffe179]">
+          최신 성과 데이터를 다시 가져오지 못해 최근 캐시 기준으로 표시합니다.
+        </p>
+      )}
+    </PerformanceShell>
   )
 }
 
