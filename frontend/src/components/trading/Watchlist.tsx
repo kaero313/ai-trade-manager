@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { isAxiosError } from 'axios'
-import { Loader2 } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { fetchFavorites, fetchTickers, removeFavorite, type TickerItem } from '../../api/markets'
@@ -153,19 +153,20 @@ function Watchlist({ selectedSymbol = null, onSelectSymbol }: WatchlistProps) {
                   <p className="min-w-0 truncate text-sm font-bold text-[#dfe2eb]">{symbol}</p>
                   <button
                     type="button"
-                    aria-label="관심 종목 삭제"
+                    aria-label={`${symbol} 관심 종목 삭제`}
+                    title="관심 종목 삭제"
                     onClick={(event) => {
                       event.preventDefault()
                       event.stopPropagation()
                       void handleRemove(symbol)
                     }}
                     disabled={removeMutation.isPending && !isPending}
-                    className="shrink-0 rounded bg-[#0a0e14]/75 px-1.5 py-0.5 text-[10px] font-bold text-[#849495] transition hover:bg-[#ffb4ab]/10 hover:text-[#ffb4ab] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[#3b494b]/80 bg-[#0a0e14]/80 text-[#849495] transition hover:border-[#ffb4ab]/55 hover:bg-[#ffb4ab]/10 hover:text-[#ffb4ab] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-[#849495]" />
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                     ) : (
-                      '제거'
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
                     )}
                   </button>
                 </div>

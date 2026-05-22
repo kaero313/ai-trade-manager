@@ -873,12 +873,16 @@ def _build_analysis_user_prompt(symbol: str, context_text: str) -> str:
     )
 
 
-def _build_fallback_analysis() -> AIAnalysisResponse:
+def _build_fallback_analysis(reason: str | None = None) -> AIAnalysisResponse:
+    reasoning = "AI 신규 추론을 완료하지 못해 안전 모드로 HOLD를 반환했습니다."
+    if reason:
+        reasoning = f"{reasoning} 원인: {reason}"
+
     return AIAnalysisResponse(
         decision="HOLD",
         confidence=0,
         recommended_weight=0,
-        reasoning="AI 분석 실패로 보수적으로 HOLD를 반환했습니다.",
+        reasoning=reasoning,
     )
 
 
@@ -1025,7 +1029,7 @@ async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisRespon
         raise
     except AIProviderUnavailableError as exc:
         logger.warning("AI provider 전체 사용 불가로 HOLD fallback을 사용합니다: symbol=%s error=%s", normalized_symbol, exc)
-        analysis = _build_fallback_analysis()
+        analysis = _build_fallback_analysis(str(exc))
     except Exception as exc:
         logger.error("AI 구조화 분석 실패: symbol=%s error=%s", normalized_symbol, exc, exc_info=True)
         analysis = _build_fallback_analysis()

@@ -6,8 +6,6 @@ import { getMarketSentiment } from '../../services/api'
 type SentimentTone = {
   badgeClassName: string
   dotClassName: string
-  directionClassName: string
-  directionSurfaceClassName: string
   label: string
   trendStrength: string
   volatilityWarning: string
@@ -63,8 +61,6 @@ function resolveSentimentTone(score: number, classification: string | undefined)
       badgeClassName:
         'border border-[#ffb4ab]/45 bg-[#0a0e14]/80 text-[#ffb4ab]',
       dotClassName: 'bg-[#ffb4ab]',
-      directionClassName: 'text-[#ffb4ab]',
-      directionSurfaceClassName: 'bg-[#ffb4ab]/10',
       label,
       trendStrength: '트렌드 약세',
       volatilityWarning: '매우 높음',
@@ -80,8 +76,6 @@ function resolveSentimentTone(score: number, classification: string | undefined)
       badgeClassName:
         'border border-[#ffb4ab]/45 bg-[#0a0e14]/80 text-[#ffb4ab]',
       dotClassName: 'bg-[#ffb4ab]',
-      directionClassName: 'text-[#ffb4ab]',
-      directionSurfaceClassName: 'bg-[#ffb4ab]/10',
       label,
       trendStrength: '트렌드 약세',
       volatilityWarning: '높음',
@@ -97,8 +91,6 @@ function resolveSentimentTone(score: number, classification: string | undefined)
       badgeClassName:
         'border border-[#ffe179]/40 bg-[#0a0e14]/80 text-[#ffe179]',
       dotClassName: 'bg-[#ffe179]',
-      directionClassName: 'text-[#ffe179]',
-      directionSurfaceClassName: 'bg-[#ffe179]/10',
       label,
       trendStrength: '트렌드 중립',
       volatilityWarning: '보통',
@@ -114,8 +106,6 @@ function resolveSentimentTone(score: number, classification: string | undefined)
       badgeClassName:
         'border border-[#77e2a8]/40 bg-[#0a0e14]/80 text-[#77e2a8]',
       dotClassName: 'bg-[#77e2a8]',
-      directionClassName: 'text-[#77e2a8]',
-      directionSurfaceClassName: 'bg-[#77e2a8]/10',
       label,
       trendStrength: '트렌드 강세',
       volatilityWarning: '주의',
@@ -130,8 +120,6 @@ function resolveSentimentTone(score: number, classification: string | undefined)
     badgeClassName:
       'border border-[#ffe179]/45 bg-[#0a0e14]/80 text-[#ffe179]',
     dotClassName: 'bg-[#ffe179]',
-    directionClassName: 'text-[#ffe179]',
-    directionSurfaceClassName: 'bg-[#ffe179]/10',
     label,
     trendStrength: '트렌드 과열',
     volatilityWarning: '매우 높음',
@@ -286,31 +274,8 @@ function AiMarketSentiment() {
           <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-stretch">
             <div className="quantum-panel min-w-0 flex-1 rounded-lg p-4">
               <div className="space-y-4">
-                <div className="flex min-w-0 items-end justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#849495]">
-                      현재 점수
-                    </p>
-                    <p className="mt-2 text-3xl font-black tracking-tight text-[#dfe2eb]">
-                      {sentimentScore}
-                    </p>
-                  </div>
-                  <div
-                    className={`min-w-[96px] rounded-lg px-3 py-2 text-right ${sentimentTone.directionSurfaceClassName}`}
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#849495]">
-                      시장 방향
-                    </p>
-                    <p
-                      className={`mt-2 break-words text-xl font-black leading-tight ${sentimentTone.directionClassName}`}
-                    >
-                      {sentimentTone.label}
-                    </p>
-                  </div>
-                </div>
-
                 <div className="space-y-3">
-                  <div className="relative w-full pt-4">
+                  <div className="relative w-full pt-3">
                     <div className="h-3 w-full rounded-full bg-[linear-gradient(90deg,#ffb4ab,#ffe179,#77e2a8,#00dbe9)]" />
                     <div
                       className="absolute top-0 -translate-x-1/2"
@@ -320,11 +285,6 @@ function AiMarketSentiment() {
                         className={`block h-3 w-3 rounded-full border-2 border-[#10141a] ${sentimentTone.dotClassName}`}
                       />
                     </div>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.18em] text-[#849495]">
-                    <span>0 Fear</span>
-                    <span>100 Greed</span>
                   </div>
 
                   <p className="text-sm text-[#b9cacb]">

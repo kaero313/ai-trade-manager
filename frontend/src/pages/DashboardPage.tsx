@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 
@@ -63,7 +64,7 @@ function DashboardPage() {
 
       <div className="grid min-h-0 gap-5 lg:grid-cols-12">
         <div className="flex min-w-0 flex-col gap-5 lg:col-span-3 lg:min-h-0">
-          <div className="flex min-h-[460px] min-w-0 flex-1 flex-col gap-3 lg:min-h-0">
+          <div className="flex min-w-0 flex-col gap-3">
             <div className="inline-flex w-fit shrink-0 rounded-xl bg-[#0a0e14] p-1">
               <button
                 type="button"
@@ -81,13 +82,13 @@ function DashboardPage() {
               </button>
             </div>
 
-            <section className="quantum-card macro-panel-shell flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl">
+            <section className="quantum-card macro-panel-shell overflow-hidden rounded-xl">
               {macroTab === 'sentiment' ? (
-                <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto pr-1">
+                <div className="min-w-0">
                   <AiMarketSentiment />
                 </div>
               ) : (
-                <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+                <div className="flex max-h-[520px] min-h-0 flex-col overflow-hidden">
                   <AiNewsBoard />
                 </div>
               )}
@@ -165,6 +166,7 @@ function DashboardPage() {
         className="group fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full border border-[#7df4ff]/30 bg-[#00dbe9] text-[#00363a] transition-transform hover:scale-105 active:scale-95 sm:bottom-8 sm:right-8"
       >
         <span className="absolute inset-1 rounded-full bg-[#7df4ff]/20 opacity-0 transition-opacity group-hover:opacity-100" />
+        <Sparkles className="relative h-6 w-6 text-[#00363a]" aria-hidden="true" />
         <span className="sr-only">AI 뱅커 열기</span>
       </Link>
     </div>

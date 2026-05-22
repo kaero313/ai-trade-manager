@@ -14,7 +14,7 @@ from app.services.portfolio.aggregator import PortfolioService
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-DASHBOARD_PORTFOLIO_TIMEOUT_SECONDS = 4.0
+DASHBOARD_PORTFOLIO_TIMEOUT_SECONDS = 8.0
 DASHBOARD_TIMEOUT_ERROR = "PORTFOLIO_FETCH_TIMEOUT"
 DASHBOARD_FETCH_FAILED_ERROR = "PORTFOLIO_FETCH_FAILED"
 
@@ -38,6 +38,18 @@ def _to_float(value: Any) -> float:
         return 0.0
 
 
+def _empty_fallback_dashboard(error_code: str) -> PortfolioSummary:
+    return PortfolioSummary(
+        total_net_worth=0.0,
+        total_pnl=0.0,
+        items=[],
+        error=error_code,
+        source="empty",
+        is_stale=True,
+        updated_at=None,
+    )
+
+
 def _snapshot_asset_item(raw_item: Any) -> AssetItem:
     item = raw_item if isinstance(raw_item, dict) else {}
     currency = str(item.get("currency") or "").strip().upper()
@@ -59,7 +71,12 @@ async def _snapshot_fallback_dashboard(
     *,
     error_code: str,
 ) -> PortfolioSummary:
-    snapshots = await get_portfolio_snapshots(db, limit=1)
+    try:
+        snapshots = await get_portfolio_snapshots(db, limit=1)
+    except Exception:
+        logger.exception("Dashboard snapshot fallback 조회 실패.")
+        return _empty_fallback_dashboard(error_code)
+
     if snapshots:
         latest_snapshot = snapshots[0]
         snapshot_items = [
@@ -77,15 +94,18 @@ async def _snapshot_fallback_dashboard(
             updated_at=_datetime_to_iso(latest_snapshot.created_at),
         )
 
-    return PortfolioSummary(
-        total_net_worth=0.0,
-        total_pnl=0.0,
-        items=[],
-        error=error_code,
-        source="empty",
-        is_stale=True,
-        updated_at=None,
-    )
+    return _empty_fallback_dashboard(error_code)
+
+
+async def _rollback_session_safely(db: AsyncSession) -> None:
+    rollback = getattr(db, "rollback", None)
+    if not callable(rollback):
+        return
+
+    try:
+        await rollback()
+    except Exception:
+        logger.exception("Dashboard fallback 전 세션 rollback 실패.")
 
 
 @router.get("/dashboard", response_model=PortfolioSummary)
@@ -100,12 +120,15 @@ async def get_dashboard_snapshot(db: AsyncSession = Depends(get_db)) -> Portfoli
             "Dashboard portfolio aggregation timed out after %.1f seconds.",
             DASHBOARD_PORTFOLIO_TIMEOUT_SECONDS,
         )
+        await _rollback_session_safely(db)
         return await _snapshot_fallback_dashboard(db, error_code=DASHBOARD_TIMEOUT_ERROR)
     except Exception:
         logger.exception("Dashboard portfolio aggregation failed.")
+        await _rollback_session_safely(db)
         return await _snapshot_fallback_dashboard(db, error_code=DASHBOARD_FETCH_FAILED_ERROR)
 
     if portfolio.error is not None:
+        await _rollback_session_safely(db)
         return await _snapshot_fallback_dashboard(db, error_code=portfolio.error)
 
     return portfolio.model_copy(
