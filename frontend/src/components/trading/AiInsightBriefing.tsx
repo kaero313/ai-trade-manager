@@ -184,36 +184,40 @@ function extractMarkedReasoning(reasoning: string): Partial<Record<ReasoningBuck
     .sort((left, right) => left.index - right.index)
     .filter((marker, index, sorted) => index === 0 || marker.index !== sorted[index - 1].index)
 
-  if (uniqueMarkers.length === 0) {
-    return [
-      {
-        ...REASONING_SECTION_META.conclusion,
-        body: cleanReasoningText(reasoning),
-      },
-    ]
-  }
-
-  return uniqueMarkers
-    .map((marker, index) => {
+  return uniqueMarkers.reduce<Partial<Record<ReasoningBucketKey, string>>>(
+    (sections, marker, index) => {
       const nextMarker = uniqueMarkers[index + 1]
       const body = cleanReasoningText(
         reasoning.slice(marker.index + marker.length, nextMarker?.index ?? reasoning.length),
       )
 
-      return {
-        ...REASONING_SECTION_META[marker.key],
-        body,
+      if (body) {
+        sections[marker.key] = body
       }
-    })
-    .filter((section) => section.body.length > 0)
+
+      return sections
+    },
+    {},
+  )
+}
+
+function findKeywordReasoning(reasoning: string, bucket: ReasoningBucket): string | null {
+  const sentences = splitIntoSentences(reasoning)
+  const matchedSentences = sentences.filter((sentence) => bucket.keywords.test(sentence))
+
+  if (matchedSentences.length === 0) {
+    return null
+  }
+
+  return matchedSentences.slice(0, 2).join(' ')
 }
 
 function resolveDecisionTone(decision: LatestAiAnalysis['decision']): DecisionTone {
   if (decision === 'BUY') {
     return {
-      chipClassName:
-        'border border-[#00dbe9]/20 bg-[#00dbe9]/10 text-[#7df4ff] backdrop-blur',
-      progressClassName: 'bg-[#00dbe9]',
+      tone: 'positive',
+      chipClassName: TONE_STYLES.positive.chipClassName,
+      progressClassName: TONE_STYLES.positive.barClassName,
       label: '매수 우위',
       caption: '상승 여지가 더 크다고 판단했습니다.',
     }
