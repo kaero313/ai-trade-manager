@@ -496,88 +496,53 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
                     style={{ width: `${confidence}%` }}
                   />
                 </div>
-                <div className="mt-2 text-xs leading-5 text-white/70">
-                  <span>{syncStatus}</span>
-                </div>
+                <p className="mt-2 break-words text-xs leading-5 text-[#849495]">{syncStatus}</p>
               </div>
             </div>
           </div>
         </div>
 
         <div className="quantum-panel flex min-h-0 flex-col overflow-hidden rounded-lg p-5">
-          <div className="min-w-0">
-            <div
-              className="relative inline-flex items-center gap-2"
-              onMouseEnter={() => setIsTooltipOpen(true)}
-              onMouseLeave={() => setIsTooltipOpen(false)}
-            >
-              <h3 className="text-xl font-bold text-[#dfe2eb]">판단 근거 (XAI)</h3>
-              <button
-                type="button"
-                aria-label="AI 판단 근거 데이터 출처"
-                className="inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full bg-[#0a0e14]/70 text-xs font-semibold text-[#849495]"
-              >
-                i
-              </button>
-
-              {isTooltipOpen && (
-                <div className="absolute left-0 top-full z-50 mt-2 min-w-[280px] rounded-lg border border-[#3b494b]/80 bg-[#0a0e14] p-4">
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-sm font-semibold text-[#dfe2eb]">📊 기술적 지표</p>
-                      <p className="text-xs text-[#849495]">
-                        RSI, SMA20, EMA50, 볼린저밴드 등 1시간봉 기준 200개 캔들 데이터
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-[#dfe2eb]">🧠 시장 심리</p>
-                      <p className="text-xs text-[#849495]">
-                        Alternative.me Fear &amp; Greed Index 실시간 수치
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-[#dfe2eb]">📰 글로벌 뉴스</p>
-                      <p className="text-xs text-[#849495]">
-                        CoinDesk Korea, TokenPost, 네이버 경제 등 RSS 실시간 피드
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-[#dfe2eb]">💼 포트폴리오</p>
-                      <p className="text-xs text-[#849495]">
-                        업비트 실시간 잔고 및 보유/미보유 상태
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="text-xl font-bold text-[#dfe2eb]">판단 근거</h3>
+              <p className="mt-2 break-words text-sm leading-6 text-[#849495]">
+                긴 원문 대신 항목별 핵심 근거를 먼저 보여줍니다.
+              </p>
             </div>
+            <span className="shrink-0 rounded bg-[#00dbe9]/10 px-2.5 py-1 font-mono text-[10px] font-bold text-[#7df4ff]">
+              XAI MAP
+            </span>
           </div>
 
-          <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-            <div className="grid gap-3 md:grid-cols-2">
-              {reasoningSections.map((section) => (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {reasoningCards.map((card) => {
+              const style = TONE_STYLES[card.tone]
+
+              return (
                 <article
-                  key={section.key}
-                  className="flex min-h-[132px] min-w-0 flex-col justify-between border-l-2 border-[#29363a] py-1 pl-3"
+                  key={card.key}
+                  className={`flex min-h-[138px] min-w-0 flex-col justify-between rounded-lg border-l-2 p-4 ${style.cardClassName}`}
                 >
                   <div className="flex min-w-0 items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-[#dfe2eb]">{section.title}</p>
-                      <p className="mt-1 text-xs text-[#849495]">AI 판단 근거</p>
+                      <p className="truncate text-sm font-bold text-[#dfe2eb]">{card.title}</p>
+                      <p className="mt-1 font-mono text-[10px] font-bold tracking-[0.12em] text-[#849495]">
+                        {card.label}
+                      </p>
                     </div>
                     <span
-                      className={`shrink-0 rounded px-2 py-1 font-mono text-[10px] font-bold ${section.className}`}
+                      className={`shrink-0 rounded px-2 py-1 text-[10px] font-bold ${style.chipClassName}`}
                     >
-                      {section.status}
+                      {card.status}
                     </span>
                   </div>
-                  <p className="mt-3 break-words text-sm leading-6 text-[#b9cacb]">
-                    {section.body}
-                  </p>
+                  <p className="mt-3 break-words text-sm leading-6 text-[#b9cacb]">{card.body}</p>
                 </article>
-              ))}
-            </div>
+              )
+            })}
           </div>
+
         </div>
       </div>
     </section>
