@@ -384,6 +384,7 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
     refetchInterval: 10000,
     refetchIntervalInBackground: true,
     placeholderData: (previousData) => previousData,
+    retry: false,
   })
 
   if (!normalizedSymbol) {
@@ -398,13 +399,23 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
   const analysis = analysisQuery.data
   const showSkeleton =
     !analysis &&
-    (analysisQuery.isLoading || analysisQuery.isPending || (analysisQuery.isError && !analysisQuery.data))
+    !analysisQuery.isError &&
+    (analysisQuery.isLoading || analysisQuery.isPending)
 
   if (showSkeleton) {
     return <InsightSkeleton />
   }
 
   if (!analysis) {
+    if (analysisQuery.isError) {
+      return (
+        <EmptyInsightCard
+          title={`${normalizedSymbol} AI 분석 조회 실패`}
+          description="최신 AI 판단 근거를 불러오지 못했습니다. 백엔드 연결 또는 provider 상태가 회복되면 이 영역에 다시 표시됩니다."
+        />
+      )
+    }
+
     return (
       <EmptyInsightCard
         title={`${normalizedSymbol} 최신 추론 없음`}
