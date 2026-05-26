@@ -420,24 +420,32 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
   const tone = resolveDecisionTone(analysis.decision)
   const confidence = clampPercentage(analysis.confidence)
   const recommendedWeight = clampPercentage(analysis.recommended_weight)
-  const reasoningSections = splitReasoningIntoSections(analysis.reasoning)
+  const reasoningCards = buildReasoningCards(analysis.reasoning)
+  const reasoningHealth = resolveReasoningHealth(
+    analysis.reasoning,
+    analysisQuery.isError,
+    analysisQuery.isFetching,
+  )
+  const healthStyle = TONE_STYLES[reasoningHealth.tone]
 
   let syncStatus = `업데이트 ${formatUpdatedAt(analysis.created_at)}`
   if (analysisQuery.isFetching) {
-    syncStatus = `${syncStatus} · 최신 추론 동기화 중...`
+    syncStatus = `${syncStatus} · 최신 추론 동기화 중`
   } else if (analysisQuery.isError) {
-    syncStatus = `${syncStatus} · 최근 데이터 기준으로 표시 중`
+    syncStatus = `${syncStatus} · 최근 데이터 기준 표시`
   }
 
   return (
     <section className="quantum-card flex min-h-0 flex-col overflow-hidden rounded-xl">
       <div className="grid min-h-0 gap-5 p-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
         <div className="quantum-panel relative overflow-hidden rounded-lg p-5 text-[#dfe2eb]">
-          <div className="relative flex h-full min-h-0 flex-col gap-4">
+          <div className="relative flex h-full min-h-0 flex-col gap-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <h3 className="break-words text-2xl font-semibold">{normalizedSymbol}</h3>
-                <p className="mt-2 break-words text-sm text-white/80">{tone.caption}</p>
+                <h3 className="break-words text-2xl font-semibold">판단 요약</h3>
+                <p className="mt-2 break-words text-sm leading-6 text-[#b9cacb]">
+                  {normalizedSymbol} · {tone.caption}
+                </p>
               </div>
               <span
                 className={`inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-semibold ${tone.chipClassName}`}
@@ -447,27 +455,37 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="border-l-2 border-[#00dbe9] pl-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/70">스탠스</p>
+              <div className={`rounded-lg border-l-2 p-4 ${TONE_STYLES[tone.tone].cardClassName}`}>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#849495]">
+                  스탠스
+                </p>
                 <p className="mt-2 text-3xl font-semibold">{analysis.decision}</p>
-                <p className="mt-2 text-sm text-white/85">{tone.label}</p>
+                <p className={`mt-2 text-sm font-semibold ${TONE_STYLES[tone.tone].labelClassName}`}>
+                  {tone.label}
+                </p>
               </div>
 
-              <div className="border-l-2 border-[#cdbdff] pl-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/70">추천 비중</p>
+              <div className="rounded-lg border-l-2 border-[#cdbdff]/40 bg-[#0a0e14]/45 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#849495]">
+                  추천 비중
+                </p>
                 <p className="mt-2 text-3xl font-semibold">{recommendedWeight}%</p>
-                <p className="mt-2 text-sm text-white/85">리스크 조절을 반영한 제안치입니다.</p>
+                <p className="mt-2 text-sm text-[#b9cacb]">리스크 조절 반영</p>
               </div>
             </div>
 
-            <div className="border-t border-[#29363a]/80 pt-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="rounded-lg bg-[#0a0e14]/45 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/70">확신도</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#849495]">
+                    확신도
+                  </p>
                   <p className="mt-2 text-2xl font-semibold">{confidence}%</p>
                 </div>
-                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${tone.chipClassName}`}>
-                  실시간 추론 로그
+                <span
+                  className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${healthStyle.chipClassName}`}
+                >
+                  {reasoningHealth.label}
                 </span>
               </div>
 
