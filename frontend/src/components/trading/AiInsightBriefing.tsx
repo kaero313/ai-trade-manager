@@ -142,28 +142,38 @@ function cleanReasoningText(value: string): string {
     .trim()
 }
 
-function splitReasoningIntoSections(reasoning: string): ReasoningSection[] {
+function summarizeText(value: string, limit = 118): string {
+  const cleaned = cleanReasoningText(value)
+  if (cleaned.length <= limit) {
+    return cleaned
+  }
+
+  return `${cleaned.slice(0, limit).trim()}...`
+}
+
+function splitIntoSentences(value: string): string[] {
+  const cleaned = cleanReasoningText(value)
+  if (!cleaned) {
+    return []
+  }
+
+  return cleaned
+    .split(/(?<=[.!?])\s+|(?<=다\.)\s+|(?<=요\.)\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean)
+}
+
+function extractMarkedReasoning(reasoning: string): Partial<Record<ReasoningBucketKey, string>> {
   const markers: Array<{
-    key: keyof typeof REASONING_SECTION_META
+    key: ReasoningBucketKey
     index: number
     length: number
   }> = []
 
-  const markerRules: Array<{
-    key: keyof typeof REASONING_SECTION_META
-    pattern: RegExp
-  }> = [
-    { key: 'technical', pattern: /(?:📊\s*)?(?:기술지표|기술적 지표)\s*[:：]/gi },
-    { key: 'sentiment', pattern: /(?:🧠\s*)?(?:시장\s*심리|시장심리)\s*[:：]/gi },
-    { key: 'news', pattern: /(?:📰\s*)?(?:글로벌\s*)?뉴스\s*[:：]/gi },
-    { key: 'portfolio', pattern: /(?:💼\s*)?포트폴리오\s*[:：]/gi },
-    { key: 'conclusion', pattern: /(?:✅\s*)?(?:종합\s*판단|최종\s*판단|결론)\s*[:：]/gi },
-  ]
-
-  for (const rule of markerRules) {
-    for (const match of reasoning.matchAll(rule.pattern)) {
+  for (const bucket of REASONING_BUCKETS) {
+    for (const match of reasoning.matchAll(bucket.markerPattern)) {
       markers.push({
-        key: rule.key,
+        key: bucket.key,
         index: match.index ?? 0,
         length: match[0].length,
       })
