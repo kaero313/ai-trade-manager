@@ -244,6 +244,7 @@ export async function getMarketSentiment(): Promise<MarketSentimentSnapshot> {
 export async function getLatestAiAnalysis(symbol: string): Promise<LatestAiAnalysis | null> {
   const { data } = await apiClient.get<LatestAiAnalysis | null>('/ai/latest-analysis', {
     params: { symbol },
+    timeout: 6000,
   })
   return data
 }
