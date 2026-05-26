@@ -225,21 +225,104 @@ function resolveDecisionTone(decision: LatestAiAnalysis['decision']): DecisionTo
 
   if (decision === 'SELL') {
     return {
-      chipClassName:
-        'border border-[#ffb4ab]/20 bg-[#ffb4ab]/10 text-[#ffb4ab] backdrop-blur',
-      progressClassName: 'bg-[#ffb4ab]',
+      tone: 'danger',
+      chipClassName: TONE_STYLES.danger.chipClassName,
+      progressClassName: TONE_STYLES.danger.barClassName,
       label: '매도 우위',
       caption: '리스크 회피와 차익 실현을 우선했습니다.',
     }
   }
 
   return {
-    chipClassName:
-      'border border-[#ffe179]/20 bg-[#ffe179]/10 text-[#ffe179] backdrop-blur',
-    progressClassName: 'bg-[#ffe179]',
+    tone: 'neutral',
+    chipClassName: TONE_STYLES.neutral.chipClassName,
+    progressClassName: TONE_STYLES.neutral.barClassName,
     label: '관망 우위',
     caption: '방향성이 선명해질 때까지 보수적으로 접근합니다.',
   }
+}
+
+function resolveReasoningTone(body: string, hasRealBody: boolean): ToneName {
+  if (!hasRealBody) {
+    return 'muted'
+  }
+
+  if (
+    /(오류|실패|에러|fallback|provider|부재|차단|제한|누락|못했습니다|없습니다|지연|위험|하락|매도|SELL|LOCKED|잠금|하회|아래)/i.test(
+      body,
+    )
+  ) {
+    return 'danger'
+  }
+
+  if (/(HOLD|관망|중립|대기|보수|확인|공포|불확실|완화|조절|혼재|shadow|review)/i.test(body)) {
+    return 'neutral'
+  }
+
+  if (/(BUY|매수|상승|긍정|정상|통과|충족|강세|개선|active|synced)/i.test(body)) {
+    return 'positive'
+  }
+
+  return 'muted'
+}
+
+function resolveReasoningStatus(tone: ToneName): string {
+  if (tone === 'positive') {
+    return '긍정'
+  }
+
+  if (tone === 'neutral') {
+    return '관망'
+  }
+
+  if (tone === 'danger') {
+    return '주의'
+  }
+
+  return '대기'
+}
+
+function buildReasoningCards(reasoning: string): ReasoningCard[] {
+  const markedReasoning = extractMarkedReasoning(reasoning)
+
+  return REASONING_BUCKETS.map((bucket) => {
+    const extractedBody = markedReasoning[bucket.key] ?? findKeywordReasoning(reasoning, bucket)
+    const hasRealBody = Boolean(extractedBody)
+    const body = summarizeText(extractedBody ?? bucket.fallback)
+    const tone = resolveReasoningTone(body, hasRealBody)
+
+    return {
+      key: bucket.key,
+      title: bucket.title,
+      label: bucket.label,
+      status: resolveReasoningStatus(tone),
+      body,
+      tone,
+    }
+  })
+}
+
+function resolveReasoningHealth(reasoning: string, isError: boolean, isFetching: boolean): {
+  label: string
+  tone: ToneName
+} {
+  if (isError) {
+    return { label: '동기화 지연', tone: 'danger' }
+  }
+
+  if (
+    /(오류|실패|에러|fallback|provider|부재|차단|제한|누락|못했습니다|없습니다|지연)/i.test(
+      reasoning,
+    )
+  ) {
+    return { label: '제한', tone: 'danger' }
+  }
+
+  if (isFetching) {
+    return { label: '동기화', tone: 'neutral' }
+  }
+
+  return { label: '정상', tone: 'positive' }
 }
 
 function InsightSkeleton() {
