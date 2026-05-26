@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
 import { getLatestAiAnalysis } from '../../services/api'
@@ -375,7 +374,6 @@ function EmptyInsightCard({
 
 function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
   const normalizedSymbol = normalizeSymbol(symbol)
-  const [isTooltipOpen, setIsTooltipOpen] = useState(false)
 
   const analysisQuery = useQuery({
     queryKey: ['latest-ai-analysis', normalizedSymbol],
