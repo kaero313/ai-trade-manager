@@ -333,24 +333,20 @@ function InsightSkeleton() {
           <div className="h-4 w-28 rounded-full bg-[#3b494b]/50" />
           <div className="h-10 w-40 rounded-lg bg-[#3b494b]/50" />
           <div className="h-5 w-24 rounded-full bg-[#3b494b]/50" />
-          <div className="space-y-2 pt-4">
-            <div className="h-3 w-24 rounded-full bg-[#3b494b]/50" />
-            <div className="h-3 w-full rounded-full bg-[#3b494b]/50" />
-          </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="h-20 rounded-lg bg-[#3b494b]/50" />
-            <div className="h-20 rounded-lg bg-[#3b494b]/50" />
+            <div className="h-24 rounded-lg bg-[#3b494b]/50" />
+            <div className="h-24 rounded-lg bg-[#3b494b]/50" />
           </div>
+          <div className="h-24 rounded-lg bg-[#3b494b]/50" />
         </div>
 
         <div className="quantum-panel rounded-lg p-5 animate-pulse">
-          <div className="h-4 w-32 rounded-full bg-[#3b494b]/50" />
-          <div className="mt-4 space-y-3">
-            <div className="h-4 w-full rounded-full bg-[#3b494b]/50" />
-            <div className="h-4 w-full rounded-full bg-[#3b494b]/50" />
-            <div className="h-4 w-4/5 rounded-full bg-[#3b494b]/50" />
-            <div className="h-4 w-5/6 rounded-full bg-[#3b494b]/50" />
-            <div className="h-4 w-3/4 rounded-full bg-[#3b494b]/50" />
+          <div className="h-7 w-32 rounded-full bg-[#3b494b]/50" />
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="h-32 rounded-lg bg-[#3b494b]/50" />
+            <div className="h-32 rounded-lg bg-[#3b494b]/50" />
+            <div className="h-32 rounded-lg bg-[#3b494b]/50" />
+            <div className="h-32 rounded-lg bg-[#3b494b]/50" />
           </div>
         </div>
       </div>
