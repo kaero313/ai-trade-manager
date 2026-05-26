@@ -8,53 +8,105 @@ interface AiInsightBriefingProps {
   symbol: string | null
 }
 
+type ToneName = 'positive' | 'neutral' | 'danger' | 'muted'
+
 type DecisionTone = {
+  tone: ToneName
   chipClassName: string
   progressClassName: string
   label: string
   caption: string
 }
 
-type ReasoningSection = {
-  key: string
+type ReasoningBucketKey = 'technical' | 'sentiment' | 'news' | 'policy'
+
+type ReasoningBucket = {
+  key: ReasoningBucketKey
   title: string
-  status: string
-  className: string
-  body: string
+  label: string
+  fallback: string
+  markerPattern: RegExp
+  keywords: RegExp
 }
 
-const REASONING_SECTION_META = {
-  technical: {
+type ReasoningCard = {
+  key: ReasoningBucketKey
+  title: string
+  label: string
+  status: string
+  body: string
+  tone: ToneName
+}
+
+const TONE_STYLES: Record<
+  ToneName,
+  {
+    chipClassName: string
+    cardClassName: string
+    labelClassName: string
+    barClassName: string
+  }
+> = {
+  positive: {
+    chipClassName: 'bg-[#00dbe9]/10 text-[#7df4ff]',
+    cardClassName: 'border-[#00dbe9]/40 bg-[#00dbe9]/6',
+    labelClassName: 'text-[#7df4ff]',
+    barClassName: 'bg-[#00dbe9]',
+  },
+  neutral: {
+    chipClassName: 'bg-[#ffe179]/10 text-[#ffe179]',
+    cardClassName: 'border-[#ffe179]/35 bg-[#ffe179]/6',
+    labelClassName: 'text-[#ffe179]',
+    barClassName: 'bg-[#ffe179]',
+  },
+  danger: {
+    chipClassName: 'bg-[#ffb4ab]/10 text-[#ffb4ab]',
+    cardClassName: 'border-[#ffb4ab]/40 bg-[#ffb4ab]/6',
+    labelClassName: 'text-[#ffb4ab]',
+    barClassName: 'bg-[#ffb4ab]',
+  },
+  muted: {
+    chipClassName: 'bg-[#3b494b]/24 text-[#849495]',
+    cardClassName: 'border-[#3b494b]/38 bg-[#0a0e14]/45',
+    labelClassName: 'text-[#849495]',
+    barClassName: 'bg-[#3b494b]',
+  },
+}
+
+const REASONING_BUCKETS: ReasoningBucket[] = [
+  {
     key: 'technical',
-    title: '기술지표',
-    status: 'QUANT',
-    className: 'text-[#7df4ff] bg-[#00dbe9]/10',
+    title: '기술 지표',
+    label: 'QUANT',
+    fallback: '기술 지표 근거가 별도 분리되지 않았습니다.',
+    markerPattern: /(?:기술\s*지표|기술지표|기술적\s*지표|정량\s*지표)\s*[:：]/gi,
+    keywords: /(RSI|SMA|EMA|이동평균|볼린저|캔들|가격|지표|추세|저항|지지|과매수|과매도)/i,
   },
-  sentiment: {
+  {
     key: 'sentiment',
-    title: '시장심리',
-    status: 'SENTIMENT',
-    className: 'text-[#ffe179] bg-[#ffe179]/10',
+    title: '시장 심리',
+    label: 'SENTIMENT',
+    fallback: '시장 심리 근거가 별도 분리되지 않았습니다.',
+    markerPattern: /(?:시장\s*심리|시장심리|공포\s*탐욕|투자\s*심리)\s*[:：]/gi,
+    keywords: /(시장\s*심리|공포|탐욕|fear|greed|심리|불안|낙관|비관|중립)/i,
   },
-  news: {
+  {
     key: 'news',
-    title: '뉴스',
-    status: 'RAG',
-    className: 'text-[#77e2a8] bg-[#77e2a8]/10',
+    title: '뉴스/RAG',
+    label: 'RAG',
+    fallback: '뉴스 또는 RAG 근거가 별도 분리되지 않았습니다.',
+    markerPattern: /(?:뉴스\s*\/\s*RAG|뉴스|RAG|글로벌\s*뉴스|뉴스\s*문맥)\s*[:：]/gi,
+    keywords: /(뉴스|RAG|기사|SEC|ETF|엔비디아|거시|금리|규제|채굴|토큰|거래소|보도)/i,
   },
-  portfolio: {
-    key: 'portfolio',
-    title: '포트폴리오',
-    status: 'ASSET',
-    className: 'text-[#cdbdff] bg-[#cdbdff]/10',
+  {
+    key: 'policy',
+    title: '안전 정책',
+    label: 'POLICY',
+    fallback: '안전 정책 근거가 별도 분리되지 않았습니다.',
+    markerPattern: /(?:안전\s*정책|정책|리스크|포트폴리오|종합\s*판단|최종\s*판단|결론)\s*[:：]/gi,
+    keywords: /(정책|리스크|안전|포트폴리오|비중|잔고|미보유|보유|제한|LOCKED|shadow|HOLD|BUY|SELL|관망)/i,
   },
-  conclusion: {
-    key: 'conclusion',
-    title: '종합 판단',
-    status: 'REVIEW',
-    className: 'text-[#ffb4ab] bg-[#ffb4ab]/10',
-  },
-} as const
+]
 
 function normalizeSymbol(symbol: string | null): string | null {
   const normalized = symbol?.trim().toUpperCase() ?? ''
