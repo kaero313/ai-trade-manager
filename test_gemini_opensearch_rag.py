@@ -37,6 +37,11 @@ def test_market_news_index_uses_opensearch_3_lucene_knn() -> None:
     assert properties["content_source"]["type"] == "keyword"
     assert properties["crawl_status"]["type"] == "keyword"
     assert properties["crawl_error"]["type"] == "keyword"
+    assert properties["translation_status"]["type"] == "keyword"
+    assert properties["translation_provider"]["type"] == "keyword"
+    assert properties["translation_model"]["type"] == "keyword"
+    assert properties["translation_error"]["type"] == "keyword"
+    assert properties["translated_at"]["type"] == "date"
     assert properties["chunk_index"]["type"] == "integer"
     assert properties["chunk_count"]["type"] == "integer"
     assert properties["content_length"]["type"] == "integer"
@@ -70,6 +75,13 @@ def test_ingestion_runs_index_tracks_source_health() -> None:
     assert properties["embedding_provider_error_breakdown"]["type"] == "object"
     assert properties["embedding_provider_stats"]["type"] == "object"
     assert properties["embedding_cost_summary"]["type"] == "object"
+    assert properties["translation_requested"]["type"] == "integer"
+    assert properties["translation_succeeded"]["type"] == "integer"
+    assert properties["translation_failed"]["type"] == "integer"
+    assert properties["translation_skipped"]["type"] == "integer"
+    assert properties["translation_error"]["type"] == "keyword"
+    assert properties["translation_provider_error_breakdown"]["type"] == "object"
+    assert properties["translation_provider_stats"]["type"] == "object"
     assert properties["backfill_requested"]["type"] == "integer"
     assert properties["backfill_succeeded"]["type"] == "integer"
     assert properties["backfill_missing"]["type"] == "integer"
@@ -497,6 +509,11 @@ def test_chunk_serialization_includes_chunk_metadata() -> None:
     assert payload["content_source"] == "api"
     assert payload["crawl_status"] == "not_applicable"
     assert payload["crawl_error"] is None
+    assert payload["translation_status"] == "not_translated"
+    assert payload["translation_provider"] is None
+    assert payload["translation_model"] is None
+    assert payload["translation_error"] is None
+    assert payload["translated_at"] is None
     assert payload["chunk_index"] == 0
     assert payload["chunk_count"] == 1
     assert payload["content_length"] == len(document.content)
@@ -508,6 +525,159 @@ def test_chunk_serialization_includes_chunk_metadata() -> None:
     assert payload["embedding_model"] == "gemini-embedding-001"
     assert payload["embedding_generated_at"] == generated_at.isoformat()
     assert len(payload["embedding"]) == EMBEDDING_DIMENSION
+
+
+def test_translate_news_documents_stores_korean_title_and_content(monkeypatch) -> None:
+    class FakeGeminiAnalyzer:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def generate_structured_analysis(self, **kwargs: object) -> rag_ingestion.TranslatedNewsPayload:
+            return rag_ingestion.TranslatedNewsPayload(
+                title="비트코인 유동성 개선",
+                content="기관 매수세가 강해지며 시장 심리가 개선됐습니다.",
+            )
+
+        async def aclose(self) -> None:
+            pass
+
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-gemini")
+    monkeypatch.setattr(rag_ingestion.settings, "OPENAI_API_KEY", None)
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", FakeGeminiAnalyzer)
+    document = rag_ingestion.RawNewsDocument(
+        title="Bitcoin liquidity improves",
+        content="Institutional inflows improved market sentiment.",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:coindesk.com",
+        link="https://example.com/news/translated",
+    )
+
+    documents, stats = asyncio.run(rag_ingestion._translate_news_documents([document]))
+
+    assert documents[0].title == "비트코인 유동성 개선"
+    assert documents[0].content == "기관 매수세가 강해지며 시장 심리가 개선됐습니다."
+    assert documents[0].translation_status == "translated"
+    assert documents[0].translation_provider == "gemini"
+    assert documents[0].translation_model == rag_ingestion.GEMINI_TEXT_MODEL
+    assert documents[0].translated_at is not None
+    assert stats["translation_requested"] == 1
+    assert stats["translation_succeeded"] == 1
+    assert stats["translation_failed"] == 0
+
+
+def test_translate_news_documents_skips_fallback_documents(monkeypatch) -> None:
+    class UnexpectedGeminiAnalyzer:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            raise AssertionError("fallback 문서는 번역 provider를 호출하지 않아야 합니다.")
+
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-gemini")
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", UnexpectedGeminiAnalyzer)
+    document = rag_ingestion._dummy_news_documents("cryptopanic")[0]
+
+    documents, stats = asyncio.run(rag_ingestion._translate_news_documents([document]))
+
+    assert documents[0].title == document.title
+    assert documents[0].content == document.content
+    assert documents[0].translation_status == "skipped_fallback"
+    assert stats["translation_requested"] == 0
+    assert stats["translation_skipped"] == 1
+
+
+def test_translate_news_documents_uses_openai_fallback_when_gemini_rate_limited(monkeypatch) -> None:
+    class FakeGeminiAnalyzer:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def generate_structured_analysis(self, **kwargs: object) -> rag_ingestion.TranslatedNewsPayload:
+            raise rag_ingestion.AIProviderRateLimitError("quota", provider="gemini")
+
+        async def aclose(self) -> None:
+            pass
+
+    class FakeOpenAIAnalyzer:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def generate_structured_analysis(self, **kwargs: object) -> rag_ingestion.TranslatedNewsPayload:
+            return rag_ingestion.TranslatedNewsPayload(
+                title="리플 단기 반등",
+                content="XRP 거래량이 회복되며 단기 반등 가능성이 관측됐습니다.",
+            )
+
+        async def aclose(self) -> None:
+            pass
+
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-gemini")
+    monkeypatch.setattr(rag_ingestion.settings, "OPENAI_API_KEY", "test-openai")
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", FakeGeminiAnalyzer)
+    monkeypatch.setattr(rag_ingestion, "OpenAIAnalyzer", FakeOpenAIAnalyzer)
+    document = rag_ingestion.RawNewsDocument(
+        title="XRP volume rebounds",
+        content="XRP trading volume recovered.",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:example.com",
+        link="https://example.com/news/openai-fallback",
+    )
+
+    documents, stats = asyncio.run(rag_ingestion._translate_news_documents([document]))
+
+    assert documents[0].title == "리플 단기 반등"
+    assert documents[0].translation_status == "translated"
+    assert documents[0].translation_provider == "openai"
+    assert stats["translation_succeeded"] == 1
+    assert stats["translation_provider_error_breakdown"] == {"gemini:rate_limited": 1}
+    assert stats["translation_provider_stats"]["openai"]["documents_succeeded"] == 1
+
+
+def test_translate_news_documents_keeps_original_when_all_providers_fail(monkeypatch) -> None:
+    class FailingAnalyzer:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def generate_structured_analysis(self, **kwargs: object) -> rag_ingestion.TranslatedNewsPayload:
+            raise RuntimeError("provider unavailable")
+
+        async def aclose(self) -> None:
+            pass
+
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-gemini")
+    monkeypatch.setattr(rag_ingestion.settings, "OPENAI_API_KEY", "test-openai")
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", FailingAnalyzer)
+    monkeypatch.setattr(rag_ingestion, "OpenAIAnalyzer", FailingAnalyzer)
+    document = rag_ingestion.RawNewsDocument(
+        title="Original title",
+        content="Original content",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:example.com",
+        link="https://example.com/news/translation-failed",
+    )
+
+    documents, stats = asyncio.run(rag_ingestion._translate_news_documents([document]))
+
+    assert documents[0].title == "Original title"
+    assert documents[0].content == "Original content"
+    assert documents[0].translation_status == "failed"
+    assert documents[0].translation_error == "generation_failed"
+    assert stats["translation_failed"] == 1
+    assert stats["translation_error"] == "generation_failed"
+
+
+def test_build_embedding_text_uses_translated_chunk_text() -> None:
+    document = rag_ingestion.RawNewsDocument(
+        title="한국어 제목",
+        content="한국어 본문",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:example.com",
+        link="https://example.com/news/korean-embedding",
+        translation_status="translated",
+        translation_provider="gemini",
+        translation_model=rag_ingestion.GEMINI_TEXT_MODEL,
+        translated_at=datetime(2026, 5, 6, 4, 0, tzinfo=UTC),
+    )
+
+    chunk = rag_ingestion._build_document_chunks(document)[0]
+
+    assert rag_ingestion._build_embedding_text(chunk) == "한국어 제목\n\n한국어 본문"
 
 
 def test_embedding_token_and_cost_estimate_is_conservative() -> None:

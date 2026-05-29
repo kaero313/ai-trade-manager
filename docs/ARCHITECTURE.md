@@ -270,3 +270,11 @@ ai-trade-manager/
 - warning은 실뉴스 부재, 전체 임베딩 누락, 높은 임베딩 누락률, Gemini rate limit, OpenAI 키 없음, backfill skip, source HTTP 429, fallback 문서 잔존, OpenAI 비용 관측을 표현합니다.
 - warning은 OpenSearch의 기존 집계와 최신 ingestion run 문서에서 계산하며 별도 저장소나 query event 인덱스를 만들지 않습니다.
 - warning은 운영 가시성 신호이며 AI 매매 게이트나 hard budget 차단 정책으로 연결하지 않습니다.
+
+## Phase 46.9 업데이트
+- RAG ingestion은 실제 뉴스 문서를 청크/임베딩하기 전에 `title`과 `content`를 한국어로 번역합니다.
+- 번역은 Gemini 텍스트 모델을 primary로 사용하고, 키 없음/쿼터/생성 실패 시 OpenAI 텍스트 모델로 fallback합니다.
+- dummy/fallback 문서는 fallback 판별 의미를 유지하기 위해 번역하지 않고 `translation_status=skipped_fallback`로 저장합니다.
+- 두 번역 provider가 모두 실패하면 원문을 보존한 채 `translation_status=failed`와 실패 사유를 기록하고, 문서 upsert와 임베딩 생성은 계속 진행합니다.
+- 번역 성공 문서는 한국어 `title/content` 기준으로 OpenSearch `market_news`에 저장되며, 임베딩도 번역본 텍스트로 생성됩니다.
+- `market_news_ingestion_runs`에는 번역 요청/성공/실패/스킵 수와 provider별 실패 분포를 저장해 RAG 품질을 관측합니다.

@@ -5,7 +5,7 @@ import hashlib
 import logging
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from html import unescape
@@ -17,12 +17,13 @@ from uuid import uuid4
 import feedparser
 import httpx
 from opensearchpy.helpers import async_bulk
+from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.services.news_scraper import RSS_FEED_URLS
 from app.services.ai.providers.base import AIProviderRateLimitError
-from app.services.ai.providers.gemini import GEMINI_EMBEDDING_MODEL, GeminiAnalyzer
-from app.services.ai.providers.openai import OPENAI_EMBEDDING_MODEL, OpenAIAnalyzer
+from app.services.ai.providers.gemini import GEMINI_EMBEDDING_MODEL, GEMINI_TEXT_MODEL, GeminiAnalyzer
+from app.services.ai.providers.openai import OPENAI_EMBEDDING_MODEL, OPENAI_TEXT_MODEL, OpenAIAnalyzer
 from app.services.rag.opensearch_client import (
     EMBEDDING_DIMENSION,
     INGESTION_RUNS_INDEX_NAME,
@@ -59,6 +60,16 @@ EMBEDDING_ERROR_GENERATION_FAILED = "generation_failed"
 EMBEDDING_ERROR_INVALID_DIMENSION = "invalid_dimension"
 EMBEDDING_ERROR_UPDATE_FAILED = "opensearch_update_failed"
 EMBEDDING_ERROR_RUN_LIMIT_EXCEEDED = "run_limit_exceeded"
+TRANSLATION_PROVIDER_GEMINI = EMBEDDING_PROVIDER_GEMINI
+TRANSLATION_PROVIDER_OPENAI = EMBEDDING_PROVIDER_OPENAI
+TRANSLATION_STATUS_NOT_TRANSLATED = "not_translated"
+TRANSLATION_STATUS_TRANSLATED = "translated"
+TRANSLATION_STATUS_FAILED = "failed"
+TRANSLATION_STATUS_SKIPPED_FALLBACK = "skipped_fallback"
+TRANSLATION_ERROR_CREDENTIALS_MISSING = "credentials_missing"
+TRANSLATION_ERROR_RATE_LIMITED = "rate_limited"
+TRANSLATION_ERROR_GENERATION_FAILED = "generation_failed"
+TRANSLATION_SEGMENT_MAX_CHARS = 2500
 NEWS_HTTP_TIMEOUT = 10.0
 RSS_FETCH_LIMIT_PER_FEED = 8
 RSS_FETCH_LIMIT_TOTAL = 32
@@ -85,6 +96,11 @@ class RawNewsDocument:
     content_source: str = "api"
     crawl_status: str = "not_applicable"
     crawl_error: str | None = None
+    translation_status: str = TRANSLATION_STATUS_NOT_TRANSLATED
+    translation_provider: str | None = None
+    translation_model: str | None = None
+    translation_error: str | None = None
+    translated_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -103,6 +119,11 @@ class RawNewsChunk:
     content_length: int
     chunk_text_length: int
     is_chunked: bool
+    translation_status: str = TRANSLATION_STATUS_NOT_TRANSLATED
+    translation_provider: str | None = None
+    translation_model: str | None = None
+    translation_error: str | None = None
+    translated_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -136,6 +157,20 @@ class EmbeddingProviderAttempt:
     provider: str
     model: str
     embeddings: list[list[float]] | None = None
+    error: str | None = None
+
+
+class TranslatedNewsPayload(BaseModel):
+    title: str = Field(..., min_length=1)
+    content: str = Field(..., min_length=1)
+
+
+@dataclass(slots=True)
+class NewsTranslationAttempt:
+    provider: str
+    model: str
+    title: str | None = None
+    content: str | None = None
     error: str | None = None
 
 
@@ -342,6 +377,14 @@ def _parse_datetime(raw: Any) -> datetime:
         return datetime.now(UTC)
 
 
+def _parse_optional_datetime(raw: Any) -> datetime | None:
+    if raw is None:
+        return None
+    if isinstance(raw, str) and not raw.strip():
+        return None
+    return _parse_datetime(raw)
+
+
 def _parse_feed_datetime(entry: Any) -> datetime:
     for key in ("published_parsed", "updated_parsed"):
         raw = entry.get(key) if hasattr(entry, "get") else None
@@ -384,6 +427,11 @@ def _serialize_chunk(
         "content_source": chunk.content_source,
         "crawl_status": chunk.crawl_status,
         "crawl_error": chunk.crawl_error,
+        "translation_status": chunk.translation_status,
+        "translation_provider": chunk.translation_provider,
+        "translation_model": chunk.translation_model,
+        "translation_error": chunk.translation_error,
+        "translated_at": chunk.translated_at.isoformat() if chunk.translated_at else None,
         "chunk_index": chunk.chunk_index,
         "chunk_count": chunk.chunk_count,
         "content_length": chunk.content_length,
@@ -471,6 +519,11 @@ def _build_document_chunks(document: RawNewsDocument) -> list[RawNewsChunk]:
             content_source=document.content_source,
             crawl_status=document.crawl_status,
             crawl_error=document.crawl_error,
+            translation_status=document.translation_status,
+            translation_provider=document.translation_provider,
+            translation_model=document.translation_model,
+            translation_error=document.translation_error,
+            translated_at=document.translated_at,
             chunk_index=index,
             chunk_count=chunk_count,
             content_length=content_length,
@@ -1002,6 +1055,241 @@ def _embedding_credentials_available(provider: str) -> bool:
     return False
 
 
+def _translation_credentials_available(provider: str) -> bool:
+    return _embedding_credentials_available(provider)
+
+
+def _translation_model_for_provider(provider: str) -> str:
+    if provider == TRANSLATION_PROVIDER_OPENAI:
+        return OPENAI_TEXT_MODEL
+    return GEMINI_TEXT_MODEL
+
+
+def _build_translation_analyzer(provider: str) -> GeminiAnalyzer | OpenAIAnalyzer:
+    model = _translation_model_for_provider(provider)
+    if provider == TRANSLATION_PROVIDER_OPENAI:
+        return OpenAIAnalyzer(model=model)
+    return GeminiAnalyzer(model=model)
+
+
+def _split_translation_segments(content: str) -> list[str]:
+    normalized = str(content or "").strip()
+    if not normalized:
+        return []
+
+    segments: list[str] = []
+    start = 0
+    while start < len(normalized):
+        end = min(start + TRANSLATION_SEGMENT_MAX_CHARS, len(normalized))
+        segment = normalized[start:end].strip()
+        if segment:
+            segments.append(segment)
+        start = end
+    return segments
+
+
+def _build_translation_user_prompt(
+    document: RawNewsDocument,
+    segment: str,
+    *,
+    segment_index: int,
+    segment_count: int,
+) -> str:
+    return (
+        "아래 시장 뉴스의 제목과 본문 조각을 한국어로 번역하세요.\n"
+        "수치, 티커, 종목명, 통화 단위, 기관명, 고유명사, URL의 의미는 보존하세요.\n"
+        "투자 의견을 추가하거나 사실을 요약하지 말고, 번역만 수행하세요.\n"
+        f"source: {document.source}\n"
+        f"link: {document.link}\n"
+        f"published_at: {document.published_at.isoformat()}\n"
+        f"segment: {segment_index + 1}/{segment_count}\n\n"
+        f"title:\n{document.title}\n\n"
+        f"content:\n{segment}"
+    )
+
+
+async def _attempt_translation_provider(
+    provider: str,
+    document: RawNewsDocument,
+) -> NewsTranslationAttempt:
+    model = _translation_model_for_provider(provider)
+    if not _translation_credentials_available(provider):
+        return NewsTranslationAttempt(
+            provider=provider,
+            model=model,
+            error=TRANSLATION_ERROR_CREDENTIALS_MISSING,
+        )
+
+    analyzer = _build_translation_analyzer(provider)
+    segments = _split_translation_segments(document.content or document.title)
+    if not segments:
+        segments = [document.title]
+
+    translated_title: str | None = None
+    translated_segments: list[str] = []
+    try:
+        for index, segment in enumerate(segments):
+            payload = await analyzer.generate_structured_analysis(
+                system_prompt=(
+                    "당신은 금융 뉴스 한국어 번역기입니다. "
+                    "응답은 반드시 요청된 스키마의 title/content만 포함합니다."
+                ),
+                user_prompt=_build_translation_user_prompt(
+                    document,
+                    segment,
+                    segment_index=index,
+                    segment_count=len(segments),
+                ),
+                response_model=TranslatedNewsPayload,
+            )
+            if translated_title is None:
+                translated_title = payload.title.strip() or document.title
+            translated_segments.append(payload.content.strip() or segment)
+    except AIProviderRateLimitError:
+        return NewsTranslationAttempt(
+            provider=provider,
+            model=model,
+            error=TRANSLATION_ERROR_RATE_LIMITED,
+        )
+    except Exception:
+        logger.exception("%s news translation failed.", provider)
+        return NewsTranslationAttempt(
+            provider=provider,
+            model=model,
+            error=TRANSLATION_ERROR_GENERATION_FAILED,
+        )
+    finally:
+        await _close_embedding_analyzer(analyzer)
+
+    return NewsTranslationAttempt(
+        provider=provider,
+        model=model,
+        title=translated_title or document.title,
+        content="\n\n".join(translated_segments).strip() or document.content,
+    )
+
+
+def _initial_translation_provider_stat(provider: str, model: str) -> dict[str, Any]:
+    return {
+        "provider": provider,
+        "model": model,
+        "documents_attempted": 0,
+        "documents_succeeded": 0,
+        "documents_failed": 0,
+        "error_breakdown": {},
+    }
+
+
+def _get_translation_provider_stat(
+    provider_stats: dict[str, dict[str, Any]],
+    provider: str,
+    model: str | None = None,
+) -> dict[str, Any]:
+    stat = provider_stats.get(provider)
+    if not isinstance(stat, dict):
+        stat = _initial_translation_provider_stat(
+            provider,
+            model or _translation_model_for_provider(provider),
+        )
+        provider_stats[provider] = stat
+    elif model and not stat.get("model"):
+        stat["model"] = model
+    return stat
+
+
+def _record_translation_provider_error(
+    provider_errors: Counter[str],
+    provider_stats: dict[str, dict[str, Any]],
+    *,
+    attempt: NewsTranslationAttempt,
+) -> None:
+    error = attempt.error or TRANSLATION_ERROR_GENERATION_FAILED
+    provider_errors[f"{attempt.provider}:{error}"] += 1
+    stat = _get_translation_provider_stat(provider_stats, attempt.provider, attempt.model)
+    stat["documents_failed"] += 1
+    error_breakdown = stat["error_breakdown"]
+    error_breakdown[error] = int(error_breakdown.get(error, 0)) + 1
+
+
+async def _translate_news_documents(
+    documents: list[RawNewsDocument],
+) -> tuple[list[RawNewsDocument], dict[str, Any]]:
+    stats: dict[str, Any] = {
+        "translation_requested": 0,
+        "translation_succeeded": 0,
+        "translation_failed": 0,
+        "translation_skipped": 0,
+        "translation_error": None,
+        "translation_provider_error_breakdown": {},
+        "translation_provider_stats": {},
+    }
+    if not documents:
+        return [], stats
+
+    provider_errors: Counter[str] = Counter()
+    provider_stats: dict[str, dict[str, Any]] = {}
+    translated_documents: list[RawNewsDocument] = []
+    providers = (TRANSLATION_PROVIDER_GEMINI, TRANSLATION_PROVIDER_OPENAI)
+
+    for document in documents:
+        if _is_fallback_document(document):
+            stats["translation_skipped"] += 1
+            translated_documents.append(
+                replace(document, translation_status=TRANSLATION_STATUS_SKIPPED_FALLBACK)
+            )
+            continue
+
+        stats["translation_requested"] += 1
+        failed_attempts: list[NewsTranslationAttempt] = []
+        for provider in providers:
+            model = _translation_model_for_provider(provider)
+            stat = _get_translation_provider_stat(provider_stats, provider, model)
+            stat["documents_attempted"] += 1
+            attempt = await _attempt_translation_provider(provider, document)
+            if attempt.error:
+                failed_attempts.append(attempt)
+                _record_translation_provider_error(
+                    provider_errors,
+                    provider_stats,
+                    attempt=attempt,
+                )
+                continue
+
+            stat["documents_succeeded"] += 1
+            stats["translation_succeeded"] += 1
+            translated_documents.append(
+                replace(
+                    document,
+                    title=attempt.title or document.title,
+                    content=attempt.content or document.content,
+                    translation_status=TRANSLATION_STATUS_TRANSLATED,
+                    translation_provider=attempt.provider,
+                    translation_model=attempt.model,
+                    translation_error=None,
+                    translated_at=datetime.now(UTC),
+                )
+            )
+            break
+        else:
+            representative_error = (
+                failed_attempts[-1].error if failed_attempts else TRANSLATION_ERROR_GENERATION_FAILED
+            )
+            stats["translation_failed"] += 1
+            if stats["translation_error"] is None:
+                stats["translation_error"] = representative_error
+            translated_documents.append(
+                replace(
+                    document,
+                    translation_status=TRANSLATION_STATUS_FAILED,
+                    translation_error=representative_error,
+                )
+            )
+
+    stats["translation_provider_error_breakdown"] = dict(provider_errors)
+    stats["translation_provider_stats"] = provider_stats
+    return translated_documents, stats
+
+
 def _build_embedding_analyzer(provider: str) -> GeminiAnalyzer | OpenAIAnalyzer:
     if provider == EMBEDDING_PROVIDER_OPENAI:
         return OpenAIAnalyzer()
@@ -1418,6 +1706,11 @@ def _build_missing_embedding_backfill_query(
             "content_source",
             "crawl_status",
             "crawl_error",
+            "translation_status",
+            "translation_provider",
+            "translation_model",
+            "translation_error",
+            "translated_at",
             "chunk_index",
             "chunk_count",
             "content_length",
@@ -1467,6 +1760,19 @@ def _backfill_chunk_from_hit(hit: dict[str, Any]) -> tuple[str, RawNewsChunk] | 
             content_source=str(source.get("content_source") or "rss_summary"),
             crawl_status=str(source.get("crawl_status") or "not_applicable"),
             crawl_error=source.get("crawl_error") if isinstance(source.get("crawl_error"), str) else None,
+            translation_status=str(
+                source.get("translation_status") or TRANSLATION_STATUS_NOT_TRANSLATED
+            ),
+            translation_provider=source.get("translation_provider")
+            if isinstance(source.get("translation_provider"), str)
+            else None,
+            translation_model=source.get("translation_model")
+            if isinstance(source.get("translation_model"), str)
+            else None,
+            translation_error=source.get("translation_error")
+            if isinstance(source.get("translation_error"), str)
+            else None,
+            translated_at=_parse_optional_datetime(source.get("translated_at")),
             chunk_index=chunk_index,
             chunk_count=int(source.get("chunk_count") or 1),
             content_length=int(source.get("content_length") or len(content)),
@@ -1706,6 +2012,7 @@ def _resolve_ingestion_run_status(stats: dict[str, Any], source_health: list[Sou
     if (
         stats.get("errors", 0) > 0
         or stats.get("embedding_missing", 0) > 0
+        or stats.get("translation_failed", 0) > 0
         or stats.get("backfill_missing", 0) > 0
         or stats.get("backfill_failed", 0) > 0
     ):
@@ -1754,6 +2061,13 @@ async def _store_ingestion_run(
         "embedding_provider_error_breakdown": stats["embedding_provider_error_breakdown"],
         "embedding_provider_stats": stats["embedding_provider_stats"],
         "embedding_cost_summary": stats["embedding_cost_summary"],
+        "translation_requested": stats["translation_requested"],
+        "translation_succeeded": stats["translation_succeeded"],
+        "translation_failed": stats["translation_failed"],
+        "translation_skipped": stats["translation_skipped"],
+        "translation_error": stats["translation_error"],
+        "translation_provider_error_breakdown": stats["translation_provider_error_breakdown"],
+        "translation_provider_stats": stats["translation_provider_stats"],
         "backfill_requested": stats["backfill_requested"],
         "backfill_succeeded": stats["backfill_succeeded"],
         "backfill_missing": stats["backfill_missing"],
@@ -1798,6 +2112,13 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
         "embedding_provider_error_breakdown": {},
         "embedding_provider_stats": {},
         "embedding_cost_summary": _build_embedding_cost_summary({}),
+        "translation_requested": 0,
+        "translation_succeeded": 0,
+        "translation_failed": 0,
+        "translation_skipped": 0,
+        "translation_error": None,
+        "translation_provider_error_breakdown": {},
+        "translation_provider_stats": {},
         "backfill_requested": 0,
         "backfill_succeeded": 0,
         "backfill_missing": 0,
@@ -1839,6 +2160,8 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
             _prefer_real_documents([*cryptopanic_documents, *naver_documents, *rss_documents])
         )
         stats["fetched"] = len(documents)
+        documents, translation_stats = await _translate_news_documents(documents)
+        stats.update(translation_stats)
         chunks = _build_news_chunks(documents)
         embeddings = await _generate_embeddings(chunks)
         stats["embedding_requested"] = embeddings.requested
@@ -1900,6 +2223,8 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
             "market_news ingestion finished: fetched=%s indexed=%s deleted=%s errors=%s "
             "crawled=%s crawl_failed=%s crawl_skipped=%s rss_summary_used=%s "
             "stale_deleted=%s fallback_deleted=%s expired_deleted=%s "
+            "translation_requested=%s translation_succeeded=%s translation_failed=%s "
+            "translation_skipped=%s translation_error=%s "
             "embedding_requested=%s embedding_succeeded=%s embedding_missing=%s "
             "embedding_failed=%s embedding_error=%s "
             "backfill_requested=%s backfill_succeeded=%s backfill_missing=%s "
@@ -1916,6 +2241,11 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
         stats["stale_deleted"],
         stats["fallback_deleted"],
         stats["expired_deleted"],
+        stats["translation_requested"],
+        stats["translation_succeeded"],
+        stats["translation_failed"],
+        stats["translation_skipped"],
+        stats["translation_error"],
         stats["embedding_requested"],
         stats["embedding_succeeded"],
         stats["embedding_missing"],

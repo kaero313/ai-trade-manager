@@ -218,3 +218,12 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 - `warnings` 응답 필드는 `market_news` 집계와 `market_news_ingestion_runs` 최신 문서의 provider/source health 값을 조합해 만듭니다.
 - warning에는 임베딩 누락, provider 설정/쿼터 문제, source 크롤 제한, fallback 문서 잔존, OpenAI 추정 비용 관측 신호가 포함됩니다.
 - warning은 운영 관측용 필드이며 매매 차단, 예산 차단, DB 영속 상태 변경으로 사용하지 않습니다.
+
+## Phase 46.9 업데이트
+- PostgreSQL/Alembic 변경은 없습니다. RAG 뉴스 한국어 번역 저장은 OpenSearch 캐시 인덱스와 ingestion 로직만 변경합니다.
+- `market_news.title`과 `market_news.content`는 실제 뉴스 번역 성공 시 한국어 번역본으로 저장되며, 원문 보존 필드는 만들지 않습니다.
+- `market_news` 청크 문서는 `translation_status`, `translation_provider`, `translation_model`, `translation_error`, `translated_at`을 추가로 저장합니다.
+- `translation_status`는 `translated`, `failed`, `skipped_fallback`, `not_translated` 값을 사용하며, dummy/fallback 문서는 `skipped_fallback`로 남겨 fallback 필터가 계속 동작하게 합니다.
+- `market_news.embedding`은 번역 성공 시 한국어 `title/content`를 기준으로 생성됩니다. 번역 실패 시 원문을 임시 저장하고 기존 임베딩/upsert 흐름을 계속 진행합니다.
+- `market_news_ingestion_runs`는 `translation_requested`, `translation_succeeded`, `translation_failed`, `translation_skipped`, `translation_error`, `translation_provider_error_breakdown`, `translation_provider_stats`를 저장합니다.
+- 기존 `market_news` 매핑에 번역 메타데이터 필드가 없으면 ingestion 경로에서 자동 재생성됩니다.
