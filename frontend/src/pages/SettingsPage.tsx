@@ -73,6 +73,17 @@ const DEFAULT_AI_PROVIDER_SETTINGS: AiProviderSettings = {
   openai: { enabled: true, model: 'gpt-5-mini' },
 }
 
+const SETTINGS_CARD_CLASS = 'quantum-card rounded-xl p-5 text-[#dfe2eb] sm:p-6'
+const SETTINGS_PANEL_CLASS = 'quantum-panel rounded-lg border border-[#3b494b]/30 p-4'
+const SETTINGS_FIELD_CLASS =
+  'w-full rounded-lg border border-[#3b494b]/45 bg-[#0a0e14]/70 px-3 py-2 text-sm text-[#dfe2eb] outline-none transition placeholder:text-[#849495] focus:border-[#00dbe9]/70 focus:ring-2 focus:ring-[#00dbe9]/20 disabled:cursor-not-allowed disabled:bg-[#262a31]/60 disabled:text-[#849495]'
+const SETTINGS_PRIMARY_BUTTON_CLASS =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-[#00dbe9]/16 px-4 py-2 text-sm font-bold text-[#7df4ff] transition hover:bg-[#00dbe9]/24 disabled:cursor-not-allowed disabled:opacity-60'
+const SETTINGS_SECONDARY_BUTTON_CLASS =
+  'inline-flex items-center justify-center rounded-lg border border-[#3b494b]/50 bg-[#0a0e14]/70 px-3 py-2 text-sm font-bold text-[#dfe2eb] transition hover:border-[#00dbe9]/45 hover:text-[#7df4ff]'
+const SETTINGS_LABEL_CLASS = 'mb-2 flex items-center gap-2 text-sm font-bold text-[#dfe2eb]'
+const SETTINGS_HINT_CLASS = 'mt-2 text-xs text-[#849495]'
+
 const PERSONA_PRESETS = [
   {
     key: 'aggressive-scalping',
@@ -187,10 +198,10 @@ function NoticeMessage({ notice }: { notice: NoticeState }) {
     <div
       className={`rounded-xl px-4 py-3 text-sm ${
         notice.type === 'success'
-          ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+          ? 'bg-[#00dbe9]/10 font-semibold text-[#7df4ff]'
           : notice.type === 'info'
-            ? 'border border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-600 dark:bg-gray-700/40 dark:text-gray-200'
-            : 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200'
+            ? 'bg-[#262a31]/70 text-[#dfe2eb]'
+            : 'bg-[#ffb4ab]/10 font-semibold text-[#ffb4ab]'
       }`}
     >
       {notice.message}
@@ -238,18 +249,18 @@ function resolveRuntimeStatusLabel(status: AiProviderRuntimeStatusItem['status']
 
 function resolveRuntimeStatusClassName(status: AiProviderRuntimeStatusItem['status']): string {
   if (status === 'active') {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+    return 'bg-[#00dbe9]/12 text-[#7df4ff]'
   }
   if (status === 'fallback_ready') {
-    return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200'
+    return 'bg-[#cdbdff]/12 text-[#cdbdff]'
   }
   if (status === 'blocked') {
-    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200'
+    return 'bg-[#eac324]/12 text-[#ffe179]'
   }
   if (status === 'missing_key' || status === 'error') {
-    return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200'
+    return 'bg-[#ffb4ab]/12 text-[#ffb4ab]'
   }
-  return 'border-gray-200 bg-white text-gray-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'
+  return 'bg-[#262a31]/70 text-[#b9cacb]'
 }
 
 function resolveProviderStatusLabel(status: AiProviderStatusItem | undefined): {
@@ -282,15 +293,15 @@ function ProviderStatusBadge({ status }: { status: AiProviderStatusItem | undefi
   const resolved = resolveProviderStatusLabel(status)
   const toneClass =
     resolved.tone === 'blocked'
-      ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200'
+      ? 'bg-[#eac324]/12 text-[#ffe179]'
       : resolved.tone === 'error'
-        ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200'
+        ? 'bg-[#ffb4ab]/12 text-[#ffb4ab]'
         : resolved.tone === 'ready'
-          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
-          : 'border-gray-200 bg-white text-gray-600 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'
+          ? 'bg-[#00dbe9]/12 text-[#7df4ff]'
+          : 'bg-[#262a31]/70 text-[#b9cacb]'
 
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold ${toneClass}`}>
       {resolved.label}
     </span>
   )
@@ -307,7 +318,7 @@ function ProviderRuntimeInsight({
     return (
       <div className="space-y-2">
         <ProviderStatusBadge status={status} />
-        <p className="text-xs text-gray-500 dark:text-gray-400">실행 상태를 확인하는 중입니다.</p>
+        <p className="text-xs text-[#849495]">실행 상태를 확인하는 중입니다.</p>
       </div>
     )
   }
@@ -316,18 +327,18 @@ function ProviderRuntimeInsight({
     <div className="min-w-0 space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <span
-          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${resolveRuntimeStatusClassName(
+          className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold ${resolveRuntimeStatusClassName(
             runtimeStatus.status,
           )}`}
         >
           {resolveRuntimeStatusLabel(runtimeStatus.status)}
         </span>
-        <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300">
+        <span className="inline-flex items-center rounded-full bg-[#262a31]/70 px-2.5 py-1 text-xs font-bold text-[#b9cacb]">
           키 {runtimeStatus.api_key_configured ? '설정됨' : '없음'}
         </span>
       </div>
 
-      <div className="space-y-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+      <div className="space-y-1 text-xs leading-5 text-[#849495]">
         <p>실행 모델: {runtimeStatus.model}</p>
         {runtimeStatus.skip_reason && <p>제외 사유: {runtimeStatus.skip_reason}</p>}
         {runtimeStatus.reason && <p>차단 사유: {runtimeStatus.reason}</p>}
@@ -335,7 +346,7 @@ function ProviderRuntimeInsight({
         {runtimeStatus.last_success_at && <p>마지막 성공: {formatDateTime(runtimeStatus.last_success_at)}</p>}
         {runtimeStatus.last_error_at && <p>최근 오류: {formatDateTime(runtimeStatus.last_error_at)}</p>}
         {runtimeStatus.last_error && (
-          <p className="line-clamp-2 break-words text-rose-600 dark:text-rose-300">
+          <p className="line-clamp-2 break-words text-[#ffb4ab]">
             {runtimeStatus.last_error}
           </p>
         )}
@@ -503,68 +514,65 @@ function AiRuntimeSettingsPanel() {
   }
 
   return (
-    <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <header className="border-b border-gray-200 pb-5 dark:border-gray-700">
-        <p className="text-sm font-semibold uppercase tracking-[0.24em] text-sky-600 dark:text-sky-300">
-          AI Runtime Control
-        </p>
-        <div className="mt-3 flex items-center gap-2">
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">AI 운용 설정</h2>
+    <section className={SETTINGS_CARD_CLASS}>
+      <header className="border-b border-[#3b494b]/35 pb-5">
+        <div className="flex items-center gap-2">
+          <h2 className="text-2xl font-bold text-[#dfe2eb]">AI 운용 설정</h2>
           <InfoTooltip
             title="AI 운용 설정"
             content="AI 분석 주기, 체결 기준, 강제 익절·손절, 페르소나처럼 실제 AI 자동매매에 직접 쓰이는 값만 모았습니다."
           />
         </div>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#b9cacb]">
           뉴스 수집 주기와 심리지수 캐싱 주기처럼 일반 사용자가 자주 만질 필요가 없는 운영값은 제외했습니다.
         </p>
       </header>
 
       <div className="mt-6 space-y-6">
         {systemConfigsQuery.isLoading && (
-          <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-gray-500 dark:text-gray-300">
-            <Loader2 className="h-5 w-5 animate-spin" />
+          <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-[#b9cacb]">
+            <Loader2 className="h-5 w-5 animate-spin text-[#00dbe9]" />
             AI 운용 설정을 불러오는 중입니다.
           </div>
         )}
 
         {systemConfigsQuery.isError && (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+          <div className="rounded-lg bg-[#ffb4ab]/10 px-4 py-3 text-sm font-semibold text-[#ffb4ab]">
             AI 운용 설정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
           </div>
         )}
 
         {!systemConfigsQuery.isLoading && !systemConfigsQuery.isError && (
           <>
-            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 dark:border-gray-700 dark:bg-gray-700/30">
-              <div className="flex flex-col gap-3 border-b border-gray-200 pb-4 dark:border-gray-700 sm:flex-row sm:items-start sm:justify-between">
+            <div className={SETTINGS_PANEL_CLASS}>
+              <div className="flex flex-col gap-3 border-b border-[#3b494b]/35 pb-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI Provider</h3>
+                    <h3 className="text-lg font-bold text-[#dfe2eb]">AI Provider</h3>
                     <InfoTooltip
                       title="AI Provider 우선순위"
                       content="한도에 도달한 provider는 SystemConfig 상태에 기록되고, 해제 시각 전까지 다음 순위 provider를 먼저 사용합니다."
                     />
                   </div>
-                  <p className="mt-1 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                  <p className="mt-1 text-sm leading-6 text-[#b9cacb]">
                     API 키는 환경변수에서만 읽고, 여기서는 호출 순서와 모델명만 관리합니다.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={clearProviderStatus}
-                  className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                  className={SETTINGS_SECONDARY_BUTTON_CLASS}
                 >
                   차단 상태 초기화
                 </button>
               </div>
 
-              <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
+              <div className="mt-4 rounded-lg bg-[#00dbe9]/10 px-4 py-3 text-sm text-[#b9cacb]">
                 {aiProviderRuntimeStatusQuery.isError ? (
                   <p>Provider 실행 상태를 불러오지 못했습니다. 저장된 설정값은 계속 표시됩니다.</p>
                 ) : (
                   <div className="grid gap-1">
-                    <p className="font-semibold">
+                    <p className="font-bold text-[#7df4ff]">
                       다음 AI 요청 시작점:{' '}
                       {activeProvider ? activeProvider.toUpperCase() : '사용 가능한 provider 없음'}
                     </p>
@@ -584,31 +592,31 @@ function AiRuntimeSettingsPanel() {
                   return (
                     <div
                       key={provider}
-                      className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800 lg:grid-cols-[130px_120px_minmax(180px,1fr)_minmax(220px,1fr)]"
+                      className="grid gap-3 rounded-lg bg-[#0a0e14]/70 p-4 lg:grid-cols-[130px_120px_minmax(180px,1fr)_minmax(220px,1fr)]"
                     >
                       <div className="flex items-center justify-between gap-3 lg:block">
-                        <div className="text-sm font-semibold uppercase text-gray-900 dark:text-gray-100">
+                        <div className="text-sm font-bold uppercase text-[#dfe2eb]">
                           {provider}
                         </div>
-                        <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300 lg:mt-3">
+                        <label className="inline-flex items-center gap-2 text-xs font-bold text-[#b9cacb] lg:mt-3">
                           <input
                             type="checkbox"
                             checked={providerSettings.enabled}
                             onChange={(event) => setProviderEnabled(provider, event.target.checked)}
-                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            className="h-4 w-4 rounded border-[#3b494b] bg-[#10141a] text-[#00dbe9] focus:ring-[#00dbe9]/30"
                           />
                           사용
                         </label>
                       </div>
 
                       <label className="block">
-                        <span className="mb-1 block text-xs font-semibold text-gray-500 dark:text-gray-400">
+                        <span className="mb-1 block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
                           우선순위
                         </span>
                         <select
                           value={rank}
                           onChange={(event) => setProviderPriority(provider, Number(event.target.value))}
-                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                          className={SETTINGS_FIELD_CLASS}
                         >
                           {AI_PROVIDERS.map((_, index) => (
                             <option key={index + 1} value={index + 1}>
@@ -619,18 +627,18 @@ function AiRuntimeSettingsPanel() {
                       </label>
 
                       <label className="block">
-                        <span className="mb-1 block text-xs font-semibold text-gray-500 dark:text-gray-400">
+                        <span className="mb-1 block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
                           모델명
                         </span>
                         <input
                           value={providerSettings.model}
                           onChange={(event) => setProviderModel(provider, event.target.value)}
-                          className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                          className={SETTINGS_FIELD_CLASS}
                         />
                       </label>
 
                       <div className="min-w-0">
-                        <span className="mb-1 block text-xs font-semibold text-gray-500 dark:text-gray-400">
+                        <span className="mb-1 block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
                           실행 상태
                         </span>
                         <ProviderRuntimeInsight
@@ -645,8 +653,8 @@ function AiRuntimeSettingsPanel() {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
-                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+              <label className={SETTINGS_PANEL_CLASS}>
+                <span className={SETTINGS_LABEL_CLASS}>
                   <span>AI 자율 분석 주기 (분)</span>
                   <InfoTooltip
                     title="AI 자율 분석 주기"
@@ -656,7 +664,7 @@ function AiRuntimeSettingsPanel() {
                 <select
                   value={draft.autonomousAiIntervalMinutes}
                   onChange={(event) => setDraftValue('autonomousAiIntervalMinutes', event.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                  className={SETTINGS_FIELD_CLASS}
                 >
                   {AUTONOMOUS_AI_INTERVAL_OPTIONS.map((value) => (
                     <option key={value} value={value}>
@@ -664,11 +672,11 @@ function AiRuntimeSettingsPanel() {
                     </option>
                   ))}
                 </select>
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">추천값: 15분</p>
+                <p className={SETTINGS_HINT_CLASS}>추천값: 15분</p>
               </label>
 
-              <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
-                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+              <label className={SETTINGS_PANEL_CLASS}>
+                <span className={SETTINGS_LABEL_CLASS}>
                   <span>종목당 최대 배팅 비중 (%)</span>
                   <InfoTooltip
                     title="종목당 최대 배팅 비중"
@@ -682,15 +690,15 @@ function AiRuntimeSettingsPanel() {
                   step="0.1"
                   value={draft.maxAllocationPct}
                   onChange={(event) => setDraftValue('maxAllocationPct', event.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                  className={SETTINGS_FIELD_CLASS}
                 />
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">추천값: 10%</p>
+                <p className={SETTINGS_HINT_CLASS}>추천값: 10%</p>
               </label>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
-                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+              <label className={SETTINGS_PANEL_CLASS}>
+                <span className={SETTINGS_LABEL_CLASS}>
                   <span>하드 익절 기준 (%)</span>
                   <InfoTooltip
                     title="하드 익절 기준"
@@ -703,13 +711,13 @@ function AiRuntimeSettingsPanel() {
                   step="0.1"
                   value={draft.hardTakeProfitPct}
                   onChange={(event) => setDraftValue('hardTakeProfitPct', event.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                  className={SETTINGS_FIELD_CLASS}
                 />
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">0이면 비활성화, 예: 5.0</p>
+                <p className={SETTINGS_HINT_CLASS}>0이면 비활성화, 예: 5.0</p>
               </label>
 
-              <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
-                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+              <label className={SETTINGS_PANEL_CLASS}>
+                <span className={SETTINGS_LABEL_CLASS}>
                   <span>하드 손절 기준 (%)</span>
                   <InfoTooltip
                     title="하드 손절 기준"
@@ -722,15 +730,15 @@ function AiRuntimeSettingsPanel() {
                   step="0.1"
                   value={draft.hardStopLossPct}
                   onChange={(event) => setDraftValue('hardStopLossPct', event.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                  className={SETTINGS_FIELD_CLASS}
                 />
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">0이면 비활성화, 예: -3.0</p>
+                <p className={SETTINGS_HINT_CLASS}>0이면 비활성화, 예: -3.0</p>
               </label>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
-                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+              <label className={SETTINGS_PANEL_CLASS}>
+                <span className={SETTINGS_LABEL_CLASS}>
                   <span>AI 자율 체결 최소 확신도</span>
                   <InfoTooltip
                     title="AI 자율 체결 최소 확신도"
@@ -743,13 +751,13 @@ function AiRuntimeSettingsPanel() {
                   max="100"
                   value={draft.aiMinConfidenceTrade}
                   onChange={(event) => setDraftValue('aiMinConfidenceTrade', event.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                  className={SETTINGS_FIELD_CLASS}
                 />
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">추천값: 70~80</p>
+                <p className={SETTINGS_HINT_CLASS}>추천값: 70~80</p>
               </label>
 
-              <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
-                <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+              <label className={SETTINGS_PANEL_CLASS}>
+                <span className={SETTINGS_LABEL_CLASS}>
                   <span>AI 분석 로그 유효 기간 (분)</span>
                   <InfoTooltip
                     title="AI 분석 로그 유효 기간"
@@ -761,14 +769,14 @@ function AiRuntimeSettingsPanel() {
                   min="1"
                   value={draft.aiAnalysisMaxAgeMinutes}
                   onChange={(event) => setDraftValue('aiAnalysisMaxAgeMinutes', event.target.value)}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                  className={SETTINGS_FIELD_CLASS}
                 />
-                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">추천값: 90분</p>
+                <p className={SETTINGS_HINT_CLASS}>추천값: 90분</p>
               </label>
             </div>
 
-            <label className="block rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/30">
-              <span className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+            <label className={SETTINGS_PANEL_CLASS}>
+              <span className={SETTINGS_LABEL_CLASS}>
                 <span>일일 AI 브리핑 실행 시각</span>
                 <InfoTooltip
                   title="일일 AI 브리핑 실행 시각"
@@ -779,15 +787,15 @@ function AiRuntimeSettingsPanel() {
                 type="time"
                 value={draft.aiBriefingTime}
                 onChange={(event) => setDraftValue('aiBriefingTime', event.target.value)}
-                className="w-full max-w-[220px] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+                className={`${SETTINGS_FIELD_CLASS} max-w-[220px]`}
               />
-              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">예: 08:30</p>
+              <p className={SETTINGS_HINT_CLASS}>예: 08:30</p>
             </label>
 
-            <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-5 dark:border-violet-500/20 dark:bg-violet-500/10">
-              <div className="flex flex-col gap-3 border-b border-violet-200 pb-4 dark:border-violet-500/20">
+            <div className={SETTINGS_PANEL_CLASS}>
+              <div className="flex flex-col gap-3 border-b border-[#3b494b]/35 pb-4">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  <h3 className="text-lg font-bold text-[#dfe2eb]">
                     AI 매매 철학 및 페르소나
                   </h3>
                   <InfoTooltip
@@ -801,7 +809,7 @@ function AiRuntimeSettingsPanel() {
                       key={preset.key}
                       type="button"
                       onClick={() => setDraftValue('aiCustomPersonaPrompt', preset.value)}
-                      className="inline-flex items-center rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:border-violet-300 hover:bg-violet-100 dark:border-violet-400/20 dark:bg-gray-800 dark:text-violet-200 dark:hover:border-violet-300/40 dark:hover:bg-violet-500/10"
+                      className="inline-flex items-center rounded-lg bg-[#cdbdff]/10 px-3 py-1.5 text-xs font-bold text-[#cdbdff] transition hover:bg-[#cdbdff]/16"
                     >
                       {preset.label}
                     </button>
@@ -814,22 +822,22 @@ function AiRuntimeSettingsPanel() {
                   value={draft.aiCustomPersonaPrompt}
                   onChange={(event) => setDraftValue('aiCustomPersonaPrompt', event.target.value)}
                   placeholder="예: 손실 회피를 최우선으로 삼고, 뉴스 리스크가 있으면 HOLD를 우선하라."
-                  className="min-h-[220px] w-full rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm leading-6 text-gray-900 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-300 dark:border-violet-400/20 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-violet-300 dark:focus:ring-violet-400/30"
+                  className={`${SETTINGS_FIELD_CLASS} min-h-[220px] resize-y leading-6`}
                 />
               </div>
             </div>
 
             {notice && <NoticeMessage notice={notice} />}
 
-            <div className="flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex flex-col gap-3 border-t border-[#3b494b]/35 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-xs text-[#849495]">
                 저장 즉시 SystemConfig에 반영되고 스케줄러 대상 값은 재등록됩니다.
               </div>
               <button
                 type="button"
                 onClick={() => void handleSave()}
                 disabled={updateSystemConfigsMutation.isPending}
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+                className={SETTINGS_PRIMARY_BUTTON_CLASS}
               >
                 {updateSystemConfigsMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 <span>{updateSystemConfigsMutation.isPending ? '저장 중...' : 'AI 운용 설정 저장'}</span>
@@ -844,17 +852,17 @@ function AiRuntimeSettingsPanel() {
 
 function SettingsPage() {
   return (
-    <div className="flex h-full min-h-0 flex-col gap-6">
-      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-        <h1 className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+    <div className="dashboard-quantum flex h-full min-h-0 min-w-0 flex-col gap-5">
+      <section className={SETTINGS_CARD_CLASS}>
+        <h1 className="text-3xl font-bold tracking-tight text-[#dfe2eb]">
           설정
         </h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#b9cacb]">
           자동매매에 필요한 종목, 배분, 운용 기준을 조정합니다.
         </p>
       </section>
 
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto pr-1">
+      <div className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto pr-1">
         <BotConfigForm />
         <AiRuntimeSettingsPanel />
       </div>
