@@ -26,6 +26,13 @@ interface BotConfigDraft {
 
 const BOT_CONFIG_QUERY_KEY = ['bot-config'] as const
 
+const SETTINGS_CARD_CLASS = 'quantum-card rounded-xl p-5 text-[#dfe2eb] sm:p-6'
+const SETTINGS_PANEL_CLASS = 'quantum-panel rounded-lg border border-[#3b494b]/30 p-4'
+const SETTINGS_FIELD_CLASS =
+  'w-full rounded-lg border border-[#3b494b]/45 bg-[#0a0e14]/70 px-3 py-2 text-sm text-[#dfe2eb] outline-none transition placeholder:text-[#849495] focus:border-[#00dbe9]/70 focus:ring-2 focus:ring-[#00dbe9]/20 disabled:cursor-not-allowed disabled:bg-[#262a31]/60 disabled:text-[#849495]'
+const SETTINGS_PRIMARY_BUTTON_CLASS =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-[#00dbe9]/16 px-4 py-2 text-sm font-bold text-[#7df4ff] transition hover:bg-[#00dbe9]/24 disabled:cursor-not-allowed disabled:opacity-60'
+
 const DEFAULT_BOT_CONFIG: NormalizedBotConfig = {
   symbols: ['KRW-BTC'],
   allocation_pct_per_symbol: [1.0],
@@ -188,7 +195,7 @@ function TextInput({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+      <span className="mb-1 block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
         {label}
       </span>
       <input
@@ -197,9 +204,9 @@ function TextInput({
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 dark:placeholder:text-gray-400 dark:focus:border-blue-400 dark:focus:ring-blue-400 dark:disabled:bg-gray-600 dark:disabled:text-gray-400"
+        className={SETTINGS_FIELD_CLASS}
       />
-      {hint && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{hint}</p>}
+      {hint && <p className="mt-2 text-xs text-[#849495]">{hint}</p>}
     </label>
   )
 }
@@ -232,16 +239,16 @@ function BotConfigEditor({ initialConfig }: { initialConfig: NormalizedBotConfig
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="rounded-2xl border border-sky-200 bg-sky-50/80 px-4 py-4 text-sm text-sky-900 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
-        <p className="font-semibold">AI 자동매매 대상</p>
-        <p className="mt-2 leading-6">
+      <div className="rounded-lg bg-[#00dbe9]/10 px-4 py-4 text-sm text-[#b9cacb]">
+        <p className="font-bold text-[#7df4ff]">AI 자동매매 대상</p>
+        <p className="mt-2 leading-6 text-[#dfe2eb]">
           AI가 분석하고 주문 후보로 삼을 종목과 기본 배분을 관리합니다.
         </p>
       </div>
 
-      <section className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 dark:border-gray-700 dark:bg-gray-700/40">
+      <section className={SETTINGS_PANEL_CLASS}>
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">대상 종목과 배분</h3>
+          <h3 className="text-sm font-bold text-[#dfe2eb]">대상 종목과 배분</h3>
           <InfoTooltip
             title="대상 종목과 배분"
             content="쉼표로 구분한 심볼 목록과 같은 순서의 배분 비율을 입력합니다. 예를 들어 KRW-BTC, KRW-ETH와 0.6, 0.4는 BTC 60%, ETH 40% 기준입니다."
@@ -270,25 +277,25 @@ function BotConfigEditor({ initialConfig }: { initialConfig: NormalizedBotConfig
       </section>
 
       {saveNotice && (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200">
+        <p className="rounded-lg bg-[#00dbe9]/10 px-4 py-3 text-sm font-semibold text-[#7df4ff]">
           {saveNotice}
         </p>
       )}
 
       {saveError && (
-        <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+        <p className="rounded-lg bg-[#ffb4ab]/10 px-4 py-3 text-sm font-semibold text-[#ffb4ab]">
           {saveError}
         </p>
       )}
 
-      <footer className="flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-gray-500 dark:text-gray-400">
+      <footer className="flex flex-col gap-3 border-t border-[#3b494b]/35 pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-[#849495]">
           저장한 심볼과 배분은 다음 분석 주기부터 반영됩니다.
         </p>
         <button
           type="submit"
           disabled={isSaving}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+          className={SETTINGS_PRIMARY_BUTTON_CLASS}
         >
           {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
           <span>{isSaving ? '저장 중...' : 'AI 대상 설정 저장'}</span>
@@ -308,29 +315,29 @@ function BotConfigForm() {
   const formKey = JSON.stringify(normalizedConfig)
 
   return (
-    <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-      <header className="border-b border-gray-200 pb-5 dark:border-gray-700">
+    <section className={SETTINGS_CARD_CLASS}>
+      <header className="border-b border-[#3b494b]/35 pb-5">
         <div className="flex items-center gap-2">
-          <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">AI 매매 대상 설정</h2>
+          <h2 className="text-2xl font-bold text-[#dfe2eb]">AI 매매 대상 설정</h2>
           <InfoTooltip
             title="AI 매매 대상 설정"
             content="AI 자동매매가 실제로 바라볼 종목과 기본 배분만 남긴 간소화 설정입니다."
           />
         </div>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#b9cacb]">
           AI가 사용할 대상 종목과 기본 배분을 조정합니다.
         </p>
       </header>
 
       <div className="mt-6">
         {botConfigQuery.isLoading && (
-          <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-gray-500 dark:text-gray-300">
-            <Loader2 className="h-5 w-5 animate-spin" />
+          <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-[#b9cacb]">
+            <Loader2 className="h-5 w-5 animate-spin text-[#00dbe9]" />
             현재 저장된 AI 매매 대상 설정을 불러오는 중입니다.
           </div>
         )}
         {botConfigQuery.isError && (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+          <div className="rounded-lg bg-[#ffb4ab]/10 px-4 py-3 text-sm font-semibold text-[#ffb4ab]">
             AI 매매 대상 설정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
           </div>
         )}
