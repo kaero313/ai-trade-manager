@@ -23,6 +23,8 @@ interface AiRuntimeDraft {
   aiBriefingTime: string
   aiMinConfidenceTrade: string
   aiAnalysisMaxAgeMinutes: string
+  liveBuyEnabled: boolean
+  aiEntryShadowMode: boolean
   aiCustomPersonaPrompt: string
   aiProviderPriority: AiProviderName[]
   aiProviderSettings: AiProviderSettings
@@ -60,6 +62,8 @@ const HARD_STOP_LOSS_PCT_KEY = 'hard_stop_loss_pct'
 const AI_BRIEFING_TIME_KEY = 'ai_briefing_time'
 const AI_MIN_CONFIDENCE_TRADE_KEY = 'ai_min_confidence_trade'
 const AI_ANALYSIS_MAX_AGE_MINUTES_KEY = 'ai_analysis_max_age_minutes'
+const LIVE_BUY_ENABLED_KEY = 'live_buy_enabled'
+const AI_ENTRY_SHADOW_MODE_KEY = 'ai_entry_shadow_mode'
 const AI_CUSTOM_PERSONA_PROMPT_KEY = 'ai_custom_persona_prompt'
 const AI_PROVIDER_PRIORITY_KEY = 'ai_provider_priority'
 const AI_PROVIDER_SETTINGS_KEY = 'ai_provider_settings'
@@ -173,6 +177,21 @@ function stringifyJson(value: unknown): string {
   return JSON.stringify(value)
 }
 
+function parseBooleanConfig(rawValue: string, fallback: boolean): boolean {
+  const normalized = rawValue.trim().toLowerCase()
+  if (['true', '1', 'yes', 'on'].includes(normalized)) {
+    return true
+  }
+  if (['false', '0', 'no', 'off'].includes(normalized)) {
+    return false
+  }
+  return fallback
+}
+
+function stringifyBooleanConfig(value: boolean): string {
+  return value ? 'true' : 'false'
+}
+
 function buildAiRuntimeDraft(items: SystemConfigItem[] | undefined): AiRuntimeDraft {
   return {
     autonomousAiIntervalMinutes: findConfigValue(items, AUTONOMOUS_AI_INTERVAL_MINUTES_KEY, '15'),
@@ -182,6 +201,8 @@ function buildAiRuntimeDraft(items: SystemConfigItem[] | undefined): AiRuntimeDr
     aiBriefingTime: findConfigValue(items, AI_BRIEFING_TIME_KEY, '08:30'),
     aiMinConfidenceTrade: findConfigValue(items, AI_MIN_CONFIDENCE_TRADE_KEY, '70'),
     aiAnalysisMaxAgeMinutes: findConfigValue(items, AI_ANALYSIS_MAX_AGE_MINUTES_KEY, '90'),
+    liveBuyEnabled: parseBooleanConfig(findConfigValue(items, LIVE_BUY_ENABLED_KEY, 'false'), false),
+    aiEntryShadowMode: parseBooleanConfig(findConfigValue(items, AI_ENTRY_SHADOW_MODE_KEY, 'true'), true),
     aiCustomPersonaPrompt: findConfigValue(items, AI_CUSTOM_PERSONA_PROMPT_KEY, ''),
     aiProviderPriority: normalizeProviderPriority(
       findConfigValue(items, AI_PROVIDER_PRIORITY_KEY, stringifyJson(DEFAULT_AI_PROVIDER_PRIORITY)),
@@ -468,6 +489,18 @@ function AiRuntimeSettingsPanel() {
         config_value: draft.aiAnalysisMaxAgeMinutes,
       })
     }
+    if (draft.liveBuyEnabled !== serverDraft.liveBuyEnabled) {
+      updates.push({
+        config_key: LIVE_BUY_ENABLED_KEY,
+        config_value: stringifyBooleanConfig(draft.liveBuyEnabled),
+      })
+    }
+    if (draft.aiEntryShadowMode !== serverDraft.aiEntryShadowMode) {
+      updates.push({
+        config_key: AI_ENTRY_SHADOW_MODE_KEY,
+        config_value: stringifyBooleanConfig(draft.aiEntryShadowMode),
+      })
+    }
     if (draft.aiCustomPersonaPrompt !== serverDraft.aiCustomPersonaPrompt) {
       updates.push({
         config_key: AI_CUSTOM_PERSONA_PROMPT_KEY,
@@ -650,6 +683,112 @@ function AiRuntimeSettingsPanel() {
                   )
                 })}
               </div>
+            </div>
+
+            <div className={SETTINGS_PANEL_CLASS}>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-[#dfe2eb]">실거래 BUY 안전락</h3>
+                    <InfoTooltip
+                      title="실거래 BUY 안전락"
+                      content="AI 판단 성향과 별개로 실제 신규 매수 주문을 허용할지 결정하는 최상위 안전 스위치입니다."
+                    />
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-[#b9cacb]">
+                    공격형 설정을 사용해도 아래 안전락이 잠겨 있으면 신규 BUY 주문은 전송되지 않습니다.
+                  </p>
+                </div>
+                <span
+                  className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-bold ${
+                    draft.liveBuyEnabled && !draft.aiEntryShadowMode
+                      ? 'bg-[#00dbe9]/12 text-[#7df4ff]'
+                      : 'bg-[#ffe179]/12 text-[#ffe179]'
+                  }`}
+                >
+                  {draft.liveBuyEnabled && !draft.aiEntryShadowMode ? 'LIVE BUY 가능' : '안전 제한 중'}
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                <label
+                  className={`flex min-h-[132px] cursor-pointer flex-col justify-between rounded-lg p-4 transition ${
+                    draft.liveBuyEnabled ? 'bg-[#00dbe9]/10' : 'bg-[#0a0e14]/70'
+                  }`}
+                >
+                  <span className="flex items-start justify-between gap-3">
+                    <span>
+                      <span className="block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
+                        LIVE BUY
+                      </span>
+                      <span className="mt-2 block text-base font-bold text-[#dfe2eb]">
+                        실거래 신규 매수 허용
+                      </span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={draft.liveBuyEnabled}
+                      onChange={(event) => setDraftValue('liveBuyEnabled', event.target.checked)}
+                      className="h-4 w-4 rounded border-[#3b494b] bg-[#10141a] text-[#00dbe9] focus:ring-[#00dbe9]/30"
+                    />
+                  </span>
+                  <span className="mt-4 text-sm leading-6 text-[#b9cacb]">
+                    {draft.liveBuyEnabled
+                      ? 'Entry Gate를 통과한 BUY 후보는 실제 주문 단계로 이동할 수 있습니다.'
+                      : 'live 모드에서도 신규 BUY 주문을 보내지 않고 차단합니다.'}
+                  </span>
+                  <span
+                    className={`mt-4 inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-bold ${
+                      draft.liveBuyEnabled
+                        ? 'bg-[#00dbe9]/14 text-[#7df4ff]'
+                        : 'bg-[#ffb4ab]/12 text-[#ffb4ab]'
+                    }`}
+                  >
+                    {draft.liveBuyEnabled ? '허용' : '잠금'}
+                  </span>
+                </label>
+
+                <label
+                  className={`flex min-h-[132px] cursor-pointer flex-col justify-between rounded-lg p-4 transition ${
+                    draft.aiEntryShadowMode ? 'bg-[#ffe179]/10' : 'bg-[#00dbe9]/10'
+                  }`}
+                >
+                  <span className="flex items-start justify-between gap-3">
+                    <span>
+                      <span className="block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
+                        SHADOW MODE
+                      </span>
+                      <span className="mt-2 block text-base font-bold text-[#dfe2eb]">
+                        BUY 후보 기록 전용
+                      </span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={draft.aiEntryShadowMode}
+                      onChange={(event) => setDraftValue('aiEntryShadowMode', event.target.checked)}
+                      className="h-4 w-4 rounded border-[#3b494b] bg-[#10141a] text-[#00dbe9] focus:ring-[#00dbe9]/30"
+                    />
+                  </span>
+                  <span className="mt-4 text-sm leading-6 text-[#b9cacb]">
+                    {draft.aiEntryShadowMode
+                      ? 'BUY 후보를 주문하지 않고 AI 추론 로그로만 남깁니다.'
+                      : 'Shadow 기록 전용 모드를 해제하고 실제 주문 경로를 열어둡니다.'}
+                  </span>
+                  <span
+                    className={`mt-4 inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-bold ${
+                      draft.aiEntryShadowMode
+                        ? 'bg-[#ffe179]/14 text-[#ffe179]'
+                        : 'bg-[#00dbe9]/14 text-[#7df4ff]'
+                    }`}
+                  >
+                    {draft.aiEntryShadowMode ? '기록 전용' : '주문 경로 열림'}
+                  </span>
+                </label>
+              </div>
+
+              <p className="mt-4 rounded-lg bg-[#ffb4ab]/10 px-4 py-3 text-xs font-semibold leading-6 text-[#ffdad6]">
+                실제 매수는 이 스위치 외에도 Entry Gate, 최소 확신도, 자산 조회, 봇 런타임 상태를 모두 통과해야 실행됩니다.
+              </p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
