@@ -1,175 +1,42 @@
-# 🤖 AI-Trade-Manager
+# AI-Trade-Manager
 
-> **AI 멀티에이전트 기반 암호화폐 자율 트레이딩 플랫폼**
+AI 분석, RAG 뉴스, 포트폴리오, 백테스트, 자동매매 안전장치를 묶은 개인용 트레이딩 운영 시스템
 
-AI가 실시간으로 시장을 분석하고, 자율적으로 매매를 결정하며, 스스로 정확도를 검증하는 통합 자산 관리 웹 플랫폼입니다.
-단순 보조 지표 봇을 넘어 **LangGraph 멀티에이전트 오케스트레이션**, **RAG 기반 문맥 분석**, **자가수정 Reviewer Agent**, **가상 모의투자 시뮬레이터**까지 통합된 풀스택 오토 트레이딩 솔루션입니다.
+핵심은 “AI가 매수 버튼을 누르게 하는 것”이 아니라, AI 판단이 어떤 데이터와 안전장치를 통과했는지 추적하고, 주문 실행 전후의 상태를 운영 가능한 형태로 남기는 것입니다.
 
----
+## 개발 일지
 
-## ✨ 주요 기능
+- [개발 블로그](https://kaero313.github.io/AI-Trade-Manager/)
+- [전체 운영 기록 허브](https://torpid-icon-d8a.notion.site/AI-Trade-Manager-3724054272b580d0b968f323059761da)
 
-### 🧠 AI 멀티에이전트 시스템
-- **LangGraph 오케스트레이터:** Supervisor → RAG/Quant Agent 자동 라우팅
-- **RAG Agent:** OpenSearch 3.5.0 `market_news` 벡터 DB 기반 뉴스 문맥 검색
-- **Quant Agent:** 실시간 시세, 기술지표(RSI, MACD, BB), 호가 분석
-- **Reviewer Agent:** 할루시네이션 검출 + 면책 조항 강제 (Self-Correction Loop, 최대 2회 재작업)
-- **SSE 실시간 스트리밍:** 에이전트 작업 과정을 Activity Card로 시각화
+## 상세 문서
 
-### 📊 실시간 대시보드
-- 캔들 차트 (lightweight-charts) + 기술지표 오버레이
-- 포트폴리오 자산 배분 도넛 차트 (Recharts)
-- 시장 공포/탐욕 지수 + 글로벌 뉴스 감성 분석
-- AI 인사이트 브리핑 (진입 시 자동 생성)
-- 봇 파라미터 실시간 제어 패널
+- [아키텍처 노트](docs/ARCHITECTURE.md)
+- [데이터 모델 노트](docs/DATABASE.md)
 
-### 🔬 백테스팅 연구소
-- 전략 파라미터 시뮬레이션 엔진
-- 차트 위 매수/매도 타점 시각화
-- 승률, 수익률, 최대낙폭 등 성과 지표
+## 핵심 설계
 
-### 🤖 자율 매매 엔진
-- AI 분석 기반 자동 매수/매도 실행
-- 분 단위 다이내믹 스케줄링 & 위치 사이징
-- AI 적중률 메타인지 채점 (정확도 자동 검증)
-- 가상 모의투자 (Paper Trading) 시뮬레이터
+- **AI 판단 파이프라인:** 시장 데이터, 기술 지표, 포트폴리오, RAG 뉴스, 과거 판단 피드백을 종합해 `BUY / SELL / HOLD` 분석 로그를 생성합니다.
+- **자동 매매 실행:** AI 분석 결과를 기반으로 매수/매도 후보를 생성하고, 안전 조건을 통과한 주문만 paper 또는 live 모드에서 실행합니다.
+- **주문 실행 제어:** paper/live 모드, shadow mode, live BUY 안전락, Entry Gate, BUY 직전 2차 검증으로 실거래 진입을 제한합니다.
+- **운영 관측성:** AI 판단 로그, 주문 이력, 포지션, 포트폴리오 스냅샷, RAG/provider warning을 PostgreSQL과 OpenSearch에 남깁니다.
+- **AI Banker:** LangGraph 기반 멀티에이전트가 포트폴리오, 시장 뉴스, 기술 지표를 나눠 분석하고 Reviewer가 응답을 검토합니다.
+- **정책 검증:** Strategy Laboratory에서 전략 파라미터와 리스크 성향을 과거 데이터로 검증합니다.
 
-### 📱 모바일 제어
-- Slack Socket Mode 봇 통합
-- `/잔고`, `/추천`, `긴급정지` 등 모바일 명령어 지원
+## 운영 안전 기준
 
----
+- **판단과 실행 분리:** AI 응답은 주문 명령이 아니라 검증 대상이며, 실행 단계에서 별도의 안전 조건을 다시 통과해야 합니다.
+- **실거래 기본 차단:** 신규 BUY는 기본적으로 잠겨 있고, 검증 전에는 paper/shadow 흐름에서만 관측합니다.
+- **단일 거래 모드:** paper와 live를 동시에 실행하지 않아 운영 상태와 주문 책임을 명확히 분리합니다.
+- **근거 기반 진입:** 시장 심리, 기술 지표, 뉴스 품질, 포트폴리오 상태, 과거 판단 성과를 함께 통과해야 매매 후보가 됩니다.
+- **장애 노출 우선:** RAG 품질 저하, provider fallback, 데이터 누락은 숨기지 않고 화면과 로그에 남깁니다.
 
-## 🚀 기술 스택
+## 기술 스택
 
 | 영역 | 스택 |
 |---|---|
-| **Backend** | Python 3.11+, FastAPI, SQLAlchemy 2.0 (Async), Alembic |
-| **Frontend** | React 18, TypeScript, Vite, Recharts, lightweight-charts, TanStack Query |
-| **Database** | PostgreSQL 16, OpenSearch 3.5.0 (`market_news` Vector DB) |
-| **AI/ML** | LangGraph, LangChain, Google Gemini, OpenAI, Gemini/OpenAI Embeddings |
-| **Infrastructure** | Docker & Docker Compose |
-| **Scheduler** | APScheduler (AsyncIOScheduler) |
-| **Messaging** | Slack (Socket Mode) Bot |
-
----
-
-## 🛠 Quick Start
-
-```bash
-# 1. 환경 변수 설정
-cp .env.example .env.local  # API 키 설정 (Upbit, Slack, Gemini/OpenAI)
-
-# 2. Docker DB 실행
-docker-compose -f docker-compose-dev.yml up -d db
-
-# 3. 백엔드가 이미 떠 있으면 먼저 종료
-#    Windows PowerShell 예시:
-#    Get-NetTCPConnection -LocalPort 8000 | Select-Object -ExpandProperty OwningProcess | Get-Unique | ForEach-Object { Stop-Process -Id $_ -Force }
-
-# 4. 백엔드 + 프론트엔드 일괄 실행
-.\start_dev.bat
-
-# 또는 백엔드만 단독 실행
-venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-`start_dev.bat`와 백엔드 단독 실행 명령은 동시에 사용하지 않습니다. 둘 중 하나만 사용해 8000 포트 uvicorn 프로세스를 하나로 유지하세요.
-
----
-
-## 📚 문서
-- [시스템 아키텍처 명세](docs/ARCHITECTURE.md)
-- [데이터베이스 스키마 명세](docs/DATABASE.md)
-- [AI 개발 가이드라인](Agents.md)
-- [개발 운영 워크플로우](docs/DEVELOPMENT_WORKFLOW.md)
-- [IDE Agent Chat용 Codex 마스터 프롬프트 템플릿](docs/IDE_AGENT_CHAT_PROMPT_TEMPLATE.md)
-
-## 🤖 AI 협업 구조 (2-AI System)
-이 프로젝트는 **Gemini(Architect)**와 **Codex(Coder)**의 2-AI 협업 시스템으로 구축되고 있습니다.
-- **Gemini / IDE:** 기능 설계, 범위 확정, 아키텍처/DB 변경 승인, 마스터 프롬프트 작성
-- **Codex 앱:** 메인 실행 채널. Gemini 프롬프트를 받아 현재 리포지토리와의 Delta 판정, 작업 분해, 멀티 에이전트 실행, 검증, 커밋까지 담당
-- **Codex CLI:** 좁은 단일 확인이나 반복 명령이 필요할 때만 쓰는 보조 채널
-
-IDE agent chat에서 Codex용 실행 프롬프트를 만들 때는 [IDE Agent Chat용 Codex 마스터 프롬프트 템플릿](docs/IDE_AGENT_CHAT_PROMPT_TEMPLATE.md)을 기본으로 사용합니다.
-
-Codex 앱 내부는 포트폴리오 지향 **적응형 멀티 에이전트** 구조로 운영됩니다.
-- **Main Orchestrator:** 항상 존재하며 Delta 판정, 작업 분해, 통합, 커밋을 담당
-- **Explorer:** 중간 이상 작업에서 영향 범위와 충돌 가능성을 조사
-- **Backend / Frontend Worker:** API, 서비스, DB, 스케줄러, UI, 시각화 구현을 분담
-- **Reviewer:** 중간 이상 작업에서 요구사항 누락, 구조 위반, 회귀 위험을 검토
-- **Docs Curator:** 포트폴리오 가치가 큰 작업에서 README/아키텍처/DB/운영 문서를 동기화
-
-상세 운영 규칙과 Codex 앱 실행 계약 템플릿은 [개발 운영 워크플로우](docs/DEVELOPMENT_WORKFLOW.md)에 정리되어 있습니다.
-
-## 운영 안전 설정
-- `live_buy_enabled=false`가 기본값입니다. live 모드에서 AI 신규 BUY는 잠기며, 기존 보유분 SELL과 TP/SL 청산은 계속 동작합니다.
-- `ai_max_buy_weight_pct=30` 기본값으로 AI가 100% 매수 비중을 제안해도 1회 신규 진입은 총자산의 30%를 넘지 않습니다.
-- `ai_min_confidence_trade=85` 기본값으로 낮은 확신도 자동 체결을 차단합니다.
-- `ai_trade_target_symbols=["KRW-BTC","KRW-ETH","KRW-XRP"]`, `ai_trade_excluded_symbols=["KRW-DOGE"]`로 자동 분석/매매 대상을 제한합니다.
-- `ai_entry_shadow_mode=true`가 기본값입니다. BUY 후보가 점수제를 통과해도 실제 주문 전 24~48시간은 신호만 기록하는 운영을 전제로 합니다.
-- 신규 BUY는 기술적 조건, 변동성, 시장심리, 실제 뉴스/RAG, 심볼별 과거 AI BUY 적중률로 보정한 confidence 점수를 모두 통과해야 합니다.
-- OpenSearch 뉴스가 `dummy://` 또는 fallback 문서뿐이면 뉴스 점수는 0점으로 처리하며 AI 프롬프트에도 실제 뉴스 없음으로 전달합니다.
-- RAG 뉴스 수집은 RSS 피드를 우선 사용해 API 키가 없어도 실제 뉴스 문서를 `market_news`에 저장합니다.
-- `/api/news/rag/status`로 실문서 수, fallback 문서 수, 임베딩 누락 수, 소스별 분포를 확인할 수 있습니다.
-- Upbit 시장가 매수 응답의 `price`는 주문 KRW 금액이므로 체결 단가로 저장하지 않고, 주문 상세 체결 VWAP 또는 현재가 fallback을 사용합니다.
-
-## RAG 2차 운영 정책
-- `market_news`는 parent 기사 식별자(`parent_id`)와 청크 문서를 함께 저장하는 OpenSearch 캐시성 인덱스입니다.
-- RSS/API 문서는 `content <= 1200`자이면 1청크, 긴 문서는 `900`자 최대 길이와 `120`자 overlap 기준으로 분할해 저장합니다.
-- 첫 ingestion 시 기존 인덱스가 청크 필드 매핑을 지원하지 않으면 `market_news`를 자동 재생성하고 RSS/API 실뉴스를 다시 수집합니다.
-- AI 뉴스 검색은 kNN 벡터 검색과 BM25(`title^3`, `content`) 검색 후보를 각각 조회한 뒤 parent 기준으로 중복 제거해 최대 3개 컨텍스트만 전달합니다.
-- `/api/news/rag/status`는 parent/chunk 문서 수, chunked parent 수, parent당 평균 청크 수까지 반환합니다.
-
-## RAG 3차 품질 관측 정책
-- RSS 실뉴스 문서는 보수적 기사 본문 크롤링을 거쳐 RSS 요약보다 충분히 긴 HTML 본문이 확보될 때만 `content`를 본문으로 대체합니다.
-- 크롤링 실패, 비HTML 응답, 짧은 본문, timeout은 ingestion 실패로 보지 않고 RSS 요약 fallback으로 저장합니다.
-- `market_news` 청크 문서는 `content_source`, `crawl_status`, `crawl_error`를 함께 저장해 본문 확보율과 실패 원인을 추적합니다.
-- `/api/news/rag/status`는 크롤 성공/실패/스킵 parent 수, 평균 본문 길이, 평균 청크 길이, content source/crawl status 분포를 반환합니다.
-- Google News RSS는 집계 페이지를 직접 크롤하지 않고 `google_news_aggregator`로 스킵하며, TokenPost형 `articleBody` 컨테이너는 본문 후보로 우선 추출합니다.
-- `/api/news/rag/status`는 `crawl_error_breakdown`과 source별 crawl error 분포도 반환해 본문 확보 실패 원인을 관측합니다.
-
-## RAG 3.2 운영 정책
-- ingestion 성공 후 이번 run에서 parent 문서를 만든 source만 최신 parent 스냅샷 기준으로 오래된 `market_news` 청크를 삭제합니다.
-- 실뉴스가 수집되면 기존 dummy/fallback 문서는 즉시 삭제하고, 기존 28일 TTL 만료 삭제도 유지합니다.
-- `market_news_ingestion_runs` OpenSearch 캐시 인덱스에 최신 run 통계와 source별 health를 14일 동안 저장합니다.
-- `/api/news/rag/status`는 `latest_ingestion`을 통해 source별 fetched/error/parse warning/crawl 통계와 삭제 통계를 함께 반환합니다.
-- RAG 임베딩 생성 후 Gemini client를 명시적으로 닫아 ingestion 종료 시 aiohttp session 경고가 남지 않도록 합니다.
-
-## RAG 3.3 운영 정책
-- 죽은 Coindesk Korea RSS와 Naver 뉴스 RSS를 제거하고 CoinDesk 글로벌 RSS와 Cointelegraph RSS로 대체합니다.
-- RAG RSS ingestion은 4개 정상 RSS를 source별로 고르게 반영하기 위해 feed당 최대 8건, 전체 최대 32건을 수집합니다.
-- Google News RSS는 기존처럼 집계 페이지 본문 크롤링을 스킵하고 RSS 요약 컨텍스트로만 사용합니다.
-- `/api/news/rag/status.latest_ingestion.source_health`로 4개 RSS source의 fetched/error/crawl 상태를 운영 검증합니다.
-
-## RAG 3.4 운영 정책
-- Gemini cooldown이나 임베딩 실패가 발생해도 RSS 문서/청크 저장은 계속하고, 임베딩이 없는 청크는 BM25 검색 컨텍스트로 사용합니다.
-- `market_news` 청크는 `embedding_status`, `embedding_error`, `embedding_model`, `embedding_generated_at`을 저장해 임베딩 품질 상태를 추적합니다.
-- `/api/news/rag/status`는 `embedding_status_breakdown`과 `embedding_error_breakdown`을 반환하며, 임베딩 누락이 있으면 기존처럼 `degraded`로 표시합니다.
-- 임베딩 누락이 있는 ingestion run은 `latest_ingestion.status=partial`로 기록하고 다음 ingestion에서 같은 최신 RSS 청크 임베딩을 다시 시도합니다.
-
-## RAG 3.5 운영 정책
-- RSS ingestion 후 Gemini 쿨다운이 없으면 `market_news`의 missing/rate_limited/failed 또는 legacy 임베딩 누락 청크를 최대 50개 자동 보충합니다.
-- backfill은 fallback/dummy 문서를 제외하고 최신 `published_at` 순서로 실행하며, 성공 시 `_id` 기준 partial update로 임베딩 메타데이터만 갱신합니다.
-- 현재 run의 임베딩 단계가 `rate_limited` 또는 `credentials_missing`이면 backfill을 건너뛰고 `backfill_skipped_reason`으로 원인을 기록합니다.
-- `market_news_ingestion_runs`는 backfill 요청/성공/누락/실패 수와 대표 오류를 저장해 `/api/news/rag/status.latest_ingestion`에서 확인할 수 있습니다.
-
-## RAG 3.6 운영 정책
-- RAG 임베딩은 Gemini를 우선 사용하고, Gemini 쿨다운/키 없음/생성 실패 시 OpenAI `text-embedding-3-small`로 같은 batch를 재시도합니다.
-- 신규 ingestion 청크의 임베딩 시도는 run당 최대 100개로 제한하고, 초과 청크는 `embedding_error=run_limit_exceeded`로 저장해 다음 backfill 대상에 남깁니다.
-- `market_news` 청크는 `embedding_provider`를 함께 저장하며, `/api/news/rag/status`는 `embedding_provider_breakdown`을 반환합니다.
-- AI 뉴스 검색 query embedding도 Gemini 실패 시 OpenAI로 fallback하고, 두 provider가 모두 실패하면 기존 BM25-only 경로로 최대 3개 parent 중복 없는 컨텍스트를 구성합니다.
-- `latest_ingestion`은 primary/fallback provider, fallback 사용 여부, provider별 오류 분포를 기록합니다.
-
-## RAG 3.7 운영 정책
-- `market_news_ingestion_runs`는 embedding provider/model별 시도/성공/누락/실패 chunk 수, batch 수, fallback 사용 여부, 오류 분포, 추정 token 수를 `embedding_provider_stats`로 저장합니다.
-- `embedding_cost_summary`는 OpenAI `text-embedding-3-small` 성공 token에 대해서만 `$0.02 / 1M tokens` 기준의 추정 비용을 계산합니다.
-- token 추정은 추가 의존성 없이 `ceil(len(text) / 4)` 방식으로 계산하며, 실제 청구 금액이나 hard budget 차단 기준이 아닙니다.
-- Gemini 비용은 가격 정책을 코드에 고정하지 않고 provider별 token 추정치만 관측합니다.
-- AI 뉴스 검색 query embedding은 Gemini 실패 후 OpenAI fallback, 최종 BM25-only 전환 여부를 구조화 로그로 남기며 별도 query event 인덱스는 만들지 않습니다.
-
-## RAG 3.8 운영 정책
-- `/api/news/rag/status`는 `warnings` 객체 리스트를 반환해 임베딩 누락, provider 장애, source 크롤 제한, fallback 문서 잔존 상태를 운영자가 바로 볼 수 있게 합니다.
-- warning은 `code`, `severity`, `message`, `details`로 구성되며 `severity`는 `info`, `warning`, `critical` 중 하나입니다.
-- warning은 기존 `healthy/degraded/empty/unavailable` 판정을 바꾸지 않고, 매매 하드 차단 조건으로도 사용하지 않습니다.
-- OpenAI 비용 warning은 hard budget 차단이 아니라 성공 token 기반 추정 비용이 관측됐다는 정보성 신호입니다.
+| Backend | FastAPI, Async SQLAlchemy 2.0, Alembic, APScheduler |
+| Frontend | React, TypeScript, Vite, TanStack Query, Recharts, lightweight-charts |
+| Data | PostgreSQL, OpenSearch |
+| AI | LangGraph, Gemini, OpenAI, RAG, Embeddings |
+| Infra | Docker, Docker Compose |
