@@ -8,6 +8,8 @@ interface RecentOrdersProps {
   updatedAt?: number | null
 }
 
+const RECENT_ORDER_LIMIT = 6
+
 function formatKrw(value: number): string {
   return `₩${new Intl.NumberFormat('ko-KR').format(Math.round(value))}`
 }
@@ -25,13 +27,23 @@ function formatExecutedAt(value: string): string {
     return value
   }
 
-  const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   const hours = String(date.getHours()).padStart(2, '0')
   const minutes = String(date.getMinutes()).padStart(2, '0')
-  const seconds = String(date.getSeconds()).padStart(2, '0')
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+  return `${month}.${day} ${hours}:${minutes}`
+}
+
+function formatSignedPct(value: number): string {
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${value.toFixed(1)}%`
+}
+
+function resolveTradeAmount(order: OrderHistoryItem): number {
+  if (typeof order.trade_amount_krw === 'number' && Number.isFinite(order.trade_amount_krw)) {
+    return order.trade_amount_krw
+  }
+  return Math.max(order.price, 0) * Math.max(order.qty, 0)
 }
 
 function formatUpdatedAt(value?: number | null): string | null {
@@ -72,6 +84,34 @@ function resolveSideStyle(side: string): { label: string; className: string } {
   }
 }
 
+function resolvePnlStyle(
+  side: string,
+  value: number | null | undefined,
+): { label: string; className: string } {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return {
+      label: resolveSideStyle(side).label === 'Buy' ? '진입' : '--%',
+      className: 'text-[#849495]',
+    }
+  }
+  if (value > 0) {
+    return {
+      label: formatSignedPct(value),
+      className: 'text-[#77e2a8]',
+    }
+  }
+  if (value < 0) {
+    return {
+      label: formatSignedPct(value),
+      className: 'text-[#ffb4ab]',
+    }
+  }
+  return {
+    label: '0.0%',
+    className: 'text-[#b9cacb]',
+  }
+}
+
 function RecentOrders({
   orders,
   isLoading,
@@ -80,6 +120,8 @@ function RecentOrders({
   updatedAt = null,
 }: RecentOrdersProps) {
   const updatedAtLabel = formatUpdatedAt(updatedAt)
+  const visibleOrders = orders.slice(0, RECENT_ORDER_LIMIT)
+  const hiddenOrderCount = Math.max(orders.length - visibleOrders.length, 0)
 
   return (
     <section className="quantum-card rounded-xl p-4 sm:p-5">
@@ -87,14 +129,23 @@ function RecentOrders({
         <div className="min-w-0">
           <h2 className="text-lg font-bold text-[#dfe2eb]">최근 체결</h2>
           <p className="mt-1 text-sm text-[#849495]">
-            {updatedAtLabel ? `마지막 정상 조회 ${updatedAtLabel}` : '최근 체결된 매매 내역입니다.'}
+            {updatedAtLabel
+              ? `최근 ${visibleOrders.length}건 · 마지막 조회 ${updatedAtLabel}`
+              : `최근 ${RECENT_ORDER_LIMIT}건만 간단히 표시합니다.`}
           </p>
         </div>
-        {isStale && (
-          <span className="inline-flex shrink-0 items-center rounded-md bg-[#ffe179]/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#ffe179]">
-            지연
-          </span>
-        )}
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          {hiddenOrderCount > 0 && (
+            <span className="inline-flex items-center rounded-md bg-[#262a31]/70 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#b9cacb]">
+              +{hiddenOrderCount}
+            </span>
+          )}
+          {isStale && (
+            <span className="inline-flex items-center rounded-md bg-[#ffe179]/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#ffe179]">
+              지연
+            </span>
+          )}
+        </div>
       </header>
 
       {errorMessage && (
@@ -109,7 +160,7 @@ function RecentOrders({
         </div>
       )}
 
-      <div className="mt-4 space-y-2">
+      <div className="mt-4">
         {isLoading && (
           <div className="rounded-lg bg-[#0a0e14]/80 p-4">
             <div className="h-3 w-28 animate-pulse rounded bg-[#3b494b]/50" />
@@ -127,39 +178,46 @@ function RecentOrders({
           </div>
         )}
 
-        {!isLoading &&
-          orders.map((order) => {
-            const sideStyle = resolveSideStyle(order.side)
-            return (
-              <article key={order.id} className="rounded-lg bg-[#0a0e14]/80 px-3 py-3">
-                <div className="flex min-w-0 items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="break-words text-sm font-bold text-[#dfe2eb]">
+        {!isLoading && visibleOrders.length > 0 && (
+          <div className="grid gap-2 md:grid-cols-2">
+            {visibleOrders.map((order) => {
+              const sideStyle = resolveSideStyle(order.side)
+              const pnlStyle = resolvePnlStyle(order.side, order.pnl_percentage)
+              const tradeAmount = resolveTradeAmount(order)
+              return (
+                <article
+                  key={order.id}
+                  className="rounded-lg bg-[#0a0e14]/80 px-3 py-2.5"
+                  title={`단가 ${formatKrw(order.price)} · 수량 ${formatQty(order.qty)} · ${order.broker}`}
+                >
+                  <div className="flex min-w-0 items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="shrink-0 text-sm font-bold text-[#dfe2eb]">
                         {order.symbol}
                       </span>
                       <span
-                        className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${sideStyle.className}`}
+                        className={`inline-flex shrink-0 items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] ${sideStyle.className}`}
                       >
                         {sideStyle.label}
                       </span>
                     </div>
-                    <p className="mt-1 break-words text-xs text-[#849495]">
-                      {formatExecutedAt(order.executed_at)} · {order.broker}
-                    </p>
+                    <span className={`shrink-0 font-mono text-xs font-bold ${pnlStyle.className}`}>
+                      {pnlStyle.label}
+                    </span>
                   </div>
-                  <div className="shrink-0 text-right">
-                    <p className="font-mono text-sm font-bold text-[#dfe2eb]">
-                      {formatKrw(order.price)}
-                    </p>
-                    <p className="mt-1 font-mono text-[11px] text-[#849495]">
-                      {formatQty(order.qty)}
-                    </p>
+                  <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
+                    <span className="truncate text-xs text-[#849495]">
+                      {formatExecutedAt(order.executed_at)}
+                    </span>
+                    <span className="shrink-0 font-mono text-sm font-bold text-[#dfe2eb]">
+                      {formatKrw(tradeAmount)}
+                    </span>
                   </div>
-                </div>
-              </article>
-            )
-          })}
+                </article>
+              )
+            })}
+          </div>
+        )}
       </div>
     </section>
   )

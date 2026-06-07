@@ -28,6 +28,8 @@ export interface OrderHistoryItem {
   side: string
   price: number
   qty: number
+  trade_amount_krw?: number
+  pnl_percentage?: number | null
   broker: string
   executed_at: string
 }
