@@ -134,7 +134,7 @@ def test_backtest_ai_briefing_falls_back_when_provider_fails(monkeypatch) -> Non
         def __init__(self, _db) -> None:
             pass
 
-        async def generate_report(self, _prompt: str):
+        async def generate_report(self, _prompt: str, **_kwargs):
             raise RuntimeError("provider unavailable")
 
     monkeypatch.setattr(backtest_route, "AIProviderRouter", BrokenRouter)

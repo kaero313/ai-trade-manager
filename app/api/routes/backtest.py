@@ -227,7 +227,10 @@ async def _build_ai_briefing(
     analyzed: dict[str, Any],
 ) -> BacktestAiBriefingResponse:
     try:
-        result = await AIProviderRouter(db).generate_report(_build_backtest_ai_prompt(analyzed))
+        result = await AIProviderRouter(db).generate_report(
+            _build_backtest_ai_prompt(analyzed),
+            purpose="backtest_briefing",
+        )
         return BacktestAiBriefingResponse(
             content=_normalize_briefing_text(result.value),
             provider=result.provider,
