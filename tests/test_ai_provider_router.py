@@ -8,7 +8,7 @@ from app.services.ai.providers.base import resolve_provider_block_until
 def _settings() -> dict[str, dict[str, object]]:
     return {
         "gemini": {"enabled": True, "model": "gemini-3-flash-preview"},
-        "openai": {"enabled": True, "model": "gpt-5-mini"},
+        "openai": {"enabled": True, "model": "gpt-5-nano"},
     }
 
 
@@ -74,6 +74,59 @@ def test_disabled_provider_is_skipped() -> None:
         settings_value=settings,
         status_value={},
         now=now,
+        available_providers={"gemini": True, "openai": True},
+    )
+
+    assert [candidate.provider for candidate in candidates] == ["openai"]
+
+
+def test_purpose_model_overrides_provider_default() -> None:
+    now = datetime(2026, 4, 28, 3, 0, tzinfo=UTC)
+    settings = _settings()
+    settings["openai"]["models"] = {
+        "trade_analysis": "gpt-5-nano",
+        "buy_precheck": "gpt-4.1-mini",
+    }
+
+    candidates = resolve_provider_candidates(
+        priority_value=["openai"],
+        settings_value=settings,
+        status_value={},
+        now=now,
+        purpose="buy_precheck",
+        available_providers={"gemini": True, "openai": True},
+    )
+
+    assert candidates[0].model == "gpt-4.1-mini"
+
+
+def test_missing_purpose_model_falls_back_to_provider_default() -> None:
+    now = datetime(2026, 4, 28, 3, 0, tzinfo=UTC)
+    settings = _settings()
+    settings["openai"]["models"] = {"buy_precheck": "gpt-4.1-mini"}
+
+    candidates = resolve_provider_candidates(
+        priority_value=["openai"],
+        settings_value=settings,
+        status_value={},
+        now=now,
+        purpose="portfolio_briefing",
+        available_providers={"gemini": True, "openai": True},
+    )
+
+    assert candidates[0].model == "gpt-5-nano"
+
+
+def test_preferred_provider_can_disable_fallback() -> None:
+    now = datetime(2026, 4, 28, 3, 0, tzinfo=UTC)
+
+    candidates = resolve_provider_candidates(
+        priority_value=["gemini", "openai"],
+        settings_value=_settings(),
+        status_value={},
+        now=now,
+        preferred_provider="openai",
+        allow_fallback=False,
         available_providers={"gemini": True, "openai": True},
     )
 

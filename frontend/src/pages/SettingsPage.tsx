@@ -37,10 +37,20 @@ interface NoticeState {
 }
 
 type AiProviderName = 'gemini' | 'openai'
+type BuySafetyMode = 'locked' | 'shadow' | 'live'
+type AiModelPurpose =
+  | 'trade_analysis'
+  | 'buy_precheck'
+  | 'portfolio_briefing'
+  | 'chat'
+  | 'news_sentiment'
+  | 'news_translation'
+  | 'backtest_briefing'
 
 interface AiProviderConfig {
   enabled: boolean
   model: string
+  models: Partial<Record<AiModelPurpose, string>>
 }
 
 type AiProviderSettings = Record<AiProviderName, AiProviderConfig>
@@ -72,10 +82,90 @@ const AI_PROVIDER_STATUS_KEY = 'ai_provider_status'
 const AUTONOMOUS_AI_INTERVAL_OPTIONS = ['15', '30', '60', '120', '240']
 const AI_PROVIDERS: AiProviderName[] = ['gemini', 'openai']
 const DEFAULT_AI_PROVIDER_PRIORITY: AiProviderName[] = ['gemini', 'openai']
-const DEFAULT_AI_PROVIDER_SETTINGS: AiProviderSettings = {
-  gemini: { enabled: true, model: 'gemini-3-flash-preview' },
-  openai: { enabled: true, model: 'gpt-5-mini' },
+const AI_MODEL_SUGGESTIONS = ['gpt-5-nano', 'gpt-4.1-nano', 'gpt-4o-mini', 'gpt-4.1-mini', 'gpt-5-mini']
+const AI_MODEL_PURPOSES: Array<{
+  key: AiModelPurpose
+  label: string
+  description: string
+}> = [
+  {
+    key: 'trade_analysis',
+    label: '1차 매매 판단',
+    description: '정기 자율 분석에 사용하는 저비용 모델',
+  },
+  {
+    key: 'buy_precheck',
+    label: 'BUY 직전 검증',
+    description: 'Entry Gate 통과 후 주문 직전 2차 검증 모델',
+  },
+  {
+    key: 'portfolio_briefing',
+    label: '포트폴리오 브리핑',
+    description: '포트폴리오 요약과 리스크 설명',
+  },
+  {
+    key: 'chat',
+    label: 'AI Banker',
+    description: 'AI Banker 대화와 도구 호출 판단',
+  },
+  {
+    key: 'news_sentiment',
+    label: '뉴스 감성',
+    description: '수집 뉴스의 시장 감성 요약',
+  },
+  {
+    key: 'news_translation',
+    label: '뉴스 번역',
+    description: 'RAG 저장 전 한국어 번역 fallback',
+  },
+  {
+    key: 'backtest_briefing',
+    label: '백테스트 브리핑',
+    description: '백테스트 결과 해석 요약',
+  },
+]
+const DEFAULT_OPENAI_PURPOSE_MODELS: Record<AiModelPurpose, string> = {
+  trade_analysis: 'gpt-5-nano',
+  buy_precheck: 'gpt-4.1-mini',
+  portfolio_briefing: 'gpt-5-nano',
+  chat: 'gpt-5-nano',
+  news_sentiment: 'gpt-5-nano',
+  news_translation: 'gpt-5-nano',
+  backtest_briefing: 'gpt-5-nano',
 }
+const DEFAULT_AI_PROVIDER_SETTINGS: AiProviderSettings = {
+  gemini: { enabled: true, model: 'gemini-3-flash-preview', models: {} },
+  openai: { enabled: true, model: 'gpt-5-nano', models: DEFAULT_OPENAI_PURPOSE_MODELS },
+}
+const BUY_SAFETY_MODE_OPTIONS: Array<{
+  key: BuySafetyMode
+  eyebrow: string
+  label: string
+  description: string
+  badge: string
+}> = [
+  {
+    key: 'locked',
+    eyebrow: 'LOCKED',
+    label: 'BUY 주문 잠금',
+    description: 'AI가 BUY를 판단해도 신규 실거래 매수 주문을 전송하지 않습니다.',
+    badge: '차단',
+  },
+  {
+    key: 'shadow',
+    eyebrow: 'SHADOW MODE',
+    label: 'BUY 후보 기록 전용',
+    description: 'BUY 후보를 주문하지 않고 AI 추론 로그로만 남깁니다.',
+    badge: '기록 전용',
+  },
+  {
+    key: 'live',
+    eyebrow: 'LIVE BUY',
+    label: '실거래 신규 매수 허용',
+    description: 'Entry Gate를 통과한 BUY 후보가 실제 주문 단계로 이동할 수 있습니다.',
+    badge: '허용',
+  },
+]
 
 const SETTINGS_CARD_CLASS = 'quantum-card rounded-xl p-5 text-[#dfe2eb] sm:p-6'
 const SETTINGS_PANEL_CLASS = 'quantum-panel rounded-lg border border-[#3b494b]/30 p-4'
@@ -157,12 +247,35 @@ function normalizeProviderSettings(rawValue: string): AiProviderSettings {
 
   return AI_PROVIDERS.reduce((acc, provider) => {
     const providerSettings = parsed[provider] ?? {}
+    const rawModels =
+      providerSettings.models && typeof providerSettings.models === 'object'
+        ? providerSettings.models
+        : {}
+    const defaultModels = DEFAULT_AI_PROVIDER_SETTINGS[provider].models
     acc[provider] = {
       enabled: providerSettings.enabled ?? DEFAULT_AI_PROVIDER_SETTINGS[provider].enabled,
       model: String(providerSettings.model ?? DEFAULT_AI_PROVIDER_SETTINGS[provider].model),
+      models: AI_MODEL_PURPOSES.reduce((models, purpose) => {
+        const rawModel = rawModels[purpose.key]
+        const defaultModel = defaultModels[purpose.key]
+        if (rawModel || defaultModel) {
+          models[purpose.key] = String(rawModel ?? defaultModel)
+        }
+        return models
+      }, {} as Partial<Record<AiModelPurpose, string>>),
     }
     return acc
   }, {} as AiProviderSettings)
+}
+
+function resolveBuySafetyMode(draft: Pick<AiRuntimeDraft, 'liveBuyEnabled' | 'aiEntryShadowMode'>): BuySafetyMode {
+  if (draft.aiEntryShadowMode) {
+    return 'shadow'
+  }
+  if (draft.liveBuyEnabled) {
+    return 'live'
+  }
+  return 'locked'
 }
 
 function normalizeProviderStatus(rawValue: string): AiProviderStatus {
@@ -439,6 +552,28 @@ function AiRuntimeSettingsPanel() {
     })
   }
 
+  const setProviderPurposeModel = (
+    provider: AiProviderName,
+    purpose: AiModelPurpose,
+    model: string,
+  ) => {
+    setDraftValue('aiProviderSettings', {
+      ...draft.aiProviderSettings,
+      [provider]: {
+        ...draft.aiProviderSettings[provider],
+        models: {
+          ...draft.aiProviderSettings[provider].models,
+          [purpose]: model,
+        },
+      },
+    })
+  }
+
+  const setBuySafetyMode = (mode: BuySafetyMode) => {
+    setDraftValue('liveBuyEnabled', mode === 'live')
+    setDraftValue('aiEntryShadowMode', mode === 'shadow')
+  }
+
   const clearProviderStatus = () => {
     setDraftValue('aiProviderStatus', {})
     setNotice({ type: 'info', message: '차단 상태 초기화가 대기 중입니다. 저장하면 즉시 반영됩니다.' })
@@ -682,6 +817,61 @@ function AiRuntimeSettingsPanel() {
                     </div>
                   )
                 })}
+              </div>
+
+              <div className="mt-5 rounded-lg bg-[#0a0e14]/70 p-4">
+                <datalist id="ai-model-routing-options">
+                  {AI_MODEL_SUGGESTIONS.map((model) => (
+                    <option key={model} value={model} />
+                  ))}
+                </datalist>
+                <div className="flex flex-col gap-2 border-b border-[#3b494b]/30 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h4 className="text-base font-bold text-[#dfe2eb]">용도별 모델 라우팅</h4>
+                    <p className="mt-1 text-sm leading-6 text-[#b9cacb]">
+                      OpenAI 호출 목적별 모델을 분리합니다. 비어 있는 값은 provider 기본 모델로 fallback됩니다.
+                    </p>
+                  </div>
+                  <span className="inline-flex w-fit rounded-full bg-[#00dbe9]/12 px-3 py-1 text-xs font-bold text-[#7df4ff]">
+                    비용 최적화
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  <label className="block rounded-lg bg-[#10141a]/80 p-3">
+                    <span className="mb-1 block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
+                      기본 모델
+                    </span>
+                    <input
+                      list="ai-model-routing-options"
+                      value={draft.aiProviderSettings.openai.model}
+                      onChange={(event) => setProviderModel('openai', event.target.value)}
+                      className={SETTINGS_FIELD_CLASS}
+                    />
+                    <span className="mt-2 block text-xs leading-5 text-[#849495]">
+                      목적별 모델이 없는 OpenAI 호출의 기본 fallback입니다.
+                    </span>
+                  </label>
+
+                  {AI_MODEL_PURPOSES.map((purpose) => (
+                    <label key={purpose.key} className="block rounded-lg bg-[#10141a]/80 p-3">
+                      <span className="mb-1 block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
+                        {purpose.label}
+                      </span>
+                      <input
+                        list="ai-model-routing-options"
+                        value={draft.aiProviderSettings.openai.models[purpose.key] ?? ''}
+                        onChange={(event) =>
+                          setProviderPurposeModel('openai', purpose.key, event.target.value)
+                        }
+                        className={SETTINGS_FIELD_CLASS}
+                      />
+                      <span className="mt-2 block text-xs leading-5 text-[#849495]">
+                        {purpose.description}
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
 

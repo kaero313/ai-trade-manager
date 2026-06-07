@@ -113,6 +113,7 @@ class AIProviderRuntimeStatusItem(BaseModel):
     rank: int = Field(..., ge=1)
     enabled: bool
     model: str
+    models: dict[str, str] = Field(default_factory=dict)
     api_key_configured: bool
     status: Literal[
         "active",

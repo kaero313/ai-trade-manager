@@ -111,6 +111,7 @@ export interface AiProviderRuntimeStatusItem {
   rank: number
   enabled: boolean
   model: string
+  models: Record<string, string>
   api_key_configured: boolean
   status: AiProviderRuntimeStatusKind
   is_candidate: boolean

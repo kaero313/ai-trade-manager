@@ -31,6 +31,13 @@ from app.services.ai.providers.openai import OPENAI_TEXT_MODEL
 logger = logging.getLogger(__name__)
 
 SUPPORTED_AI_PROVIDERS = ("gemini", "openai")
+AI_PURPOSE_TRADE_ANALYSIS = "trade_analysis"
+AI_PURPOSE_BUY_PRECHECK = "buy_precheck"
+AI_PURPOSE_PORTFOLIO_BRIEFING = "portfolio_briefing"
+AI_PURPOSE_CHAT = "chat"
+AI_PURPOSE_NEWS_SENTIMENT = "news_sentiment"
+AI_PURPOSE_NEWS_TRANSLATION = "news_translation"
+AI_PURPOSE_BACKTEST_BRIEFING = "backtest_briefing"
 DEFAULT_PROVIDER_MODELS = {
     "gemini": GEMINI_TEXT_MODEL,
     "openai": OPENAI_TEXT_MODEL,
@@ -102,13 +109,39 @@ def _normalize_settings(raw_value: Any) -> dict[str, dict[str, Any]]:
             or provider_defaults.get("model")
             or DEFAULT_PROVIDER_MODELS[provider]
         ).strip()
+        raw_models = provider_settings.get("models", provider_defaults.get("models", {}))
+        if not isinstance(raw_models, dict):
+            raw_models = {}
+
+        models = {
+            str(purpose or "").strip(): str(model_name or "").strip()
+            for purpose, model_name in raw_models.items()
+            if str(purpose or "").strip() and str(model_name or "").strip()
+        }
 
         normalized[provider] = {
             "enabled": bool(enabled),
             "model": model or DEFAULT_PROVIDER_MODELS[provider],
+            "models": models,
         }
 
     return normalized
+
+
+def _resolve_model_for_purpose(
+    provider: str,
+    provider_settings: Mapping[str, Any],
+    purpose: str | None,
+) -> str:
+    normalized_purpose = str(purpose or "").strip()
+    raw_models = provider_settings.get("models", {})
+    if normalized_purpose and isinstance(raw_models, Mapping):
+        purpose_model = str(raw_models.get(normalized_purpose) or "").strip()
+        if purpose_model:
+            return purpose_model
+
+    model = str(provider_settings.get("model") or DEFAULT_PROVIDER_MODELS[provider]).strip()
+    return model or DEFAULT_PROVIDER_MODELS[provider]
 
 
 def _normalize_status(raw_value: Any) -> dict[str, dict[str, Any]]:
@@ -161,16 +194,21 @@ def resolve_provider_candidates(
     status_value: Any,
     now: datetime | None = None,
     preferred_provider: str | None = None,
+    purpose: str | None = None,
+    allow_fallback: bool = True,
     available_providers: Mapping[str, bool] | None = None,
 ) -> list[AIProviderCandidate]:
     current = normalize_utc(now or utc_now())
     priority = _normalize_priority(priority_value)
     normalized_preferred = str(preferred_provider or "").strip().lower()
     if normalized_preferred in SUPPORTED_AI_PROVIDERS:
-        priority = [
-            normalized_preferred,
-            *[provider for provider in priority if provider != normalized_preferred],
-        ]
+        if allow_fallback:
+            priority = [
+                normalized_preferred,
+                *[provider for provider in priority if provider != normalized_preferred],
+            ]
+        else:
+            priority = [normalized_preferred]
 
     provider_settings = _normalize_settings(settings_value)
     provider_status = _normalize_status(status_value)
@@ -191,7 +229,7 @@ def resolve_provider_candidates(
         if blocked_until is not None and blocked_until > current:
             continue
 
-        model = str(current_settings.get("model") or DEFAULT_PROVIDER_MODELS[provider]).strip()
+        model = _resolve_model_for_purpose(provider, current_settings, purpose)
         candidates.append(AIProviderCandidate(provider=provider, model=model))
 
     return candidates
@@ -239,6 +277,9 @@ def resolve_provider_runtime_status(
             or current_settings.get("model")
             or DEFAULT_PROVIDER_MODELS[provider]
         ).strip()
+        provider_models = current_settings.get("models", {})
+        if not isinstance(provider_models, dict):
+            provider_models = {}
         skip_reason: str | None = None
         status = "ready"
 
@@ -265,6 +306,7 @@ def resolve_provider_runtime_status(
                 "rank": rank,
                 "enabled": enabled,
                 "model": provider_model,
+                "models": dict(provider_models),
                 "api_key_configured": api_key_configured,
                 "status": status,
                 "is_candidate": is_candidate,
@@ -310,13 +352,21 @@ class AIProviderRouter:
             _loads_json(status_raw, {}),
         )
 
-    async def get_candidates(self, preferred_provider: str | None = None) -> list[AIProviderCandidate]:
+    async def get_candidates(
+        self,
+        preferred_provider: str | None = None,
+        *,
+        purpose: str | None = None,
+        allow_fallback: bool = True,
+    ) -> list[AIProviderCandidate]:
         priority_value, settings_value, status_value = await self._load_config_values()
         return resolve_provider_candidates(
             priority_value=priority_value,
             settings_value=settings_value,
             status_value=status_value,
             preferred_provider=preferred_provider,
+            purpose=purpose,
+            allow_fallback=allow_fallback,
         )
 
     async def get_runtime_status(self, preferred_provider: str | None = None) -> dict[str, Any]:
@@ -386,8 +436,14 @@ class AIProviderRouter:
         operation: Callable[[AIProviderCandidate], Awaitable[T]],
         *,
         preferred_provider: str | None = None,
+        purpose: str | None = None,
+        allow_fallback: bool = True,
     ) -> AIProviderExecutionResult[T]:
-        candidates = await self.get_candidates(preferred_provider=preferred_provider)
+        candidates = await self.get_candidates(
+            preferred_provider=preferred_provider,
+            purpose=purpose,
+            allow_fallback=allow_fallback,
+        )
         if not candidates:
             raise AIProviderUnavailableError("사용 가능한 AI provider가 없습니다.")
 
@@ -435,12 +491,19 @@ class AIProviderRouter:
         prompt: str,
         *,
         preferred_provider: str | None = None,
+        purpose: str | None = None,
+        allow_fallback: bool = True,
     ) -> AIProviderExecutionResult[str]:
         async def _operation(candidate: AIProviderCandidate) -> str:
             analyzer = AIAnalyzerFactory.get_analyzer(candidate.provider, model=candidate.model)
             return await analyzer.generate_report(prompt)
 
-        return await self.execute(_operation, preferred_provider=preferred_provider)
+        return await self.execute(
+            _operation,
+            preferred_provider=preferred_provider,
+            purpose=purpose,
+            allow_fallback=allow_fallback,
+        )
 
     async def generate_structured_analysis(
         self,
@@ -449,6 +512,8 @@ class AIProviderRouter:
         user_prompt: str,
         response_model: type[StructuredResponseT],
         preferred_provider: str | None = None,
+        purpose: str | None = None,
+        allow_fallback: bool = True,
     ) -> AIProviderExecutionResult[StructuredResponseT]:
         async def _operation(candidate: AIProviderCandidate) -> StructuredResponseT:
             analyzer = AIAnalyzerFactory.get_analyzer(candidate.provider, model=candidate.model)
@@ -458,4 +523,9 @@ class AIProviderRouter:
                 response_model=response_model,
             )
 
-        return await self.execute(_operation, preferred_provider=preferred_provider)
+        return await self.execute(
+            _operation,
+            preferred_provider=preferred_provider,
+            purpose=purpose,
+            allow_fallback=allow_fallback,
+        )

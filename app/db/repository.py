@@ -47,7 +47,19 @@ DEFAULT_AI_PROVIDER_PRIORITY_VALUE = json.dumps(["gemini", "openai"], ensure_asc
 DEFAULT_AI_PROVIDER_SETTINGS_VALUE = json.dumps(
     {
         "gemini": {"enabled": True, "model": "gemini-3-flash-preview"},
-        "openai": {"enabled": True, "model": "gpt-5-mini"},
+        "openai": {
+            "enabled": True,
+            "model": "gpt-5-nano",
+            "models": {
+                "trade_analysis": "gpt-5-nano",
+                "buy_precheck": "gpt-4.1-mini",
+                "portfolio_briefing": "gpt-5-nano",
+                "chat": "gpt-5-nano",
+                "news_sentiment": "gpt-5-nano",
+                "news_translation": "gpt-5-nano",
+                "backtest_briefing": "gpt-5-nano",
+            },
+        },
     },
     ensure_ascii=False,
 )

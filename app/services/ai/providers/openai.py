@@ -16,7 +16,7 @@ from app.services.ai.providers.base import (
 
 StructuredResponseT = TypeVar("StructuredResponseT", bound=BaseModel)
 
-OPENAI_TEXT_MODEL = "gpt-5-mini"
+OPENAI_TEXT_MODEL = "gpt-5-nano"
 OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
 OPENAI_EMBEDDING_DIMENSION = 1536
 
