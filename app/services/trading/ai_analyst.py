@@ -1022,6 +1022,7 @@ async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisRespon
             system_prompt=system_prompt,
             user_prompt=_build_analysis_user_prompt(normalized_symbol, context_text),
             response_model=AIAnalysisResponse,
+            purpose="trade_analysis",
         )
         analysis = routed_result.value
     except AIProviderRateLimitError as exc:

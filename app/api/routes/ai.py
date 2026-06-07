@@ -78,6 +78,7 @@ async def analyze_portfolio(provider: str = "auto", db: AsyncSession = Depends(g
     result = await AIProviderRouter(db).generate_report(
         portfolio_str,
         preferred_provider=preferred_provider,
+        purpose="portfolio_briefing",
     )
     return {"provider": result.provider, "model": result.model, "report": result.value}
 

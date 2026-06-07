@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import re
 from collections import Counter
@@ -20,10 +21,14 @@ from opensearchpy.helpers import async_bulk
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
-from app.services.news_scraper import RSS_FEED_URLS
+from app.db.repository import AI_PROVIDER_SETTINGS_KEY
+from app.db.repository import DEFAULT_AI_PROVIDER_SETTINGS_VALUE
+from app.db.repository import get_system_config_value
+from app.db.session import AsyncSessionLocal
 from app.services.ai.providers.base import AIProviderRateLimitError
 from app.services.ai.providers.gemini import GEMINI_EMBEDDING_MODEL, GEMINI_TEXT_MODEL, GeminiAnalyzer
 from app.services.ai.providers.openai import OPENAI_EMBEDDING_MODEL, OPENAI_TEXT_MODEL, OpenAIAnalyzer
+from app.services.news_scraper import RSS_FEED_URLS
 from app.services.rag.opensearch_client import (
     EMBEDDING_DIMENSION,
     INGESTION_RUNS_INDEX_NAME,
@@ -1059,14 +1064,56 @@ def _translation_credentials_available(provider: str) -> bool:
     return _embedding_credentials_available(provider)
 
 
-def _translation_model_for_provider(provider: str) -> str:
+async def _load_translation_model_overrides() -> dict[str, str]:
+    try:
+        async with AsyncSessionLocal() as db:
+            raw_value = await get_system_config_value(
+                db,
+                AI_PROVIDER_SETTINGS_KEY,
+                DEFAULT_AI_PROVIDER_SETTINGS_VALUE,
+            )
+    except Exception:
+        logger.warning("RAG 번역 모델 설정을 불러오지 못해 기본 모델을 사용합니다.", exc_info=True)
+        return {}
+
+    try:
+        settings_payload = json.loads(str(raw_value or "{}"))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(settings_payload, dict):
+        return {}
+
+    overrides: dict[str, str] = {}
+    for provider in (TRANSLATION_PROVIDER_GEMINI, TRANSLATION_PROVIDER_OPENAI):
+        provider_settings = settings_payload.get(provider)
+        if not isinstance(provider_settings, dict):
+            continue
+        models = provider_settings.get("models")
+        if not isinstance(models, dict):
+            continue
+        model = str(models.get("news_translation") or "").strip()
+        if model:
+            overrides[provider] = model
+    return overrides
+
+
+def _translation_model_for_provider(
+    provider: str,
+    model_overrides: dict[str, str] | None = None,
+) -> str:
+    override = str((model_overrides or {}).get(provider) or "").strip()
+    if override:
+        return override
     if provider == TRANSLATION_PROVIDER_OPENAI:
         return OPENAI_TEXT_MODEL
     return GEMINI_TEXT_MODEL
 
 
-def _build_translation_analyzer(provider: str) -> GeminiAnalyzer | OpenAIAnalyzer:
-    model = _translation_model_for_provider(provider)
+def _build_translation_analyzer(
+    provider: str,
+    model_overrides: dict[str, str] | None = None,
+) -> GeminiAnalyzer | OpenAIAnalyzer:
+    model = _translation_model_for_provider(provider, model_overrides)
     if provider == TRANSLATION_PROVIDER_OPENAI:
         return OpenAIAnalyzer(model=model)
     return GeminiAnalyzer(model=model)
@@ -1111,8 +1158,10 @@ def _build_translation_user_prompt(
 async def _attempt_translation_provider(
     provider: str,
     document: RawNewsDocument,
+    *,
+    model_overrides: dict[str, str] | None = None,
 ) -> NewsTranslationAttempt:
-    model = _translation_model_for_provider(provider)
+    model = _translation_model_for_provider(provider, model_overrides)
     if not _translation_credentials_available(provider):
         return NewsTranslationAttempt(
             provider=provider,
@@ -1120,7 +1169,7 @@ async def _attempt_translation_provider(
             error=TRANSLATION_ERROR_CREDENTIALS_MISSING,
         )
 
-    analyzer = _build_translation_analyzer(provider)
+    analyzer = _build_translation_analyzer(provider, model_overrides)
     segments = _split_translation_segments(document.content or document.title)
     if not segments:
         segments = [document.title]
@@ -1213,6 +1262,8 @@ def _record_translation_provider_error(
 
 async def _translate_news_documents(
     documents: list[RawNewsDocument],
+    *,
+    model_overrides: dict[str, str] | None = None,
 ) -> tuple[list[RawNewsDocument], dict[str, Any]]:
     stats: dict[str, Any] = {
         "translation_requested": 0,
@@ -1242,10 +1293,14 @@ async def _translate_news_documents(
         stats["translation_requested"] += 1
         failed_attempts: list[NewsTranslationAttempt] = []
         for provider in providers:
-            model = _translation_model_for_provider(provider)
+            model = _translation_model_for_provider(provider, model_overrides)
             stat = _get_translation_provider_stat(provider_stats, provider, model)
             stat["documents_attempted"] += 1
-            attempt = await _attempt_translation_provider(provider, document)
+            attempt = await _attempt_translation_provider(
+                provider,
+                document,
+                model_overrides=model_overrides,
+            )
             if attempt.error:
                 failed_attempts.append(attempt)
                 _record_translation_provider_error(
@@ -2160,7 +2215,11 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
             _prefer_real_documents([*cryptopanic_documents, *naver_documents, *rss_documents])
         )
         stats["fetched"] = len(documents)
-        documents, translation_stats = await _translate_news_documents(documents)
+        translation_model_overrides = await _load_translation_model_overrides()
+        documents, translation_stats = await _translate_news_documents(
+            documents,
+            model_overrides=translation_model_overrides,
+        )
         stats.update(translation_stats)
         chunks = _build_news_chunks(documents)
         embeddings = await _generate_embeddings(chunks)

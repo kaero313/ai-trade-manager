@@ -141,7 +141,7 @@ async def _ainvoke_structured_model(
             return response_model.model_validate(result)
         return response_model.model_validate(result)
 
-    routed_result = await router.execute(_operation)
+    routed_result = await router.execute(_operation, purpose="chat")
     return routed_result.value
 
 
@@ -159,7 +159,7 @@ async def _ainvoke_tool_model(
             return response
         return AIMessage(content=str(getattr(response, "content", "") or ""))
 
-    routed_result = await router.execute(_operation)
+    routed_result = await router.execute(_operation, purpose="chat")
     return routed_result.value
 
 

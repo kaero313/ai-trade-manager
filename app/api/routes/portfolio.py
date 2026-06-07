@@ -357,7 +357,7 @@ async def get_portfolio_briefing(
 
     try:
         result = await asyncio.wait_for(
-            AIProviderRouter(db).generate_report(prompt),
+            AIProviderRouter(db).generate_report(prompt, purpose="portfolio_briefing"),
             timeout=PORTFOLIO_BRIEFING_TIMEOUT_SECONDS,
         )
     except TimeoutError as exc:

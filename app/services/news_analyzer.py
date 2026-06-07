@@ -111,7 +111,7 @@ async def analyze_market_sentiment(
     prompt = _build_sentiment_prompt(news_list)
 
     try:
-        result = await AIProviderRouter(db).generate_report(prompt)
+        result = await AIProviderRouter(db).generate_report(prompt, purpose="news_sentiment")
     except AIProviderUnavailableError as exc:
         logger.error("뉴스 감성 분석 provider를 사용할 수 없습니다: %s", exc)
         return _fallback_result()
