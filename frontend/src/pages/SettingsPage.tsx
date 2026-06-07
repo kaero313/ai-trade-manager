@@ -504,6 +504,7 @@ function AiRuntimeSettingsPanel() {
     )
   }, [aiProviderRuntimeStatusQuery.data?.providers])
   const activeProvider = aiProviderRuntimeStatusQuery.data?.active_provider ?? null
+  const buySafetyMode = resolveBuySafetyMode(draft)
   const candidateProviders =
     aiProviderRuntimeStatusQuery.data?.providers
       .filter((item) => item.is_candidate)
@@ -891,89 +892,72 @@ function AiRuntimeSettingsPanel() {
                 </div>
                 <span
                   className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-bold ${
-                    draft.liveBuyEnabled && !draft.aiEntryShadowMode
+                    buySafetyMode === 'live'
                       ? 'bg-[#00dbe9]/12 text-[#7df4ff]'
-                      : 'bg-[#ffe179]/12 text-[#ffe179]'
+                      : buySafetyMode === 'shadow'
+                        ? 'bg-[#ffe179]/12 text-[#ffe179]'
+                        : 'bg-[#ffb4ab]/12 text-[#ffb4ab]'
                   }`}
                 >
-                  {draft.liveBuyEnabled && !draft.aiEntryShadowMode ? 'LIVE BUY 가능' : '안전 제한 중'}
+                  {buySafetyMode === 'live'
+                    ? 'LIVE BUY 가능'
+                    : buySafetyMode === 'shadow'
+                      ? 'SHADOW 기록 중'
+                      : 'BUY 잠금'}
                 </span>
               </div>
 
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <label
-                  className={`flex min-h-[132px] cursor-pointer flex-col justify-between rounded-lg p-4 transition ${
-                    draft.liveBuyEnabled ? 'bg-[#00dbe9]/10' : 'bg-[#0a0e14]/70'
-                  }`}
-                >
-                  <span className="flex items-start justify-between gap-3">
-                    <span>
-                      <span className="block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
-                        LIVE BUY
-                      </span>
-                      <span className="mt-2 block text-base font-bold text-[#dfe2eb]">
-                        실거래 신규 매수 허용
-                      </span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={draft.liveBuyEnabled}
-                      onChange={(event) => setDraftValue('liveBuyEnabled', event.target.checked)}
-                      className="h-4 w-4 rounded border-[#3b494b] bg-[#10141a] text-[#00dbe9] focus:ring-[#00dbe9]/30"
-                    />
-                  </span>
-                  <span className="mt-4 text-sm leading-6 text-[#b9cacb]">
-                    {draft.liveBuyEnabled
-                      ? 'Entry Gate를 통과한 BUY 후보는 실제 주문 단계로 이동할 수 있습니다.'
-                      : 'live 모드에서도 신규 BUY 주문을 보내지 않고 차단합니다.'}
-                  </span>
-                  <span
-                    className={`mt-4 inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-bold ${
-                      draft.liveBuyEnabled
-                        ? 'bg-[#00dbe9]/14 text-[#7df4ff]'
-                        : 'bg-[#ffb4ab]/12 text-[#ffb4ab]'
-                    }`}
-                  >
-                    {draft.liveBuyEnabled ? '허용' : '잠금'}
-                  </span>
-                </label>
-
-                <label
-                  className={`flex min-h-[132px] cursor-pointer flex-col justify-between rounded-lg p-4 transition ${
-                    draft.aiEntryShadowMode ? 'bg-[#ffe179]/10' : 'bg-[#00dbe9]/10'
-                  }`}
-                >
-                  <span className="flex items-start justify-between gap-3">
-                    <span>
-                      <span className="block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
-                        SHADOW MODE
-                      </span>
-                      <span className="mt-2 block text-base font-bold text-[#dfe2eb]">
-                        BUY 후보 기록 전용
-                      </span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={draft.aiEntryShadowMode}
-                      onChange={(event) => setDraftValue('aiEntryShadowMode', event.target.checked)}
-                      className="h-4 w-4 rounded border-[#3b494b] bg-[#10141a] text-[#00dbe9] focus:ring-[#00dbe9]/30"
-                    />
-                  </span>
-                  <span className="mt-4 text-sm leading-6 text-[#b9cacb]">
-                    {draft.aiEntryShadowMode
-                      ? 'BUY 후보를 주문하지 않고 AI 추론 로그로만 남깁니다.'
-                      : 'Shadow 기록 전용 모드를 해제하고 실제 주문 경로를 열어둡니다.'}
-                  </span>
-                  <span
-                    className={`mt-4 inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-bold ${
-                      draft.aiEntryShadowMode
+              <div className="mt-4 grid gap-3 md:grid-cols-3" role="radiogroup" aria-label="실거래 BUY 운용 모드">
+                {BUY_SAFETY_MODE_OPTIONS.map((option) => {
+                  const isSelected = buySafetyMode === option.key
+                  const selectedClassName =
+                    option.key === 'live'
+                      ? 'border-[#00dbe9]/55 bg-[#00dbe9]/10'
+                      : option.key === 'shadow'
+                        ? 'border-[#ffe179]/50 bg-[#ffe179]/10'
+                        : 'border-[#ffb4ab]/45 bg-[#ffb4ab]/10'
+                  const badgeClassName =
+                    option.key === 'live'
+                      ? 'bg-[#00dbe9]/14 text-[#7df4ff]'
+                      : option.key === 'shadow'
                         ? 'bg-[#ffe179]/14 text-[#ffe179]'
-                        : 'bg-[#00dbe9]/14 text-[#7df4ff]'
-                    }`}
-                  >
-                    {draft.aiEntryShadowMode ? '기록 전용' : '주문 경로 열림'}
-                  </span>
-                </label>
+                        : 'bg-[#ffb4ab]/12 text-[#ffb4ab]'
+
+                  return (
+                    <label
+                      key={option.key}
+                      className={`flex min-h-[156px] cursor-pointer flex-col justify-between rounded-lg border p-4 transition ${
+                        isSelected
+                          ? selectedClassName
+                          : 'border-[#3b494b]/30 bg-[#0a0e14]/70 hover:border-[#00dbe9]/35'
+                      }`}
+                    >
+                      <span className="flex items-start justify-between gap-3">
+                        <span>
+                          <span className="block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
+                            {option.eyebrow}
+                          </span>
+                          <span className="mt-2 block text-base font-bold text-[#dfe2eb]">
+                            {option.label}
+                          </span>
+                        </span>
+                        <input
+                          type="radio"
+                          name="buy-safety-mode"
+                          checked={isSelected}
+                          onChange={() => setBuySafetyMode(option.key)}
+                          className="h-4 w-4 border-[#3b494b] bg-[#10141a] text-[#00dbe9] focus:ring-[#00dbe9]/30"
+                        />
+                      </span>
+                      <span className="mt-4 text-sm leading-6 text-[#b9cacb]">
+                        {option.description}
+                      </span>
+                      <span className={`mt-4 inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-bold ${badgeClassName}`}>
+                        {option.badge}
+                      </span>
+                    </label>
+                  )
+                })}
               </div>
 
               <p className="mt-4 rounded-lg bg-[#ffb4ab]/10 px-4 py-3 text-xs font-semibold leading-6 text-[#ffdad6]">
