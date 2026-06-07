@@ -3,6 +3,7 @@ import { isAxiosError } from 'axios'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { useSystemConfigs } from '../../hooks/useSystemConfigs'
 import { getBotStatus, startBot, stopBot } from '../../services/api'
 
 type ActionType = 'start' | 'stop' | null
@@ -16,6 +17,10 @@ interface NoticeState {
 interface BotControlPanelProps {
   portfolioError?: string | null
 }
+
+const TRADING_MODE_KEY = 'trading_mode'
+const LIVE_BUY_ENABLED_KEY = 'live_buy_enabled'
+const AI_ENTRY_SHADOW_MODE_KEY = 'ai_entry_shadow_mode'
 
 function resolveErrorMessage(error: unknown, fallback: string): string {
   if (isAxiosError(error)) {
@@ -48,10 +53,30 @@ function resolvePortfolioWarningMessage(portfolioError: string | null | undefine
   return '업비트 자산 정보를 불러오지 못해 자산 조회 및 매매 기능이 제한됩니다.'
 }
 
+function findConfigValue(
+  configs: Array<{ config_key: string; config_value: string }> | undefined,
+  key: string,
+  fallback: string,
+): string {
+  return configs?.find((item) => item.config_key === key)?.config_value ?? fallback
+}
+
+function parseBooleanConfig(rawValue: string, fallback: boolean): boolean {
+  const normalized = rawValue.trim().toLowerCase()
+  if (['true', '1', 'yes', 'on'].includes(normalized)) {
+    return true
+  }
+  if (['false', '0', 'no', 'off'].includes(normalized)) {
+    return false
+  }
+  return fallback
+}
+
 function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
   const queryClient = useQueryClient()
   const [activeAction, setActiveAction] = useState<ActionType>(null)
   const [notice, setNotice] = useState<NoticeState | null>(null)
+  const systemConfigsQuery = useSystemConfigs()
 
   const botStatusQuery = useQuery({
     queryKey: ['bot-status'],
@@ -79,6 +104,35 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
   const isError = botStatusQuery.isError
   const isActive = botStatusQuery.data?.running ?? false
   const isSubmitting = activeAction !== null
+  const isConfigLoading = systemConfigsQuery.isLoading && systemConfigsQuery.data === undefined
+  const tradingMode = findConfigValue(systemConfigsQuery.data, TRADING_MODE_KEY, 'live').toLowerCase()
+  const liveBuyEnabled = parseBooleanConfig(
+    findConfigValue(systemConfigsQuery.data, LIVE_BUY_ENABLED_KEY, 'false'),
+    false,
+  )
+  const aiEntryShadowMode = parseBooleanConfig(
+    findConfigValue(systemConfigsQuery.data, AI_ENTRY_SHADOW_MODE_KEY, 'true'),
+    true,
+  )
+  const buyMode = aiEntryShadowMode ? 'shadow' : liveBuyEnabled ? 'live' : 'locked'
+  const buyModeLabel =
+    isConfigLoading ? 'CHECK' : buyMode === 'live' ? 'LIVE BUY' : buyMode === 'shadow' ? 'SHADOW' : 'LOCKED'
+  const buyModeClassName =
+    isConfigLoading
+      ? 'text-[#849495]'
+      : buyMode === 'live'
+      ? 'text-[#7df4ff]'
+      : buyMode === 'shadow'
+        ? 'text-[#ffe179]'
+        : 'text-[#ffb4ab]'
+  const liveBuyLabel =
+    isConfigLoading ? 'CHECK' : liveBuyEnabled && !aiEntryShadowMode ? 'ENABLED' : 'LOCKED'
+  const liveBuyClassName =
+    isConfigLoading
+      ? 'text-[#849495]'
+      : liveBuyEnabled && !aiEntryShadowMode
+        ? 'text-[#7df4ff]'
+        : 'text-[#ffb4ab]'
   const badgeLabel = isError ? 'ERROR' : isLoading ? 'CHECK' : isActive ? 'ACTIVE' : 'STOP'
   const badgeClassName = isError
     ? 'bg-[#ffb4ab]/10 text-[#ffb4ab]'
@@ -152,11 +206,15 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
         </div>
         <div className="border-l-2 border-[#cdbdff] pl-3">
           <p className="font-semibold uppercase tracking-[0.16em] text-[#849495]">Mode</p>
-          <p className="mt-2 font-mono text-base font-bold text-[#dfe2eb]">SHADOW</p>
+          <p className={`mt-2 font-mono text-base font-bold ${buyModeClassName}`}>
+            {buyModeLabel}
+          </p>
         </div>
         <div className="border-l-2 border-[#ffb4ab] pl-3">
           <p className="font-semibold uppercase tracking-[0.16em] text-[#849495]">Live Buy</p>
-          <p className="mt-2 font-mono text-base font-bold text-[#ffb4ab]">LOCKED</p>
+          <p className={`mt-2 font-mono text-base font-bold ${liveBuyClassName}`}>
+            {liveBuyLabel}
+          </p>
         </div>
       </div>
 
@@ -168,9 +226,43 @@ function BotControlPanel({ portfolioError = null }: BotControlPanelProps) {
 
       <section className="mt-5 border-t border-[#29363a]/80 pt-5">
         <div className="mb-3 flex flex-wrap gap-2 text-xs font-semibold">
-          <span className="rounded bg-[#77e2a8]/10 px-2 py-1 text-[#77e2a8]">paper</span>
-          <span className="rounded bg-[#ffe179]/10 px-2 py-1 text-[#ffe179]">shadow</span>
-          <span className="rounded bg-[#ffb4ab]/10 px-2 py-1 text-[#ffb4ab]">live buy off</span>
+          <span className="rounded bg-[#77e2a8]/10 px-2 py-1 text-[#77e2a8]">
+            {isConfigLoading ? 'mode checking' : tradingMode}
+          </span>
+          <span
+            className={`rounded px-2 py-1 ${
+              isConfigLoading
+                ? 'bg-[#262a31]/70 text-[#b9cacb]'
+                : buyMode === 'live'
+                ? 'bg-[#00dbe9]/10 text-[#7df4ff]'
+                : buyMode === 'shadow'
+                  ? 'bg-[#ffe179]/10 text-[#ffe179]'
+                  : 'bg-[#ffb4ab]/10 text-[#ffb4ab]'
+            }`}
+          >
+            {isConfigLoading
+              ? 'buy mode check'
+              : buyMode === 'live'
+                ? 'live buy armed'
+                : buyMode === 'shadow'
+                  ? 'shadow'
+                  : 'buy locked'}
+          </span>
+          <span
+            className={`rounded px-2 py-1 ${
+              isConfigLoading
+                ? 'bg-[#262a31]/70 text-[#b9cacb]'
+                : liveBuyEnabled && !aiEntryShadowMode
+                ? 'bg-[#00dbe9]/10 text-[#7df4ff]'
+                : 'bg-[#ffb4ab]/10 text-[#ffb4ab]'
+            }`}
+          >
+            {isConfigLoading
+              ? 'live buy check'
+              : liveBuyEnabled && !aiEntryShadowMode
+                ? 'live buy on'
+                : 'live buy off'}
+          </span>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <button
