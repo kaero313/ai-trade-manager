@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -15,7 +16,10 @@ from app.db.repository import MAX_ALLOCATION_PCT_KEY
 from app.db.repository import PAPER_TRADING_KRW_BALANCE_KEY
 from app.db.repository import get_system_config_value
 from app.models.domain import AIAnalysisLog, Asset, OrderHistory, Position, SystemConfig
+from app.models.schemas import AIAnalysisResponse
 from app.schemas.portfolio import AssetItem, PortfolioSummary
+from app.services.ai.provider_router import AIProviderRouter
+from app.services.ai.provider_router import AIProviderUnavailableError
 from app.services.bot_service import get_bot_status
 from app.services.brokers.factory import BrokerFactory
 from app.services.brokers.upbit import UpbitAPIError
@@ -27,6 +31,7 @@ from app.services.trading.paper import PAPER_BALANCE_EPSILON
 from app.services.trading.paper import PAPER_BROKER_NAME
 from app.services.trading.paper import build_paper_order_result
 from app.services.trading.paper import get_trading_mode
+from app.services.trading.entry_policy import EntryGateResult
 from app.services.trading.entry_policy import evaluate_ai_buy_entry_gate
 
 logger = logging.getLogger(__name__)
@@ -742,6 +747,204 @@ async def execute_hard_tp_sl_check(db: AsyncSession) -> set[str]:
     return liquidated_symbols
 
 
+def _truncate_prompt_text(value: Any, max_chars: int = 900) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_chars:
+        return text
+    return f"{text[:max_chars].rstrip()}..."
+
+
+def _build_buy_precheck_system_prompt() -> str:
+    return (
+        "당신은 AI-Trade-Manager의 실거래 BUY 직전 2차 검증 Reviewer입니다. "
+        "이미 1차 AI 분석, Entry Gate, shadow/live 안전락을 통과한 BUY 후보만 검토합니다. "
+        "제공된 데이터만 근거로 삼고, 정보가 부족하거나 안전 정책상 애매하면 HOLD를 선택하세요. "
+        "BUY는 기술/심리/뉴스/RAG/포트폴리오 위험이 모두 납득될 때만 유지합니다. "
+        "반드시 JSON 스키마에 맞춰 decision, confidence, recommended_weight, reasoning을 반환하세요."
+    )
+
+
+def _build_buy_precheck_user_prompt(
+    *,
+    symbol: str,
+    analysis: AIAnalysisLog,
+    entry_gate: EntryGateResult,
+    portfolio: PortfolioSummary,
+    trading_mode: str,
+    min_confidence: int,
+) -> str:
+    target_currency = _extract_target_currency(symbol)
+    target_item = _find_portfolio_item(portfolio, target_currency)
+    cash_item = _find_portfolio_item(portfolio, _extract_quote_currency(symbol))
+    payload = {
+        "검증_목적": "BUY 직전 2차 검증",
+        "종목": symbol,
+        "거래_모드": trading_mode,
+        "최소_체결_확신도": min_confidence,
+        "1차_AI_판단": {
+            "decision": analysis.decision,
+            "confidence": analysis.confidence,
+            "recommended_weight": analysis.recommended_weight,
+            "reasoning": _truncate_prompt_text(analysis.reasoning, 1200),
+            "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
+        },
+        "entry_gate": entry_gate.to_log_dict(),
+        "portfolio": {
+            "total_net_worth": portfolio.total_net_worth,
+            "total_pnl": portfolio.total_pnl,
+            "source": portfolio.source,
+            "is_stale": portfolio.is_stale,
+            "updated_at": portfolio.updated_at,
+            "cash": cash_item.model_dump() if cash_item is not None else None,
+            "target_position": target_item.model_dump() if target_item is not None else None,
+        },
+        "판정_규칙": [
+            "BUY 유지 시 confidence는 최소 체결 확신도 이상이어야 합니다.",
+            "recommended_weight는 1 이상이어야 하며 과도한 비중은 낮춰도 됩니다.",
+            "근거가 부족하거나 provider/fallback/데이터 지연 위험이 크면 HOLD를 반환하세요.",
+            "SELL은 신규 BUY 후보를 명확히 거절해야 할 때만 사용하고, 일반 보류는 HOLD를 사용하세요.",
+        ],
+    }
+    return json.dumps(payload, ensure_ascii=False, default=str, indent=2)
+
+
+async def _persist_buy_precheck_log(
+    db: AsyncSession,
+    *,
+    symbol: str,
+    analysis: AIAnalysisResponse,
+) -> AIAnalysisLog:
+    reasoning = str(analysis.reasoning or "").strip()
+    if not reasoning.startswith("[BUY 직전 검증]"):
+        reasoning = f"[BUY 직전 검증] {reasoning}"
+
+    log = AIAnalysisLog(
+        symbol=_normalize_symbol(symbol),
+        decision=analysis.decision,
+        confidence=analysis.confidence,
+        recommended_weight=analysis.recommended_weight,
+        reasoning=reasoning,
+    )
+    db.add(log)
+    await db.commit()
+    await db.refresh(log)
+    return log
+
+
+async def _persist_buy_precheck_hold(
+    db: AsyncSession,
+    *,
+    symbol: str,
+    reason: str,
+) -> AIAnalysisLog:
+    return await _persist_buy_precheck_log(
+        db,
+        symbol=symbol,
+        analysis=AIAnalysisResponse(
+            decision="HOLD",
+            confidence=0,
+            recommended_weight=0,
+            reasoning=reason,
+        ),
+    )
+
+
+def _is_buy_precheck_approved(analysis: AIAnalysisResponse, min_confidence: int) -> bool:
+    return (
+        analysis.decision == "BUY"
+        and analysis.confidence >= min_confidence
+        and analysis.recommended_weight > 0
+    )
+
+
+async def _run_buy_precheck(
+    *,
+    db: AsyncSession,
+    symbol: str,
+    analysis: AIAnalysisLog,
+    entry_gate: EntryGateResult,
+    portfolio: PortfolioSummary,
+    trading_mode: str,
+    min_confidence: int,
+) -> AIAnalysisLog | None:
+    try:
+        routed_result = await AIProviderRouter(db).generate_structured_analysis(
+            system_prompt=_build_buy_precheck_system_prompt(),
+            user_prompt=_build_buy_precheck_user_prompt(
+                symbol=symbol,
+                analysis=analysis,
+                entry_gate=entry_gate,
+                portfolio=portfolio,
+                trading_mode=trading_mode,
+                min_confidence=min_confidence,
+            ),
+            response_model=AIAnalysisResponse,
+            preferred_provider="openai",
+            purpose="buy_precheck",
+            allow_fallback=False,
+        )
+    except AIProviderUnavailableError as exc:
+        logger.warning(
+            "BUY 직전 2차 검증 provider 사용 불가로 매수를 차단합니다. symbol=%s error=%s",
+            symbol,
+            exc,
+        )
+        await _persist_buy_precheck_hold(
+            db,
+            symbol=symbol,
+            reason=f"OpenAI BUY 직전 검증을 완료하지 못해 매수를 차단했습니다. 원인: {exc}",
+        )
+        return None
+    except Exception as exc:
+        logger.warning(
+            "BUY 직전 2차 검증 실패로 매수를 차단합니다. symbol=%s error=%s",
+            symbol,
+            exc,
+            exc_info=True,
+        )
+        await _persist_buy_precheck_hold(
+            db,
+            symbol=symbol,
+            reason=f"BUY 직전 검증 중 예외가 발생해 매수를 차단했습니다. 원인: {exc}",
+        )
+        return None
+
+    precheck = routed_result.value
+    if not _is_buy_precheck_approved(precheck, min_confidence):
+        logger.info(
+            "BUY 직전 2차 검증이 주문 기준을 통과하지 못해 매수를 차단합니다. symbol=%s decision=%s confidence=%s min_confidence=%s weight=%s provider=%s model=%s",
+            symbol,
+            precheck.decision,
+            precheck.confidence,
+            min_confidence,
+            precheck.recommended_weight,
+            routed_result.provider,
+            routed_result.model,
+        )
+        await _persist_buy_precheck_hold(
+            db,
+            symbol=symbol,
+            reason=(
+                "OpenAI BUY 직전 검증 결과 주문을 차단했습니다. "
+                f"decision={precheck.decision}, confidence={precheck.confidence}, "
+                f"recommended_weight={precheck.recommended_weight}. "
+                f"근거: {_truncate_prompt_text(precheck.reasoning, 600)}"
+            ),
+        )
+        return None
+
+    precheck_log = await _persist_buy_precheck_log(db, symbol=symbol, analysis=precheck)
+    logger.info(
+        "BUY 직전 2차 검증 통과: symbol=%s provider=%s model=%s confidence=%s weight=%s",
+        symbol,
+        routed_result.provider,
+        routed_result.model,
+        precheck.confidence,
+        precheck.recommended_weight,
+    )
+    return precheck_log
+
+
 async def _execute_buy_trade(
     *,
     db: AsyncSession,
@@ -1225,10 +1428,25 @@ async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
             )
             return
 
+        execution_analysis = latest_analysis
+        if trading_mode == "live":
+            precheck_analysis = await _run_buy_precheck(
+                db=db,
+                symbol=normalized_symbol,
+                analysis=latest_analysis,
+                entry_gate=entry_gate,
+                portfolio=portfolio,
+                trading_mode=trading_mode,
+                min_confidence=min_confidence,
+            )
+            if precheck_analysis is None:
+                return
+            execution_analysis = precheck_analysis
+
         await _execute_buy_trade(
             db=db,
             symbol=normalized_symbol,
-            analysis=latest_analysis,
+            analysis=execution_analysis,
             portfolio=portfolio,
             trading_mode=trading_mode,
         )
