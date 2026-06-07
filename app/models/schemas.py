@@ -65,6 +65,25 @@ class AIAnalysisLogItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AIManualCycleRequest(BaseModel):
+    symbol: str = Field(..., min_length=1)
+    confirm_trade_execution: bool = False
+
+
+class AIManualCycleResponse(BaseModel):
+    symbol: str
+    analysis: AIAnalysisLogItem
+    trade_evaluated: bool
+    order_created: bool
+    order_id: int | None = None
+    order_side: Literal["BUY", "SELL"] | None = None
+    message: str
+    started_at: datetime
+    finished_at: datetime
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class AITradeRecord(BaseModel):
     symbol: str
     side: Literal["BUY", "SELL"]

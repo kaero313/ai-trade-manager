@@ -6,11 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.domain import AIAnalysisLog, Asset, OrderHistory, Position
-from app.models.schemas import AIAnalysisLogItem, AIPerformanceSummary, AITradeRecord
+from app.models.schemas import AIAnalysisLogItem
+from app.models.schemas import AIManualCycleRequest
+from app.models.schemas import AIManualCycleResponse
+from app.models.schemas import AIPerformanceSummary
+from app.models.schemas import AITradeRecord
 from app.services.ai.formatter import format_portfolio_for_llm
 from app.services.ai.provider_router import AIProviderRouter
+from app.services.ai.providers.base import AIProviderRateLimitError
 from app.services.portfolio.aggregator import PortfolioService
 from app.services.trading.ai_analyst import execute_ai_analysis
+from app.services.trading.ai_executor import execute_ai_trade
 
 router = APIRouter()
 
@@ -68,6 +74,29 @@ def _build_recent_trade(order: OrderHistory, asset: Asset, analysis: AIAnalysisL
     )
 
 
+async def _load_latest_analysis_log(db: AsyncSession, symbol: str) -> AIAnalysisLog | None:
+    result = await db.execute(
+        select(AIAnalysisLog)
+        .where(AIAnalysisLog.symbol == _normalize_symbol(symbol))
+        .order_by(desc(AIAnalysisLog.created_at), desc(AIAnalysisLog.id))
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _load_latest_order_for_analysis(
+    db: AsyncSession,
+    analysis_id: int,
+) -> OrderHistory | None:
+    result = await db.execute(
+        select(OrderHistory)
+        .where(OrderHistory.ai_analysis_log_id == analysis_id)
+        .order_by(desc(OrderHistory.executed_at), desc(OrderHistory.id))
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 @router.get("/analyze")
 async def analyze_portfolio(provider: str = "auto", db: AsyncSession = Depends(get_db)) -> dict[str, str]:
     portfolio = await PortfolioService(db).get_aggregated_portfolio()
@@ -92,17 +121,63 @@ async def get_latest_analysis(
     if not normalized_symbol:
         raise HTTPException(status_code=400, detail="symbol query parameter is required")
 
-    result = await db.execute(
-        select(AIAnalysisLog)
-        .where(AIAnalysisLog.symbol == normalized_symbol)
-        .order_by(desc(AIAnalysisLog.created_at), desc(AIAnalysisLog.id))
-        .limit(1)
-    )
-    latest_analysis = result.scalar_one_or_none()
+    latest_analysis = await _load_latest_analysis_log(db, normalized_symbol)
     if latest_analysis is None:
         return None
 
     return AIAnalysisLogItem.model_validate(latest_analysis)
+
+
+@router.post("/manual-cycle", response_model=AIManualCycleResponse)
+async def run_manual_ai_cycle(
+    request: AIManualCycleRequest,
+    db: AsyncSession = Depends(get_db),
+) -> AIManualCycleResponse:
+    normalized_symbol = _normalize_symbol(request.symbol)
+    if not normalized_symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+    if request.confirm_trade_execution is not True:
+        raise HTTPException(status_code=400, detail="manual AI cycle requires trade execution confirmation")
+
+    started_at = datetime.now(UTC)
+    previous_analysis = await _load_latest_analysis_log(db, normalized_symbol)
+    previous_analysis_id = previous_analysis.id if previous_analysis is not None else None
+    try:
+        await execute_ai_analysis(db, normalized_symbol)
+    except AIProviderRateLimitError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    latest_analysis = await _load_latest_analysis_log(db, normalized_symbol)
+    if latest_analysis is None or (
+        previous_analysis_id is not None and latest_analysis.id <= previous_analysis_id
+    ):
+        raise HTTPException(status_code=500, detail="AI analysis log was not created")
+
+    try:
+        await execute_ai_trade(db, normalized_symbol)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    latest_order = await _load_latest_order_for_analysis(db, latest_analysis.id)
+    normalized_order_side = (
+        _normalize_order_side(latest_order.side) if latest_order is not None else None
+    )
+    order_created = latest_order is not None and normalized_order_side is not None
+    finished_at = datetime.now(UTC)
+
+    return AIManualCycleResponse(
+        symbol=normalized_symbol,
+        analysis=AIAnalysisLogItem.model_validate(latest_analysis),
+        trade_evaluated=True,
+        order_created=order_created,
+        order_id=latest_order.id if latest_order is not None else None,
+        order_side=normalized_order_side if order_created else None,
+        message="신규 체결 있음" if order_created else "분석 완료, 신규 체결 없음",
+        started_at=started_at,
+        finished_at=finished_at,
+    )
 
 
 @router.get("/latest-analysis-batch", response_model=dict[str, AIAnalysisLogItem | None])
