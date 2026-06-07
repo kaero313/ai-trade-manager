@@ -1,9 +1,11 @@
-# AI-Trade-Manager 데이터베이스 명세서 (Database Schema Specification)
+﻿# AI-Trade-Manager 데이터베이스 명세서 (Database Schema Specification)
 
-본 문서는 **Phase 1~41**까지 발전해온 핵심 도메인 모델의 설계 의도와 데이터베이스 운용 수칙을 기재합니다.
+본 문서는 **Phase 47** 기준 핵심 도메인 모델의 설계 의도와 데이터베이스 운용 수칙을 기재합니다.
 **PostgreSQL + 비동기 SQLAlchemy 2.0** 스택으로 운영됩니다.
 
-> **최종 갱신 기준:** Phase 41 완료
+> **최종 갱신 기준:** Phase 47 (목적별 AI 모델 라우팅 및 BUY 직전 2차 검증)
+>
+> 1~3장은 현재 데이터 모델 기준입니다. 하단의 버전 항목은 구현 발전 이력으로 보며, 스키마 판단은 현재 모델 정의와 Alembic migration을 우선합니다.
 
 ---
 
