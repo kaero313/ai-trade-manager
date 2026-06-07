@@ -56,6 +56,18 @@ export interface LatestAiAnalysis {
   created_at: string
 }
 
+export interface ManualAiCycleResponse {
+  symbol: string
+  analysis: LatestAiAnalysis
+  trade_evaluated: boolean
+  order_created: boolean
+  order_id: number | null
+  order_side: 'BUY' | 'SELL' | null
+  message: string
+  started_at: string
+  finished_at: string
+}
+
 export interface AITradeRecord {
   symbol: string
   side: 'BUY' | 'SELL'
@@ -247,6 +259,20 @@ export async function getLatestAiAnalysis(symbol: string): Promise<LatestAiAnaly
     params: { symbol },
     timeout: 6000,
   })
+  return data
+}
+
+export async function runManualAiCycle(symbol: string): Promise<ManualAiCycleResponse> {
+  const { data } = await apiClient.post<ManualAiCycleResponse>(
+    '/ai/manual-cycle',
+    {
+      symbol,
+      confirm_trade_execution: true,
+    },
+    {
+      timeout: 120000,
+    },
+  )
   return data
 }
 

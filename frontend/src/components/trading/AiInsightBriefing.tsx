@@ -1,6 +1,12 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
+import { Loader2, RefreshCw } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { useState } from 'react'
 
-import { getLatestAiAnalysis } from '../../services/api'
+import { AI_PERFORMANCE_QUERY_KEY } from '../../hooks/useAIPerformance'
+import { PORTFOLIO_SUMMARY_QUERY_KEY } from '../../hooks/usePortfolioSummary'
+import { getLatestAiAnalysis, runManualAiCycle } from '../../services/api'
 import type { LatestAiAnalysis } from '../../services/api'
 
 interface AiInsightBriefingProps {
@@ -132,6 +138,27 @@ function formatUpdatedAt(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date)
+}
+
+function resolveManualCycleError(error: unknown): string {
+  if (isAxiosError(error)) {
+    const detail = error.response?.data?.detail
+    if (typeof detail === 'string' && detail.trim()) {
+      return detail
+    }
+    if (error.response?.status === 429) {
+      return 'AI provider 사용량 제한으로 수동 갱신을 실행하지 못했습니다.'
+    }
+    if (error.message) {
+      return error.message
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+
+  return 'AI 수동 갱신 요청이 실패했습니다.'
 }
 
 function cleanReasoningText(value: string): string {
@@ -356,9 +383,13 @@ function InsightSkeleton() {
 function EmptyInsightCard({
   title,
   description,
+  action,
+  feedback,
 }: {
   title: string
   description: string
+  action?: ReactNode
+  feedback?: ReactNode
 }) {
   return (
     <section className="quantum-card flex min-h-0 flex-col overflow-hidden rounded-xl">
@@ -367,6 +398,8 @@ function EmptyInsightCard({
         <p className="max-w-xl break-words text-sm leading-6 text-[#849495]">
           {description}
         </p>
+        {action}
+        {feedback}
       </div>
     </section>
   )
@@ -374,6 +407,9 @@ function EmptyInsightCard({
 
 function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
   const normalizedSymbol = normalizeSymbol(symbol)
+  const queryClient = useQueryClient()
+  const [manualCycleMessage, setManualCycleMessage] = useState<string | null>(null)
+  const [manualCycleError, setManualCycleError] = useState<string | null>(null)
 
   const analysisQuery = useQuery({
     queryKey: ['latest-ai-analysis', normalizedSymbol],
@@ -385,11 +421,85 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
     retry: false,
   })
 
+  const manualCycleMutation = useMutation({
+    mutationFn: () => {
+      if (!normalizedSymbol) {
+        throw new Error('수동 갱신할 종목을 먼저 선택해 주세요.')
+      }
+      return runManualAiCycle(normalizedSymbol)
+    },
+    onSuccess: async (result) => {
+      setManualCycleError(null)
+      setManualCycleMessage(
+        result.order_created
+          ? `신규 체결 있음${result.order_side ? ` · ${result.order_side}` : ''}`
+          : '분석 완료, 신규 체결 없음',
+      )
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['latest-ai-analysis', result.symbol] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard-orders'] }),
+        queryClient.invalidateQueries({ queryKey: PORTFOLIO_SUMMARY_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: AI_PERFORMANCE_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: ['bot-status'] }),
+      ])
+    },
+    onError: (error) => {
+      setManualCycleMessage(null)
+      setManualCycleError(resolveManualCycleError(error))
+    },
+  })
+
+  const handleManualCycle = () => {
+    if (!normalizedSymbol || manualCycleMutation.isPending) {
+      return
+    }
+
+    const shouldProceed = window.confirm(
+      '현재 종목 AI 분석을 즉시 실행하고, 조건 충족 시 AI 매매 게이트까지 평가합니다.',
+    )
+    if (!shouldProceed) {
+      return
+    }
+
+    setManualCycleMessage(null)
+    setManualCycleError(null)
+    manualCycleMutation.mutate()
+  }
+
+  const manualCycleAction = (
+    <button
+      type="button"
+      onClick={handleManualCycle}
+      disabled={!normalizedSymbol || manualCycleMutation.isPending}
+      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-[#00dbe9]/35 bg-[#00dbe9]/10 px-3 py-2 text-xs font-semibold text-[#7df4ff] transition-colors hover:bg-[#00dbe9]/18 disabled:cursor-not-allowed disabled:opacity-55"
+    >
+      {manualCycleMutation.isPending ? (
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+      ) : (
+        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+      )}
+      {manualCycleMutation.isPending ? '실행 중' : 'AI 수동 갱신'}
+    </button>
+  )
+
+  const manualCycleFeedback =
+    manualCycleMessage || manualCycleError ? (
+      <p
+        className={`break-words rounded-lg bg-[#0a0e14]/75 px-3 py-2 text-xs font-semibold ${
+          manualCycleError ? 'text-[#ffb4ab]' : 'text-[#77e2a8]'
+        }`}
+      >
+        {manualCycleError ?? manualCycleMessage}
+      </p>
+    ) : null
+
   if (!normalizedSymbol) {
     return (
       <EmptyInsightCard
         title="AI 브리핑 대기 중"
         description="종목을 선택하면 해당 코인에 대한 최신 AI 추론 로그를 실시간으로 표시합니다."
+        action={manualCycleAction}
+        feedback={manualCycleFeedback}
       />
     )
   }
@@ -410,6 +520,8 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
         <EmptyInsightCard
           title={`${normalizedSymbol} AI 분석 조회 실패`}
           description="최신 AI 판단 근거를 불러오지 못했습니다. 백엔드 연결 또는 provider 상태가 회복되면 이 영역에 다시 표시됩니다."
+          action={manualCycleAction}
+          feedback={manualCycleFeedback}
         />
       )
     }
@@ -418,6 +530,8 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
       <EmptyInsightCard
         title={`${normalizedSymbol} 최신 추론 없음`}
         description="아직 이 종목에 대해 저장된 AI 분석 로그가 없습니다. 백그라운드 추론 엔진이 다음 회차에 로그를 쌓으면 이 영역에 즉시 반영됩니다."
+        action={manualCycleAction}
+        feedback={manualCycleFeedback}
       />
     )
   }
@@ -452,12 +566,17 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
                   {normalizedSymbol} · {tone.caption}
                 </p>
               </div>
-              <span
-                className={`inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-semibold ${tone.chipClassName}`}
-              >
-                {analysis.decision}
-              </span>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {manualCycleAction}
+                <span
+                  className={`inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-semibold ${tone.chipClassName}`}
+                >
+                  {analysis.decision}
+                </span>
+              </div>
             </div>
+
+            {manualCycleFeedback}
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className={`rounded-lg border-l-2 p-4 ${TONE_STYLES[tone.tone].cardClassName}`}>
