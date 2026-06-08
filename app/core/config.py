@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     naver_client_id: str | None = None
     naver_client_secret: str | None = None
     opensearch_url: str = "http://localhost:9200"
+    admin_api_token: str | None = None
+    admin_basic_auth_user: str | None = None
+    admin_basic_auth_hash: str | None = None
 
     postgres_user: str = "postgres"
     postgres_password: str = "postgres"
