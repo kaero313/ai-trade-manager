@@ -1,10 +1,92 @@
-import axios from 'axios'
+import axios, { AxiosHeaders } from 'axios'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api'
+const ADMIN_TOKEN_STORAGE_KEY = 'ai-trade-manager-admin-token'
+
+export const ADMIN_TOKEN_REQUIRED_EVENT = 'ai-trade-manager:admin-token-required'
+
+export interface AdminTokenRequestDetail {
+  reason: string
+  resolve: (token: string) => void
+  reject: (error: Error) => void
+}
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
 })
+
+export function getStoredAdminToken(): string | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const token = window.sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY)?.trim()
+  return token || null
+}
+
+export function storeAdminToken(token: string): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const normalizedToken = token.trim()
+  if (!normalizedToken) {
+    window.sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY)
+    return
+  }
+
+  window.sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, normalizedToken)
+}
+
+export function clearAdminToken(): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY)
+}
+
+export async function requestAdminToken(reason: string): Promise<string> {
+  const storedToken = getStoredAdminToken()
+  if (storedToken) {
+    return storedToken
+  }
+
+  if (typeof window === 'undefined') {
+    throw new Error('관리 토큰을 입력할 수 있는 브라우저 환경이 아닙니다.')
+  }
+
+  return new Promise((resolve, reject) => {
+    window.dispatchEvent(
+      new CustomEvent<AdminTokenRequestDetail>(ADMIN_TOKEN_REQUIRED_EVENT, {
+        detail: { reason, resolve, reject },
+      }),
+    )
+  })
+}
+
+apiClient.interceptors.request.use((config) => {
+  const token = getStoredAdminToken()
+  if (token) {
+    const headers = AxiosHeaders.from(config.headers)
+    headers.set('X-Admin-Token', token)
+    config.headers = headers
+  }
+  return config
+})
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status
+      if (status === 401 || status === 403) {
+        clearAdminToken()
+      }
+    }
+    return Promise.reject(error)
+  },
+)
 
 export interface StrategyParams {
   ema_fast: number
@@ -226,11 +308,13 @@ export async function getBotStatus(): Promise<BotStatus> {
 }
 
 export async function startBot(): Promise<BotStatus> {
+  await requestAdminToken('봇 가동')
   const { data } = await apiClient.post<BotStatus>('/bot/start')
   return data
 }
 
 export async function stopBot(): Promise<BotStatus> {
+  await requestAdminToken('봇 정지')
   const { data } = await apiClient.post<BotStatus>('/bot/stop')
   return data
 }
@@ -241,11 +325,13 @@ export async function getBotConfig(): Promise<BotConfig> {
 }
 
 export async function updateBotConfig(config: BotConfig): Promise<BotConfig> {
+  await requestAdminToken('AI 매매 대상 설정 저장')
   const { data } = await apiClient.post<BotConfig>('/config', config)
   return data
 }
 
 export async function liquidateAll(): Promise<void> {
+  await requestAdminToken('전량 롤백')
   await apiClient.post('/bot/liquidate')
 }
 
@@ -263,6 +349,7 @@ export async function getLatestAiAnalysis(symbol: string): Promise<LatestAiAnaly
 }
 
 export async function runManualAiCycle(symbol: string): Promise<ManualAiCycleResponse> {
+  await requestAdminToken('수동 AI Cycle')
   const { data } = await apiClient.post<ManualAiCycleResponse>(
     '/ai/manual-cycle',
     {
@@ -289,6 +376,7 @@ export async function getSystemConfigs(): Promise<SystemConfigItem[]> {
 export async function updateSystemConfigs(
   items: SystemConfigUpdateItem[],
 ): Promise<SystemConfigItem[]> {
+  await requestAdminToken('AI 운용 설정 저장')
   const { data } = await apiClient.put<SystemConfigItem[]>('/system/configs', items)
   return data
 }
@@ -301,6 +389,7 @@ export async function getAiProviderRuntimeStatus(): Promise<AiProviderRuntimeSta
 }
 
 export async function resetPaperTradingState(): Promise<PaperTradingResetResponse> {
+  await requestAdminToken('모의투자 상태 초기화')
   const { data } = await apiClient.post<PaperTradingResetResponse>('/system/paper/reset')
   return data
 }
@@ -335,6 +424,7 @@ export async function approveChatConfigChange(
   sessionId: string,
   payload: ApprovalPayload,
 ): Promise<SystemConfigItem[]> {
+  await requestAdminToken('AI Banker 설정 변경 승인')
   const { data } = await apiClient.post<SystemConfigItem[]>(
     `/chat/sessions/${sessionId}/approve`,
     payload,
