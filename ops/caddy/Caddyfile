@@ -1,0 +1,17 @@
+:80 {
+	root * /srv
+	encode zstd gzip
+
+	basic_auth {
+		{$ADMIN_BASIC_AUTH_USER} {$ADMIN_BASIC_AUTH_HASH}
+	}
+
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}

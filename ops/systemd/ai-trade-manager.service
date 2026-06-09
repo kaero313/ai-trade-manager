@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Trade Manager local always-on stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/ai-trade-manager
+ExecStart=/usr/bin/docker compose --env-file .env.local -f docker-compose.local.yml up -d
+ExecStop=/usr/bin/docker compose --env-file .env.local -f docker-compose.local.yml down
+RemainAfterExit=yes
+TimeoutStartSec=180
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
