@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import require_admin_token
 from app.db.session import get_db
 from app.models.domain import AIAnalysisLog, Asset, OrderHistory, Position
 from app.models.schemas import AIAnalysisLogItem
@@ -132,6 +133,7 @@ async def get_latest_analysis(
 async def run_manual_ai_cycle(
     request: AIManualCycleRequest,
     db: AsyncSession = Depends(get_db),
+    _admin: None = Depends(require_admin_token),
 ) -> AIManualCycleResponse:
     normalized_symbol = _normalize_symbol(request.symbol)
     if not normalized_symbol:

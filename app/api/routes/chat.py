@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import require_admin_token
 from app.core.scheduler import reload_scheduler_jobs
 from app.db.repository import AI_BRIEFING_TIME_KEY
 from app.db.repository import AUTONOMOUS_AI_INTERVAL_HOURS_KEY
@@ -147,6 +148,7 @@ async def approve_chat_config_change(
     session_id: str,
     payload: ChatApproveRequest,
     db: AsyncSession = Depends(get_db),
+    _admin: None = Depends(require_admin_token),
 ) -> list[SystemConfigItem]:
     await _get_required_chat_session_id(db, session_id)
     normalized_config_key = payload.config_key.strip()

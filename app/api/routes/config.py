@@ -1,6 +1,7 @@
 ﻿from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import require_admin_token
 from app.db.repository import get_or_create_bot_config
 from app.db.repository import merge_bot_config_metadata
 from app.db.session import get_db
@@ -16,7 +17,11 @@ async def get_config(db: AsyncSession = Depends(get_db)) -> BotConfig:
 
 
 @router.post("/config", response_model=BotConfig)
-async def update_config(config: BotConfig, db: AsyncSession = Depends(get_db)) -> BotConfig:
+async def update_config(
+    config: BotConfig,
+    db: AsyncSession = Depends(get_db),
+    _admin: None = Depends(require_admin_token),
+) -> BotConfig:
     bot_config = await get_or_create_bot_config(db)
     bot_config.config_json = merge_bot_config_metadata(
         config.model_dump(),

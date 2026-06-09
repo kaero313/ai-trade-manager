@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import require_admin_token
 from app.core.scheduler import reload_scheduler_jobs
 from app.db.repository import AI_BRIEFING_TIME_KEY
 from app.db.repository import AUTONOMOUS_AI_INTERVAL_HOURS_KEY
@@ -54,6 +55,7 @@ async def get_system_configs(db: AsyncSession = Depends(get_db)) -> list[SystemC
 async def update_system_configs(
     payload: list[SystemConfigUpdateItem],
     db: AsyncSession = Depends(get_db),
+    _admin: None = Depends(require_admin_token),
 ) -> list[SystemConfigItem]:
     if not payload:
         raise HTTPException(status_code=400, detail="최소 1개 이상의 설정값이 필요합니다.")
@@ -96,7 +98,10 @@ async def get_ai_provider_runtime_status(
 
 
 @router.post("/paper/reset")
-async def reset_paper_trading_state(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def reset_paper_trading_state(
+    db: AsyncSession = Depends(get_db),
+    _admin: None = Depends(require_admin_token),
+) -> dict[str, Any]:
     try:
         deleted_order_history_result = await db.execute(
             delete(OrderHistory).where(OrderHistory.is_paper.is_(True))

@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import require_admin_token
 from app.db.session import get_db
 from app.models.schemas import BotStatus
 from app.services.bot_service import get_bot_status, start_bot, stop_bot
@@ -19,19 +20,28 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> BotStatus:
 
 
 @router.post("/bot/start", response_model=BotStatus)
-async def start_bot_endpoint(db: AsyncSession = Depends(get_db)) -> BotStatus:
+async def start_bot_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _admin: None = Depends(require_admin_token),
+) -> BotStatus:
     await start_bot(db)
     return await get_bot_status(db)
 
 
 @router.post("/bot/stop", response_model=BotStatus)
-async def stop_bot_endpoint(db: AsyncSession = Depends(get_db)) -> BotStatus:
+async def stop_bot_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _admin: None = Depends(require_admin_token),
+) -> BotStatus:
     await stop_bot(db)
     return await get_bot_status(db)
 
 
 @router.post("/bot/liquidate")
-async def liquidate_all_endpoint(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
+async def liquidate_all_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _admin: None = Depends(require_admin_token),
+) -> dict[str, str]:
     await stop_bot(db)
 
     broker = BrokerFactory.get_broker("UPBIT")
