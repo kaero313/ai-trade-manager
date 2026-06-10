@@ -117,6 +117,24 @@ def test_missing_purpose_model_falls_back_to_provider_default() -> None:
     assert candidates[0].model == "gpt-5-nano"
 
 
+def test_null_purpose_models_are_backfilled_with_defaults() -> None:
+    now = datetime(2026, 4, 28, 3, 0, tzinfo=UTC)
+    settings = _settings()
+    settings["openai"]["model"] = "gpt-5-mini"
+    settings["openai"]["models"] = None
+
+    candidates = resolve_provider_candidates(
+        priority_value=["openai"],
+        settings_value=settings,
+        status_value={},
+        now=now,
+        purpose="buy_precheck",
+        available_providers={"gemini": True, "openai": True},
+    )
+
+    assert candidates[0].model == "gpt-4.1-mini"
+
+
 def test_preferred_provider_can_disable_fallback() -> None:
     now = datetime(2026, 4, 28, 3, 0, tzinfo=UTC)
 

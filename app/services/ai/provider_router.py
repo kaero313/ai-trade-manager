@@ -25,11 +25,11 @@ from app.services.ai.providers.base import is_provider_rate_limit_error
 from app.services.ai.providers.base import normalize_utc
 from app.services.ai.providers.base import resolve_provider_block_until
 from app.services.ai.providers.base import utc_now
-from app.services.ai.providers.gemini import GEMINI_TEXT_MODEL
-from app.services.ai.providers.openai import OPENAI_TEXT_MODEL
 
 logger = logging.getLogger(__name__)
 
+GEMINI_TEXT_MODEL = "gemini-3-flash-preview"
+OPENAI_TEXT_MODEL = "gpt-5-nano"
 SUPPORTED_AI_PROVIDERS = ("gemini", "openai")
 AI_PURPOSE_TRADE_ANALYSIS = "trade_analysis"
 AI_PURPOSE_BUY_PRECHECK = "buy_precheck"
@@ -109,9 +109,13 @@ def _normalize_settings(raw_value: Any) -> dict[str, dict[str, Any]]:
             or provider_defaults.get("model")
             or DEFAULT_PROVIDER_MODELS[provider]
         ).strip()
-        raw_models = provider_settings.get("models", provider_defaults.get("models", {}))
+        default_models = provider_defaults.get("models", {})
+        if not isinstance(default_models, dict):
+            default_models = {}
+        raw_models = provider_settings.get("models")
         if not isinstance(raw_models, dict):
             raw_models = {}
+        raw_models = {**default_models, **raw_models}
 
         models = {
             str(purpose or "").strip(): str(model_name or "").strip()
