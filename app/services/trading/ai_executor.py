@@ -24,7 +24,7 @@ from app.services.bot_service import get_bot_status
 from app.services.brokers.factory import BrokerFactory
 from app.services.brokers.upbit import UpbitAPIError
 from app.services.portfolio.aggregator import PortfolioService
-from app.services.slack import slack_client
+from app.services.slack_bot import slack_bot
 from app.services.trading.paper import DEFAULT_PAPER_KRW_BALANCE
 from app.services.trading.paper import PAPER_BALANCE_DESCRIPTION
 from app.services.trading.paper import PAPER_BALANCE_EPSILON
@@ -546,11 +546,7 @@ async def _send_trade_notification(
         lines.append(f"주문 UUID: {order_uuid}")
 
     try:
-        await slack_client.send_message(
-            "\n".join(lines),
-            username="AI Executor",
-            icon_emoji=":robot_face:",
-        )
+        slack_bot.send_message("\n".join(lines))
     except Exception as exc:
         logger.warning("Slack 자율 체결 알림 전송 실패: %s", exc, exc_info=True)
 

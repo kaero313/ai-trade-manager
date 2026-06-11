@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ from app.services.trading.ai_executor import _parse_bool_config
 from app.services.trading.ai_executor import _resolve_order_price
 from app.services.trading.ai_executor import _resolve_order_qty
 from app.services.trading.ai_executor import _resolve_weighted_amount
+from app.services.trading.ai_executor import _send_trade_notification
 from app.services.trading.ai_analyst import is_fallback_news_item
 from app.services.trading.entry_policy import AIConfidenceCalibration
 from app.services.trading.entry_policy import DEFAULT_MIN_CALIBRATED_CONFIDENCE
@@ -76,6 +78,57 @@ def test_bool_config_defaults_to_live_buy_locked() -> None:
     assert _parse_bool_config("true", default=False) is True
     assert _parse_bool_config("false", default=True) is False
     assert _parse_bool_config(None, default=False) is False
+
+
+def test_live_trade_notification_uses_slack_bot_channel(monkeypatch) -> None:
+    messages: list[str] = []
+
+    monkeypatch.setattr(
+        "app.services.trading.ai_executor.slack_bot.send_message",
+        lambda text: messages.append(text),
+    )
+
+    asyncio.run(
+        _send_trade_notification(
+            symbol="KRW-BTC",
+            decision="BUY",
+            confidence=82,
+            recommended_weight=20,
+            order_result={"uuid": "order-123"},
+            trading_mode="live",
+        )
+    )
+
+    assert len(messages) == 1
+    assert "KRW-BTC" in messages[0]
+    assert "BUY" in messages[0]
+    assert "order-123" in messages[0]
+
+
+def test_paper_trade_notification_skips_slack_bot(monkeypatch) -> None:
+    called = False
+
+    def fake_send_message(_text: str) -> None:
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(
+        "app.services.trading.ai_executor.slack_bot.send_message",
+        fake_send_message,
+    )
+
+    asyncio.run(
+        _send_trade_notification(
+            symbol="KRW-BTC",
+            decision="BUY",
+            confidence=82,
+            recommended_weight=20,
+            order_result={"uuid": "order-123"},
+            trading_mode="paper",
+        )
+    )
+
+    assert called is False
 
 
 def test_legacy_quote_amount_buy_is_excluded_only_before_cutoff() -> None:
