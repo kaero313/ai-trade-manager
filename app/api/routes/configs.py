@@ -13,6 +13,7 @@ from app.db.repository import AUTONOMOUS_AI_INTERVAL_MINUTES_KEY
 from app.db.repository import NEWS_INTERVAL_HOURS_KEY
 from app.db.repository import PAPER_TRADING_KRW_BALANCE_KEY
 from app.db.repository import SENTIMENT_INTERVAL_MINUTES_KEY
+from app.db.repository import SLACK_PORTFOLIO_ALERT_SETTINGS_KEY
 from app.db.repository import bulk_upsert_system_configs
 from app.db.repository import list_system_configs
 from app.db.session import get_db
@@ -34,6 +35,7 @@ SCHEDULER_CONFIG_KEYS = {
     AI_BRIEFING_TIME_KEY,
     AUTONOMOUS_AI_INTERVAL_HOURS_KEY,
     AUTONOMOUS_AI_INTERVAL_MINUTES_KEY,
+    SLACK_PORTFOLIO_ALERT_SETTINGS_KEY,
 }
 
 

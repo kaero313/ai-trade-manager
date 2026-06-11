@@ -278,3 +278,8 @@ ai-trade-manager/
 - 두 번역 provider가 모두 실패하면 원문을 보존한 채 `translation_status=failed`와 실패 사유를 기록하고, 문서 upsert와 임베딩 생성은 계속 진행합니다.
 - 번역 성공 문서는 한국어 `title/content` 기준으로 OpenSearch `market_news`에 저장되며, 임베딩도 번역본 텍스트로 생성됩니다.
 - `market_news_ingestion_runs`에는 번역 요청/성공/실패/스킵 수와 provider별 실패 분포를 저장해 RAG 품질을 관측합니다.
+
+## Slack 포트폴리오 알림 업데이트
+- `app/core/scheduler.py`는 `system_configs.slack_portfolio_alert_settings` JSON의 `preset`/`advanced` rule을 `CronTrigger` job으로 정규화합니다.
+- 알림 섹션은 포트폴리오, 공포지수, 관심종목 AI 신호, OpenSearch RAG 캐시 기반 가격 영향 후보 뉴스 Top3로 구성됩니다.
+- 스키마 변경은 없고 PostgreSQL `system_configs`와 OpenSearch `market_news` 조회만 사용합니다.

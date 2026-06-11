@@ -229,3 +229,9 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 - `market_news.embedding`은 번역 성공 시 한국어 `title/content`를 기준으로 생성됩니다. 번역 실패 시 원문을 임시 저장하고 기존 임베딩/upsert 흐름을 계속 진행합니다.
 - `market_news_ingestion_runs`는 `translation_requested`, `translation_succeeded`, `translation_failed`, `translation_skipped`, `translation_error`, `translation_provider_error_breakdown`, `translation_provider_stats`를 저장합니다.
 - 기존 `market_news` 매핑에 번역 메타데이터 필드가 없으면 ingestion 경로에서 자동 재생성됩니다.
+
+## Slack 포트폴리오 알림 설정
+- PostgreSQL/Alembic 스키마 변경은 없습니다.
+- `system_configs.slack_portfolio_alert_settings` JSON 하나에 `enabled`, `mode`, `preset`, `rules`를 저장합니다.
+- rule은 요일, 시간, 알림 섹션, BUY/SELL/HOLD 필터, 최소 확신도를 포함하며 APScheduler job으로 정규화됩니다.
+- 가격 영향 뉴스 Top3는 별도 DB 테이블 없이 OpenSearch `market_news` 캐시를 조회합니다.

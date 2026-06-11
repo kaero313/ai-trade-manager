@@ -42,6 +42,7 @@ AI_MAX_CONCURRENT_POSITIONS_KEY = "ai_max_concurrent_positions"
 AI_PROVIDER_PRIORITY_KEY = "ai_provider_priority"
 AI_PROVIDER_SETTINGS_KEY = "ai_provider_settings"
 AI_PROVIDER_STATUS_KEY = "ai_provider_status"
+SLACK_PORTFOLIO_ALERT_SETTINGS_KEY = "slack_portfolio_alert_settings"
 
 DEFAULT_AI_PROVIDER_PRIORITY_VALUE = json.dumps(["gemini", "openai"], ensure_ascii=False)
 DEFAULT_AI_PROVIDER_SETTINGS_VALUE = json.dumps(
@@ -64,6 +65,30 @@ DEFAULT_AI_PROVIDER_SETTINGS_VALUE = json.dumps(
     ensure_ascii=False,
 )
 DEFAULT_AI_PROVIDER_STATUS_VALUE = "{}"
+DEFAULT_SLACK_PORTFOLIO_ALERT_SETTINGS_VALUE = json.dumps(
+    {
+        "enabled": False,
+        "mode": "preset",
+        "preset": "daily_once",
+        "rules": [
+            {
+                "id": "daily_once",
+                "enabled": True,
+                "weekdays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+                "times": ["08:30"],
+                "sections": [
+                    "portfolio",
+                    "fear_index",
+                    "favorite_ai_signals",
+                    "market_impact_news",
+                ],
+                "signal_decisions": ["BUY", "SELL"],
+                "min_confidence": 70,
+            }
+        ],
+    },
+    ensure_ascii=False,
+)
 
 SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     {
@@ -185,6 +210,11 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
         "config_key": AI_PROVIDER_STATUS_KEY,
         "config_value": DEFAULT_AI_PROVIDER_STATUS_VALUE,
         "description": "AI provider별 쿼터 차단/성공 상태(JSON 객체)",
+    },
+    {
+        "config_key": SLACK_PORTFOLIO_ALERT_SETTINGS_KEY,
+        "config_value": DEFAULT_SLACK_PORTFOLIO_ALERT_SETTINGS_VALUE,
+        "description": "Slack 포트폴리오 알림 반복 규칙(JSON 객체)",
     },
 )
 

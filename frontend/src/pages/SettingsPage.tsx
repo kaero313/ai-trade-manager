@@ -1,5 +1,5 @@
 import { isAxiosError } from 'axios'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import InfoTooltip from '../components/common/InfoTooltip'
@@ -29,6 +29,7 @@ interface AiRuntimeDraft {
   aiProviderPriority: AiProviderName[]
   aiProviderSettings: AiProviderSettings
   aiProviderStatus: AiProviderStatus
+  slackPortfolioAlertSettings: SlackPortfolioAlertSettings
 }
 
 interface NoticeState {
@@ -64,6 +65,36 @@ interface AiProviderStatusItem {
 }
 
 type AiProviderStatus = Partial<Record<AiProviderName, AiProviderStatusItem>>
+type SlackAlertMode = 'preset' | 'advanced'
+type SlackAlertPreset =
+  | 'daily_once'
+  | 'daily_twice'
+  | 'weekday_once'
+  | 'weekday_twice'
+  | 'weekend_once'
+  | 'weekly_once'
+  | 'mon_wed_fri'
+  | 'tue_thu'
+type SlackAlertWeekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
+type SlackAlertSection = 'portfolio' | 'fear_index' | 'favorite_ai_signals' | 'market_impact_news'
+type SlackAlertDecision = 'BUY' | 'SELL' | 'HOLD'
+
+interface SlackAlertRule {
+  id: string
+  enabled: boolean
+  weekdays: SlackAlertWeekday[]
+  times: string[]
+  sections: SlackAlertSection[]
+  signal_decisions: SlackAlertDecision[]
+  min_confidence: number
+}
+
+interface SlackPortfolioAlertSettings {
+  enabled: boolean
+  mode: SlackAlertMode
+  preset: SlackAlertPreset
+  rules: SlackAlertRule[]
+}
 
 const AUTONOMOUS_AI_INTERVAL_MINUTES_KEY = 'autonomous_ai_interval_minutes'
 const MAX_ALLOCATION_PCT_KEY = 'max_allocation_pct'
@@ -78,6 +109,7 @@ const AI_CUSTOM_PERSONA_PROMPT_KEY = 'ai_custom_persona_prompt'
 const AI_PROVIDER_PRIORITY_KEY = 'ai_provider_priority'
 const AI_PROVIDER_SETTINGS_KEY = 'ai_provider_settings'
 const AI_PROVIDER_STATUS_KEY = 'ai_provider_status'
+const SLACK_PORTFOLIO_ALERT_SETTINGS_KEY = 'slack_portfolio_alert_settings'
 
 const AUTONOMOUS_AI_INTERVAL_OPTIONS = ['15', '30', '60', '120', '240']
 const AI_PROVIDERS: AiProviderName[] = ['gemini', 'openai']
@@ -166,6 +198,78 @@ const BUY_SAFETY_MODE_OPTIONS: Array<{
     badge: '허용',
   },
 ]
+
+const SLACK_ALERT_WEEKDAY_OPTIONS: Array<{ key: SlackAlertWeekday; label: string }> = [
+  { key: 'mon', label: '월' },
+  { key: 'tue', label: '화' },
+  { key: 'wed', label: '수' },
+  { key: 'thu', label: '목' },
+  { key: 'fri', label: '금' },
+  { key: 'sat', label: '토' },
+  { key: 'sun', label: '일' },
+]
+const SLACK_ALERT_PRESET_OPTIONS: Array<{
+  key: SlackAlertPreset
+  label: string
+  weekdays: SlackAlertWeekday[]
+  times: string[]
+}> = [
+  {
+    key: 'daily_once',
+    label: '매일 1회',
+    weekdays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+    times: ['08:30'],
+  },
+  {
+    key: 'daily_twice',
+    label: '매일 2회',
+    weekdays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+    times: ['08:30', '18:30'],
+  },
+  {
+    key: 'weekday_once',
+    label: '평일 1회',
+    weekdays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+    times: ['08:30'],
+  },
+  {
+    key: 'weekday_twice',
+    label: '평일 2회',
+    weekdays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+    times: ['08:30', '18:30'],
+  },
+  { key: 'weekend_once', label: '주말 1회', weekdays: ['sat', 'sun'], times: ['10:00'] },
+  { key: 'weekly_once', label: '주 1회', weekdays: ['mon'], times: ['09:00'] },
+  { key: 'mon_wed_fri', label: '월/수/금', weekdays: ['mon', 'wed', 'fri'], times: ['08:30'] },
+  { key: 'tue_thu', label: '화/목', weekdays: ['tue', 'thu'], times: ['08:30'] },
+]
+const SLACK_ALERT_SECTION_OPTIONS: Array<{ key: SlackAlertSection; label: string }> = [
+  { key: 'portfolio', label: '포트폴리오' },
+  { key: 'fear_index', label: '오늘 공포지수' },
+  { key: 'favorite_ai_signals', label: '관심종목 AI 신호' },
+  { key: 'market_impact_news', label: '가격 영향 뉴스' },
+]
+const SLACK_ALERT_DECISION_OPTIONS: Array<{ key: SlackAlertDecision; label: string }> = [
+  { key: 'BUY', label: 'BUY' },
+  { key: 'SELL', label: 'SELL' },
+  { key: 'HOLD', label: 'HOLD' },
+]
+const DEFAULT_SLACK_PORTFOLIO_ALERT_SETTINGS: SlackPortfolioAlertSettings = {
+  enabled: false,
+  mode: 'preset',
+  preset: 'daily_once',
+  rules: [
+    {
+      id: 'daily_once',
+      enabled: true,
+      weekdays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+      times: ['08:30'],
+      sections: ['portfolio', 'fear_index', 'favorite_ai_signals', 'market_impact_news'],
+      signal_decisions: ['BUY', 'SELL'],
+      min_confidence: 70,
+    },
+  ],
+}
 
 const SETTINGS_CARD_CLASS = 'quantum-card rounded-xl p-5 text-[#dfe2eb] sm:p-6'
 const SETTINGS_PANEL_CLASS = 'quantum-panel rounded-lg border border-[#3b494b]/30 p-4'
@@ -268,6 +372,165 @@ function normalizeProviderSettings(rawValue: string): AiProviderSettings {
   }, {} as AiProviderSettings)
 }
 
+function normalizeSlackAlertTime(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+  const match = value.trim().match(/^(\d{1,2}):(\d{1,2})$/)
+  if (!match) {
+    return null
+  }
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null
+  }
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+function uniqueValues<T extends string>(values: T[]): T[] {
+  return values.filter((value, index) => values.indexOf(value) === index)
+}
+
+function normalizeSlackAlertWeekdays(value: unknown): SlackAlertWeekday[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  const allowed = SLACK_ALERT_WEEKDAY_OPTIONS.map((item) => item.key)
+  return uniqueValues(
+    value.filter((item): item is SlackAlertWeekday => allowed.includes(item as SlackAlertWeekday)),
+  )
+}
+
+function normalizeSlackAlertSections(value: unknown): SlackAlertSection[] {
+  if (!Array.isArray(value)) {
+    return ['portfolio', 'fear_index', 'favorite_ai_signals', 'market_impact_news']
+  }
+  const allowed = SLACK_ALERT_SECTION_OPTIONS.map((item) => item.key)
+  const sections = value.filter((item): item is SlackAlertSection => allowed.includes(item as SlackAlertSection))
+  return uniqueValues(sections).length > 0
+    ? uniqueValues(sections)
+    : ['portfolio', 'fear_index', 'favorite_ai_signals', 'market_impact_news']
+}
+
+function normalizeSlackAlertDecisions(value: unknown): SlackAlertDecision[] {
+  if (!Array.isArray(value)) {
+    return ['BUY', 'SELL']
+  }
+  const allowed = SLACK_ALERT_DECISION_OPTIONS.map((item) => item.key)
+  const decisions = value.filter((item): item is SlackAlertDecision => allowed.includes(item as SlackAlertDecision))
+  return uniqueValues(decisions).length > 0 ? uniqueValues(decisions) : ['BUY', 'SELL']
+}
+
+function normalizeSlackAlertConfidence(value: unknown): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return 70
+  }
+  return Math.max(0, Math.min(100, Math.round(parsed)))
+}
+
+function sanitizeSlackRuleId(value: unknown, fallback: string): string {
+  const sanitized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return sanitized || fallback
+}
+
+function buildPresetSlackAlertRules(
+  preset: SlackAlertPreset,
+  template?: Partial<SlackAlertRule>,
+): SlackAlertRule[] {
+  const presetOption =
+    SLACK_ALERT_PRESET_OPTIONS.find((option) => option.key === preset) ?? SLACK_ALERT_PRESET_OPTIONS[0]
+  return [
+    {
+      id: preset,
+      enabled: template?.enabled ?? true,
+      weekdays: [...presetOption.weekdays],
+      times: [...presetOption.times],
+      sections: template?.sections ?? [
+        'portfolio',
+        'fear_index',
+        'favorite_ai_signals',
+        'market_impact_news',
+      ],
+      signal_decisions: template?.signal_decisions ?? ['BUY', 'SELL'],
+      min_confidence: template?.min_confidence ?? 70,
+    },
+  ]
+}
+
+function createSlackAlertRule(index: number): SlackAlertRule {
+  return {
+    id: `custom_${index + 1}`,
+    enabled: true,
+    weekdays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+    times: ['08:30'],
+    sections: ['portfolio', 'fear_index', 'market_impact_news'],
+    signal_decisions: ['BUY', 'SELL'],
+    min_confidence: 70,
+  }
+}
+
+function normalizeSlackAlertRule(value: unknown, index: number): SlackAlertRule | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+  const rawRule = value as Partial<SlackAlertRule>
+  const weekdays = normalizeSlackAlertWeekdays(rawRule.weekdays)
+  const times = Array.isArray(rawRule.times)
+    ? uniqueValues(
+        rawRule.times
+          .map((time) => normalizeSlackAlertTime(time))
+          .filter((time): time is string => time !== null),
+      )
+    : []
+  if (weekdays.length === 0 || times.length === 0) {
+    return null
+  }
+  return {
+    id: sanitizeSlackRuleId(rawRule.id, `rule_${index + 1}`),
+    enabled: rawRule.enabled ?? true,
+    weekdays,
+    times,
+    sections: normalizeSlackAlertSections(rawRule.sections),
+    signal_decisions: normalizeSlackAlertDecisions(rawRule.signal_decisions),
+    min_confidence: normalizeSlackAlertConfidence(rawRule.min_confidence),
+  }
+}
+
+function normalizeSlackPortfolioAlertSettings(rawValue: string): SlackPortfolioAlertSettings {
+  const parsed = parseJsonConfig<Partial<SlackPortfolioAlertSettings>>(
+    rawValue,
+    DEFAULT_SLACK_PORTFOLIO_ALERT_SETTINGS,
+  )
+  const mode: SlackAlertMode = parsed.mode === 'advanced' ? 'advanced' : 'preset'
+  const preset = SLACK_ALERT_PRESET_OPTIONS.some((option) => option.key === parsed.preset)
+    ? (parsed.preset as SlackAlertPreset)
+    : 'daily_once'
+  const rawRules = Array.isArray(parsed.rules) ? parsed.rules : []
+  const normalizedRules = rawRules
+    .map((rule, index) => normalizeSlackAlertRule(rule, index))
+    .filter((rule): rule is SlackAlertRule => rule !== null)
+  return {
+    enabled: parsed.enabled ?? false,
+    mode,
+    preset,
+    rules: normalizedRules.length > 0 ? normalizedRules : buildPresetSlackAlertRules(preset),
+  }
+}
+
+function toggleArrayValue<T extends string>(values: T[], value: T, checked: boolean): T[] {
+  if (checked) {
+    return values.includes(value) ? values : [...values, value]
+  }
+  const nextValues = values.filter((item) => item !== value)
+  return nextValues.length > 0 ? nextValues : values
+}
+
 function resolveBuySafetyMode(draft: Pick<AiRuntimeDraft, 'liveBuyEnabled' | 'aiEntryShadowMode'>): BuySafetyMode {
   if (draft.aiEntryShadowMode) {
     return 'shadow'
@@ -324,6 +587,13 @@ function buildAiRuntimeDraft(items: SystemConfigItem[] | undefined): AiRuntimeDr
       findConfigValue(items, AI_PROVIDER_SETTINGS_KEY, stringifyJson(DEFAULT_AI_PROVIDER_SETTINGS)),
     ),
     aiProviderStatus: normalizeProviderStatus(findConfigValue(items, AI_PROVIDER_STATUS_KEY, '{}')),
+    slackPortfolioAlertSettings: normalizeSlackPortfolioAlertSettings(
+      findConfigValue(
+        items,
+        SLACK_PORTFOLIO_ALERT_SETTINGS_KEY,
+        stringifyJson(DEFAULT_SLACK_PORTFOLIO_ALERT_SETTINGS),
+      ),
+    ),
   }
 }
 
@@ -489,6 +759,215 @@ function ProviderRuntimeInsight({
   )
 }
 
+function SlackAlertRuleEditor({
+  rule,
+  ruleIndex,
+  mode,
+  onChange,
+  onRemove,
+}: {
+  rule: SlackAlertRule
+  ruleIndex: number
+  mode: SlackAlertMode
+  onChange: (rule: SlackAlertRule) => void
+  onRemove: () => void
+}) {
+  const updateTimes = (times: string[]) => {
+    onChange({
+      ...rule,
+      times: times
+        .map((time) => normalizeSlackAlertTime(time))
+        .filter((time): time is string => time !== null),
+    })
+  }
+
+  return (
+    <div className="rounded-lg border border-[#3b494b]/35 bg-[#0a0e14]/70 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <label className="inline-flex items-center gap-2 text-sm font-bold text-[#dfe2eb]">
+          <input
+            type="checkbox"
+            checked={rule.enabled}
+            onChange={(event) => onChange({ ...rule, enabled: event.target.checked })}
+            className="h-4 w-4 rounded border-[#3b494b] bg-[#10141a] text-[#00dbe9] focus:ring-[#00dbe9]/30"
+          />
+          알림 규칙 {ruleIndex + 1}
+        </label>
+        {mode === 'advanced' && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="inline-flex w-fit items-center gap-2 rounded-lg border border-[#ffb4ab]/35 bg-[#ffb4ab]/10 px-3 py-2 text-xs font-bold text-[#ffb4ab] transition hover:bg-[#ffb4ab]/16"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            삭제
+          </button>
+        )}
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(180px,260px)]">
+        <label className="block">
+          <span className={SETTINGS_LABEL_CLASS}>규칙 ID</span>
+          <input
+            value={rule.id}
+            disabled={mode === 'preset'}
+            onChange={(event) =>
+              onChange({ ...rule, id: sanitizeSlackRuleId(event.target.value, `rule_${ruleIndex + 1}`) })
+            }
+            className={SETTINGS_FIELD_CLASS}
+          />
+          <p className={SETTINGS_HINT_CLASS}>job id에 사용되는 영문/숫자 식별자입니다.</p>
+        </label>
+
+        <label className="block">
+          <span className={SETTINGS_LABEL_CLASS}>최소 확신도</span>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={rule.min_confidence}
+            onChange={(event) =>
+              onChange({ ...rule, min_confidence: normalizeSlackAlertConfidence(event.target.value) })
+            }
+            className={SETTINGS_FIELD_CLASS}
+          />
+          <p className={SETTINGS_HINT_CLASS}>관심종목 AI 신호 필터입니다.</p>
+        </label>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div>
+          <span className={SETTINGS_LABEL_CLASS}>요일</span>
+          <div className="grid grid-cols-7 gap-2">
+            {SLACK_ALERT_WEEKDAY_OPTIONS.map((option) => (
+              <label
+                key={option.key}
+                className={`flex cursor-pointer items-center justify-center rounded-lg border px-2 py-2 text-xs font-bold transition ${
+                  rule.weekdays.includes(option.key)
+                    ? 'border-[#00dbe9]/55 bg-[#00dbe9]/12 text-[#7df4ff]'
+                    : 'border-[#3b494b]/35 bg-[#10141a]/70 text-[#b9cacb]'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={rule.weekdays.includes(option.key)}
+                  onChange={(event) =>
+                    onChange({
+                      ...rule,
+                      weekdays: toggleArrayValue(rule.weekdays, option.key, event.target.checked),
+                    })
+                  }
+                  className="sr-only"
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between gap-3">
+            <span className={SETTINGS_LABEL_CLASS}>시간</span>
+            <button
+              type="button"
+              onClick={() => updateTimes([...rule.times, '09:00'])}
+              className="inline-flex items-center gap-1 rounded-lg bg-[#00dbe9]/12 px-2.5 py-1 text-xs font-bold text-[#7df4ff] transition hover:bg-[#00dbe9]/18"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              추가
+            </button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {rule.times.map((time, timeIndex) => (
+              <div key={`${rule.id}-${timeIndex}`} className="flex items-center gap-2">
+                <input
+                  type="time"
+                  value={time}
+                  onChange={(event) => {
+                    const nextTimes = rule.times.map((item, index) =>
+                      index === timeIndex ? event.target.value : item,
+                    )
+                    updateTimes(nextTimes)
+                  }}
+                  className={SETTINGS_FIELD_CLASS}
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    rule.times.length > 1 && updateTimes(rule.times.filter((_, index) => index !== timeIndex))
+                  }
+                  disabled={rule.times.length <= 1}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#3b494b]/45 text-[#b9cacb] transition hover:border-[#ffb4ab]/45 hover:text-[#ffb4ab] disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="시간 삭제"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div>
+          <span className={SETTINGS_LABEL_CLASS}>알림 종류</span>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {SLACK_ALERT_SECTION_OPTIONS.map((option) => (
+              <label key={option.key} className="inline-flex items-center gap-2 text-sm text-[#b9cacb]">
+                <input
+                  type="checkbox"
+                  checked={rule.sections.includes(option.key)}
+                  onChange={(event) =>
+                    onChange({
+                      ...rule,
+                      sections: toggleArrayValue(rule.sections, option.key, event.target.checked),
+                    })
+                  }
+                  className="h-4 w-4 rounded border-[#3b494b] bg-[#10141a] text-[#00dbe9] focus:ring-[#00dbe9]/30"
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <span className={SETTINGS_LABEL_CLASS}>AI 신호</span>
+          <div className="grid grid-cols-3 gap-2">
+            {SLACK_ALERT_DECISION_OPTIONS.map((option) => (
+              <label
+                key={option.key}
+                className={`flex cursor-pointer items-center justify-center rounded-lg border px-3 py-2 text-xs font-bold transition ${
+                  rule.signal_decisions.includes(option.key)
+                    ? 'border-[#cdbdff]/55 bg-[#cdbdff]/12 text-[#cdbdff]'
+                    : 'border-[#3b494b]/35 bg-[#10141a]/70 text-[#b9cacb]'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={rule.signal_decisions.includes(option.key)}
+                  onChange={(event) =>
+                    onChange({
+                      ...rule,
+                      signal_decisions: toggleArrayValue(
+                        rule.signal_decisions,
+                        option.key,
+                        event.target.checked,
+                      ),
+                    })
+                  }
+                  className="sr-only"
+                />
+                {option.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AiRuntimeSettingsPanel() {
   const systemConfigsQuery = useSystemConfigs()
   const aiProviderRuntimeStatusQuery = useAiProviderRuntimeStatus()
@@ -580,6 +1059,59 @@ function AiRuntimeSettingsPanel() {
     setNotice({ type: 'info', message: '차단 상태 초기화가 대기 중입니다. 저장하면 즉시 반영됩니다.' })
   }
 
+  const setSlackAlertSettings = (settings: SlackPortfolioAlertSettings) => {
+    setDraftValue('slackPortfolioAlertSettings', settings)
+  }
+
+  const updateSlackAlertRule = (ruleIndex: number, nextRule: SlackAlertRule) => {
+    setSlackAlertSettings({
+      ...draft.slackPortfolioAlertSettings,
+      rules: draft.slackPortfolioAlertSettings.rules.map((rule, index) =>
+        index === ruleIndex ? nextRule : rule,
+      ),
+    })
+  }
+
+  const setSlackAlertMode = (mode: SlackAlertMode) => {
+    const presetRules = buildPresetSlackAlertRules(
+      draft.slackPortfolioAlertSettings.preset,
+      draft.slackPortfolioAlertSettings.rules[0],
+    )
+    setSlackAlertSettings({
+      ...draft.slackPortfolioAlertSettings,
+      mode,
+      rules: mode === 'preset' ? presetRules : draft.slackPortfolioAlertSettings.rules,
+    })
+  }
+
+  const setSlackAlertPreset = (preset: SlackAlertPreset) => {
+    setSlackAlertSettings({
+      ...draft.slackPortfolioAlertSettings,
+      mode: 'preset',
+      preset,
+      rules: buildPresetSlackAlertRules(preset, draft.slackPortfolioAlertSettings.rules[0]),
+    })
+  }
+
+  const addSlackAlertRule = () => {
+    setSlackAlertSettings({
+      ...draft.slackPortfolioAlertSettings,
+      mode: 'advanced',
+      rules: [
+        ...draft.slackPortfolioAlertSettings.rules,
+        createSlackAlertRule(draft.slackPortfolioAlertSettings.rules.length),
+      ],
+    })
+  }
+
+  const removeSlackAlertRule = (ruleIndex: number) => {
+    const nextRules = draft.slackPortfolioAlertSettings.rules.filter((_, index) => index !== ruleIndex)
+    setSlackAlertSettings({
+      ...draft.slackPortfolioAlertSettings,
+      rules: nextRules.length > 0 ? nextRules : [createSlackAlertRule(0)],
+    })
+  }
+
   const handleSave = async () => {
     const updates: SystemConfigUpdateItem[] = []
 
@@ -659,6 +1191,16 @@ function AiRuntimeSettingsPanel() {
       updates.push({
         config_key: AI_PROVIDER_STATUS_KEY,
         config_value: stringifyJson(draft.aiProviderStatus),
+      })
+    }
+
+    if (
+      stringifyJson(draft.slackPortfolioAlertSettings) !==
+      stringifyJson(serverDraft.slackPortfolioAlertSettings)
+    ) {
+      updates.push({
+        config_key: SLACK_PORTFOLIO_ALERT_SETTINGS_KEY,
+        config_value: stringifyJson(draft.slackPortfolioAlertSettings),
       })
     }
 
@@ -1104,6 +1646,95 @@ function AiRuntimeSettingsPanel() {
               />
               <p className={SETTINGS_HINT_CLASS}>예: 08:30</p>
             </label>
+
+            <div className={SETTINGS_PANEL_CLASS}>
+              <div className="flex flex-col gap-3 border-b border-[#3b494b]/35 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-[#dfe2eb]">Slack 포트폴리오 알림</h3>
+                    <InfoTooltip
+                      title="Slack 포트폴리오 알림"
+                      content="포트폴리오, 공포지수, 관심종목 AI 신호를 선택한 반복 규칙에 맞춰 Slack 채널로 보냅니다."
+                    />
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-[#b9cacb]">
+                    빠른 설정은 대표 반복 패턴을 바로 만들고, 고급 설정은 규칙별 요일·시간·알림 종류를 따로 지정합니다.
+                  </p>
+                </div>
+                <label className="inline-flex items-center gap-2 text-sm font-bold text-[#dfe2eb]">
+                  <input
+                    type="checkbox"
+                    checked={draft.slackPortfolioAlertSettings.enabled}
+                    onChange={(event) =>
+                      setSlackAlertSettings({
+                        ...draft.slackPortfolioAlertSettings,
+                        enabled: event.target.checked,
+                      })
+                    }
+                    className="h-4 w-4 rounded border-[#3b494b] bg-[#10141a] text-[#00dbe9] focus:ring-[#00dbe9]/30"
+                  />
+                  알림 사용
+                </label>
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                <label className="block">
+                  <span className={SETTINGS_LABEL_CLASS}>설정 방식</span>
+                  <select
+                    value={draft.slackPortfolioAlertSettings.mode}
+                    onChange={(event) => setSlackAlertMode(event.target.value as SlackAlertMode)}
+                    className={SETTINGS_FIELD_CLASS}
+                  >
+                    <option value="preset">빠른 설정</option>
+                    <option value="advanced">고급 설정</option>
+                  </select>
+                </label>
+
+                {draft.slackPortfolioAlertSettings.mode === 'preset' ? (
+                  <label className="block">
+                    <span className={SETTINGS_LABEL_CLASS}>프리셋</span>
+                    <select
+                      value={draft.slackPortfolioAlertSettings.preset}
+                      onChange={(event) => setSlackAlertPreset(event.target.value as SlackAlertPreset)}
+                      className={SETTINGS_FIELD_CLASS}
+                    >
+                      {SLACK_ALERT_PRESET_OPTIONS.map((option) => (
+                        <option key={option.key} value={option.key}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className={SETTINGS_HINT_CLASS}>
+                      프리셋도 아래 규칙 카드에서 시간과 알림 종류를 조정할 수 있습니다.
+                    </p>
+                  </label>
+                ) : (
+                  <div className="flex items-end justify-start">
+                    <button
+                      type="button"
+                      onClick={addSlackAlertRule}
+                      className={SETTINGS_SECONDARY_BUTTON_CLASS}
+                    >
+                      <Plus className="h-4 w-4" />
+                      알림 규칙 추가
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {draft.slackPortfolioAlertSettings.rules.map((rule, ruleIndex) => (
+                  <SlackAlertRuleEditor
+                    key={`${rule.id}-${ruleIndex}`}
+                    rule={rule}
+                    ruleIndex={ruleIndex}
+                    mode={draft.slackPortfolioAlertSettings.mode}
+                    onChange={(nextRule) => updateSlackAlertRule(ruleIndex, nextRule)}
+                    onRemove={() => removeSlackAlertRule(ruleIndex)}
+                  />
+                ))}
+              </div>
+            </div>
 
             <div className={SETTINGS_PANEL_CLASS}>
               <div className="flex flex-col gap-3 border-b border-[#3b494b]/35 pb-4">
