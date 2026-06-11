@@ -19,6 +19,7 @@ class SlackBot:
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self._fallback_client: Any | None = None
+        self._stop_event = threading.Event()
 
     @property
     def _bot_token(self) -> str:
@@ -54,6 +55,7 @@ class SlackBot:
             if not self._ensure_initialized():
                 return
 
+            self._stop_event.clear()
             self._thread = threading.Thread(
                 target=self._run,
                 name="slack-bolt-socket",
@@ -66,25 +68,23 @@ class SlackBot:
         with self._lock:
             handler = self._handler
             thread = self._thread
-            self._thread = None
-
-        if handler is not None:
-            close_method = getattr(handler, "close", None)
-            if callable(close_method):
-                try:
-                    close_method()
-                except Exception:
-                    logger.exception("SlackBot Socket Mode 종료 중 오류가 발생했습니다.")
+            self._stop_event.set()
 
         if thread is not None and thread.is_alive():
             thread.join(timeout=timeout)
             if thread.is_alive():
                 logger.warning("SlackBot 스레드가 timeout 내 종료되지 않았습니다.")
+                self._close_handler(handler)
+        elif handler is not None:
+            self._close_handler(handler)
 
         with self._lock:
-            self._handler = None
-            self._app = None
-            self._fallback_client = None
+            if self._thread is thread:
+                self._thread = None
+            if thread is None or not thread.is_alive():
+                self._handler = None
+                self._app = None
+                self._fallback_client = None
 
     def send_message(
         self,
@@ -120,12 +120,35 @@ class SlackBot:
             return
 
         try:
-            handler.start()
+            connect_method = getattr(handler, "connect", None)
+            if not callable(connect_method):
+                raise RuntimeError("Slack SocketModeHandler does not provide connect().")
+            connect_method()
+            self._stop_event.wait()
         except Exception:
             logger.exception("SlackBot Socket Mode 실행 중 오류가 발생했습니다.")
         finally:
+            self._close_handler(handler)
             with self._lock:
                 self._thread = None
+
+    def _close_handler(self, handler: Any | None) -> None:
+        if handler is None:
+            return
+
+        disconnect_method = getattr(handler, "disconnect", None)
+        if callable(disconnect_method):
+            try:
+                disconnect_method()
+            except Exception:
+                logger.exception("SlackBot Socket Mode 연결 해제 중 오류가 발생했습니다.")
+
+        close_method = getattr(handler, "close", None)
+        if callable(close_method):
+            try:
+                close_method()
+            except Exception:
+                logger.exception("SlackBot Socket Mode 종료 중 오류가 발생했습니다.")
 
     def _ensure_initialized(self) -> bool:
         if self._handler is not None and self._app is not None:
