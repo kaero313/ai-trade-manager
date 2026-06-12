@@ -235,3 +235,9 @@ LangGraph 멀티에이전트 채팅 대화 내역 영구 저장.
 - `system_configs.slack_portfolio_alert_settings` JSON 하나에 `enabled`, `mode`, `preset`, `rules`를 저장합니다.
 - rule은 요일, 시간, 알림 섹션, BUY/SELL/HOLD 필터, 최소 확신도를 포함하며 APScheduler job으로 정규화됩니다.
 - 가격 영향 뉴스 Top3는 별도 DB 테이블 없이 OpenSearch `market_news` 캐시를 조회합니다.
+
+## RAG ?? ?? ??
+- PostgreSQL/Alembic ??? ??? ????.
+- `system_configs.rag_scheduled_openai_translation_fallback_enabled`? ?? RAG ??? OpenAI ?? fallback ?? ??? ?????.
+- `system_configs.rag_buy_precheck_news_refresh_enabled`? `system_configs.rag_buy_precheck_news_max_age_minutes`? BUY ?? ?? ??? ?? ??? ?? ??? ?????.
+- OpenSearch `market_news_ingestion_runs`? `context`? `translation_openai_fallback_allowed`? ????? ?????.

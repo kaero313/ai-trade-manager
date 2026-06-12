@@ -28,10 +28,9 @@ from app.models.domain import AIAnalysisLog
 from app.models.domain import Favorite
 from app.services.market.sentiment_fetcher import refresh_market_sentiment_cache
 from app.services.portfolio.aggregator import PortfolioService
-from app.services.rag.ingestion import run_market_news_ingestion_job
 from app.services.rag.opensearch_client import INDEX_NAME
 from app.services.rag.opensearch_client import get_opensearch_client
-from app.services.ai.providers.gemini import AIProviderRateLimitError
+from app.services.ai.providers.base import AIProviderRateLimitError
 from app.services.bot_service import update_bot_runtime_status
 from app.services.trading.accuracy_worker import update_ai_analysis_accuracy
 from app.services.trading.ai_analyst import execute_ai_analysis
@@ -53,7 +52,7 @@ PORTFOLIO_SNAPSHOT_JOB_ID = "portfolio_snapshot_hourly"
 SLACK_PORTFOLIO_ALERT_JOB_PREFIX = "slack_portfolio_alert"
 DEFAULT_PROVIDER = "auto"
 
-DEFAULT_NEWS_INTERVAL_HOURS = 4
+DEFAULT_NEWS_INTERVAL_HOURS = 12
 DEFAULT_SENTIMENT_INTERVAL_MINUTES = 5
 DEFAULT_AI_BRIEFING_HOUR = 8
 DEFAULT_AI_BRIEFING_MINUTE = 30
@@ -119,6 +118,14 @@ SLACK_ALERT_PRESET_TIMES: dict[str, list[str]] = {
 
 scheduler = AsyncIOScheduler(timezone=SCHEDULER_TIMEZONE)
 _scheduler_loop: asyncio.AbstractEventLoop | None = None
+
+
+async def run_market_news_ingestion_job() -> dict[str, Any]:
+    from app.services.rag.ingestion import (
+        run_market_news_ingestion_job as _run_market_news_ingestion_job,
+    )
+
+    return await _run_market_news_ingestion_job()
 
 
 @dataclass(slots=True)

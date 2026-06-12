@@ -23,11 +23,10 @@ from pydantic import BaseModel, Field
 from app.core.config import settings
 from app.db.repository import AI_PROVIDER_SETTINGS_KEY
 from app.db.repository import DEFAULT_AI_PROVIDER_SETTINGS_VALUE
+from app.db.repository import RAG_SCHEDULED_OPENAI_TRANSLATION_FALLBACK_ENABLED_KEY
 from app.db.repository import get_system_config_value
 from app.db.session import AsyncSessionLocal
 from app.services.ai.providers.base import AIProviderRateLimitError
-from app.services.ai.providers.gemini import GEMINI_EMBEDDING_MODEL, GEMINI_TEXT_MODEL, GeminiAnalyzer
-from app.services.ai.providers.openai import OPENAI_EMBEDDING_MODEL, OPENAI_TEXT_MODEL, OpenAIAnalyzer
 from app.services.news_scraper import RSS_FEED_URLS
 from app.services.rag.opensearch_client import (
     EMBEDDING_DIMENSION,
@@ -39,6 +38,13 @@ from app.services.rag.opensearch_client import (
 )
 
 logger = logging.getLogger(__name__)
+
+GEMINI_TEXT_MODEL = "gemini-3-flash-preview"
+GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
+OPENAI_TEXT_MODEL = "gpt-5-nano"
+OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+GeminiAnalyzer: Any = None
+OpenAIAnalyzer: Any = None
 
 CRYPTO_PANIC_ENDPOINT = "https://cryptopanic.com/api/v1/posts/"
 NAVER_NEWS_ENDPOINT = "https://openapi.naver.com/v1/search/news.json"
@@ -75,6 +81,10 @@ TRANSLATION_ERROR_CREDENTIALS_MISSING = "credentials_missing"
 TRANSLATION_ERROR_RATE_LIMITED = "rate_limited"
 TRANSLATION_ERROR_GENERATION_FAILED = "generation_failed"
 TRANSLATION_SEGMENT_MAX_CHARS = 2500
+INGESTION_CONTEXT_SCHEDULED = "scheduled"
+INGESTION_CONTEXT_BUY_PRECHECK = "buy_precheck"
+DEFAULT_SCHEDULED_OPENAI_TRANSLATION_FALLBACK_ENABLED = False
+DEFAULT_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES = 60
 NEWS_HTTP_TIMEOUT = 10.0
 RSS_FETCH_LIMIT_PER_FEED = 8
 RSS_FETCH_LIMIT_TOTAL = 32
@@ -1064,6 +1074,39 @@ def _translation_credentials_available(provider: str) -> bool:
     return _embedding_credentials_available(provider)
 
 
+def _parse_bool_config(raw_value: str | None, *, default: bool) -> bool:
+    normalized = str(raw_value or "").strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
+def _parse_int_config(
+    raw_value: str | None,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        value = int(str(raw_value).strip())
+    except (TypeError, ValueError, AttributeError):
+        return default
+    return max(minimum, min(value, maximum))
+
+
+async def _load_bool_system_config(key: str, *, default: bool) -> bool:
+    try:
+        async with AsyncSessionLocal() as db:
+            raw_value = await get_system_config_value(db, key, str(default).lower())
+    except Exception:
+        logger.warning("RAG bool 설정을 불러오지 못해 기본값을 사용합니다: key=%s", key, exc_info=True)
+        return default
+    return _parse_bool_config(raw_value, default=default)
+
+
 async def _load_translation_model_overrides() -> dict[str, str]:
     try:
         async with AsyncSessionLocal() as db:
@@ -1109,14 +1152,32 @@ def _translation_model_for_provider(
     return GEMINI_TEXT_MODEL
 
 
+def _resolve_gemini_analyzer_class() -> Any:
+    global GeminiAnalyzer
+    if GeminiAnalyzer is None:
+        from app.services.ai.providers.gemini import GeminiAnalyzer as _GeminiAnalyzer
+
+        GeminiAnalyzer = _GeminiAnalyzer
+    return GeminiAnalyzer
+
+
+def _resolve_openai_analyzer_class() -> Any:
+    global OpenAIAnalyzer
+    if OpenAIAnalyzer is None:
+        from app.services.ai.providers.openai import OpenAIAnalyzer as _OpenAIAnalyzer
+
+        OpenAIAnalyzer = _OpenAIAnalyzer
+    return OpenAIAnalyzer
+
+
 def _build_translation_analyzer(
     provider: str,
     model_overrides: dict[str, str] | None = None,
 ) -> GeminiAnalyzer | OpenAIAnalyzer:
     model = _translation_model_for_provider(provider, model_overrides)
     if provider == TRANSLATION_PROVIDER_OPENAI:
-        return OpenAIAnalyzer(model=model)
-    return GeminiAnalyzer(model=model)
+        return _resolve_openai_analyzer_class()(model=model)
+    return _resolve_gemini_analyzer_class()(model=model)
 
 
 def _split_translation_segments(content: str) -> list[str]:
@@ -1264,6 +1325,7 @@ async def _translate_news_documents(
     documents: list[RawNewsDocument],
     *,
     model_overrides: dict[str, str] | None = None,
+    allow_openai_fallback: bool = True,
 ) -> tuple[list[RawNewsDocument], dict[str, Any]]:
     stats: dict[str, Any] = {
         "translation_requested": 0,
@@ -1280,7 +1342,11 @@ async def _translate_news_documents(
     provider_errors: Counter[str] = Counter()
     provider_stats: dict[str, dict[str, Any]] = {}
     translated_documents: list[RawNewsDocument] = []
-    providers = (TRANSLATION_PROVIDER_GEMINI, TRANSLATION_PROVIDER_OPENAI)
+    providers = (
+        (TRANSLATION_PROVIDER_GEMINI, TRANSLATION_PROVIDER_OPENAI)
+        if allow_openai_fallback
+        else (TRANSLATION_PROVIDER_GEMINI,)
+    )
 
     for document in documents:
         if _is_fallback_document(document):
@@ -1347,8 +1413,8 @@ async def _translate_news_documents(
 
 def _build_embedding_analyzer(provider: str) -> GeminiAnalyzer | OpenAIAnalyzer:
     if provider == EMBEDDING_PROVIDER_OPENAI:
-        return OpenAIAnalyzer()
-    return GeminiAnalyzer()
+        return _resolve_openai_analyzer_class()()
+    return _resolve_gemini_analyzer_class()()
 
 
 def _embedding_model_for_provider(provider: str) -> str:
@@ -2091,6 +2157,7 @@ async def _store_ingestion_run(
     client = get_opensearch_client()
     payload: dict[str, Any] = {
         "run_id": run_id,
+        "context": stats.get("context"),
         "started_at": started_at.isoformat(),
         "finished_at": finished_at.isoformat(),
         "status": _resolve_ingestion_run_status(stats, source_health),
@@ -2121,6 +2188,9 @@ async def _store_ingestion_run(
         "translation_failed": stats["translation_failed"],
         "translation_skipped": stats["translation_skipped"],
         "translation_error": stats["translation_error"],
+        "translation_openai_fallback_allowed": stats[
+            "translation_openai_fallback_allowed"
+        ],
         "translation_provider_error_breakdown": stats["translation_provider_error_breakdown"],
         "translation_provider_stats": stats["translation_provider_stats"],
         "backfill_requested": stats["backfill_requested"],
@@ -2140,11 +2210,139 @@ async def _store_ingestion_run(
     await _delete_expired_ingestion_runs()
 
 
-async def run_market_news_ingestion_job() -> dict[str, Any]:
+def _normalize_ingestion_context(context: str) -> str:
+    if context == INGESTION_CONTEXT_BUY_PRECHECK:
+        return INGESTION_CONTEXT_BUY_PRECHECK
+    return INGESTION_CONTEXT_SCHEDULED
+
+
+def _parse_ingestion_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _summarize_ingestion_run(payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not payload:
+        return None
+    return {
+        "run_id": payload.get("run_id"),
+        "context": payload.get("context"),
+        "finished_at": payload.get("finished_at"),
+        "status": payload.get("status"),
+        "indexed": payload.get("indexed"),
+        "translation_succeeded": payload.get("translation_succeeded"),
+        "translation_failed": payload.get("translation_failed"),
+        "translation_openai_fallback_allowed": payload.get(
+            "translation_openai_fallback_allowed"
+        ),
+    }
+
+
+async def _fetch_latest_ingestion_run() -> dict[str, Any] | None:
+    try:
+        client = get_opensearch_client()
+        if not await client.indices.exists(index=INGESTION_RUNS_INDEX_NAME):
+            return None
+        response = await client.search(
+            index=INGESTION_RUNS_INDEX_NAME,
+            body={
+                "size": 1,
+                "sort": [{"finished_at": {"order": "desc", "missing": "_last"}}],
+            },
+        )
+    except Exception:
+        logger.warning("Failed to load latest market_news ingestion run.", exc_info=True)
+        return None
+
+    hits = response.get("hits", {}).get("hits", [])
+    if not hits:
+        return None
+    source = hits[0].get("_source")
+    return source if isinstance(source, dict) else None
+
+
+async def refresh_market_news_for_buy_precheck_if_stale(
+    *,
+    max_age_minutes: int = DEFAULT_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES,
+) -> dict[str, Any]:
+    max_age_minutes = _parse_int_config(
+        str(max_age_minutes),
+        default=DEFAULT_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES,
+        minimum=1,
+        maximum=24 * 60,
+    )
+    latest = await _fetch_latest_ingestion_run()
+    latest_at = _parse_ingestion_datetime((latest or {}).get("finished_at"))
+    latest_summary = _summarize_ingestion_run(latest)
+    now = datetime.now(UTC)
+    if latest_at and latest_at >= now - timedelta(minutes=max_age_minutes):
+        return {
+            "enabled": True,
+            "refreshed": False,
+            "reason": "fresh",
+            "max_age_minutes": max_age_minutes,
+            "latest_ingestion": latest_summary,
+        }
+
+    try:
+        stats = await run_market_news_ingestion_job(
+            context=INGESTION_CONTEXT_BUY_PRECHECK,
+            allow_openai_translation_fallback=True,
+        )
+    except Exception as exc:
+        logger.warning("BUY precheck market_news refresh failed: %s", exc, exc_info=True)
+        return {
+            "enabled": True,
+            "refreshed": False,
+            "reason": "refresh_failed",
+            "error": str(exc)[:240],
+            "max_age_minutes": max_age_minutes,
+            "latest_ingestion": latest_summary,
+        }
+
+    return {
+        "enabled": True,
+        "refreshed": True,
+        "reason": "stale_or_missing",
+        "max_age_minutes": max_age_minutes,
+        "latest_ingestion": _summarize_ingestion_run(stats),
+    }
+
+
+async def run_market_news_ingestion_job(
+    *,
+    context: str = INGESTION_CONTEXT_SCHEDULED,
+    allow_openai_translation_fallback: bool | None = None,
+) -> dict[str, Any]:
     run_id = uuid4().hex
     started_at = datetime.now(UTC)
+    normalized_context = _normalize_ingestion_context(context)
+    if allow_openai_translation_fallback is None:
+        if normalized_context == INGESTION_CONTEXT_BUY_PRECHECK:
+            allow_openai_translation_fallback = True
+        else:
+            allow_openai_translation_fallback = await _load_bool_system_config(
+                RAG_SCHEDULED_OPENAI_TRANSLATION_FALLBACK_ENABLED_KEY,
+                default=DEFAULT_SCHEDULED_OPENAI_TRANSLATION_FALLBACK_ENABLED,
+            )
     source_health: list[SourceHealth] = []
     stats = {
+        "run_id": run_id,
+        "context": normalized_context,
+        "started_at": started_at.isoformat(),
+        "finished_at": None,
+        "translation_openai_fallback_allowed": bool(allow_openai_translation_fallback),
         "fetched": 0,
         "indexed": 0,
         "deleted": 0,
@@ -2219,6 +2417,7 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
         documents, translation_stats = await _translate_news_documents(
             documents,
             model_overrides=translation_model_overrides,
+            allow_openai_fallback=bool(allow_openai_translation_fallback),
         )
         stats.update(translation_stats)
         chunks = _build_news_chunks(documents)
@@ -2267,10 +2466,12 @@ async def run_market_news_ingestion_job() -> dict[str, Any]:
                 logger.exception("Failed to delete expired market_news documents.")
                 stats["errors"] += 1
         try:
+            finished_at = datetime.now(UTC)
+            stats["finished_at"] = finished_at.isoformat()
             await _store_ingestion_run(
                 run_id=run_id,
                 started_at=started_at,
-                finished_at=datetime.now(UTC),
+                finished_at=finished_at,
                 stats=stats,
                 source_health=source_health,
             )

@@ -39,6 +39,11 @@ AI_ENTRY_SCORE_THRESHOLD_KEY = "ai_entry_score_threshold"
 AI_ENTRY_SHADOW_MODE_KEY = "ai_entry_shadow_mode"
 AI_CALIBRATION_MIN_SUCCESS_RATE_KEY = "ai_calibration_min_success_rate"
 AI_MAX_CONCURRENT_POSITIONS_KEY = "ai_max_concurrent_positions"
+RAG_SCHEDULED_OPENAI_TRANSLATION_FALLBACK_ENABLED_KEY = (
+    "rag_scheduled_openai_translation_fallback_enabled"
+)
+RAG_BUY_PRECHECK_NEWS_REFRESH_ENABLED_KEY = "rag_buy_precheck_news_refresh_enabled"
+RAG_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES_KEY = "rag_buy_precheck_news_max_age_minutes"
 AI_PROVIDER_PRIORITY_KEY = "ai_provider_priority"
 AI_PROVIDER_SETTINGS_KEY = "ai_provider_settings"
 AI_PROVIDER_STATUS_KEY = "ai_provider_status"
@@ -93,7 +98,7 @@ DEFAULT_SLACK_PORTFOLIO_ALERT_SETTINGS_VALUE = json.dumps(
 SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     {
         "config_key": NEWS_INTERVAL_HOURS_KEY,
-        "config_value": "4",
+        "config_value": "12",
         "description": "시장 뉴스 수집 주기(시간)",
     },
     {
@@ -195,6 +200,21 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
         "config_key": AI_MAX_CONCURRENT_POSITIONS_KEY,
         "config_value": "2",
         "description": "AI 자동매매 동시 보유 종목 수 상한",
+    },
+    {
+        "config_key": RAG_SCHEDULED_OPENAI_TRANSLATION_FALLBACK_ENABLED_KEY,
+        "config_value": "false",
+        "description": "정기 RAG 수집에서 OpenAI 뉴스 번역 fallback 허용 여부",
+    },
+    {
+        "config_key": RAG_BUY_PRECHECK_NEWS_REFRESH_ENABLED_KEY,
+        "config_value": "true",
+        "description": "BUY 직전 2차 검증 전 RAG 뉴스 최신화 여부",
+    },
+    {
+        "config_key": RAG_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES_KEY,
+        "config_value": "60",
+        "description": "BUY 직전 뉴스 최신성 허용 시간(분)",
     },
     {
         "config_key": AI_PROVIDER_PRIORITY_KEY,

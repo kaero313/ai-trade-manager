@@ -629,6 +629,46 @@ def test_translate_news_documents_uses_openai_fallback_when_gemini_rate_limited(
     assert stats["translation_provider_stats"]["openai"]["documents_succeeded"] == 1
 
 
+def test_translate_news_documents_blocks_openai_fallback_when_disabled(monkeypatch) -> None:
+    class FakeGeminiAnalyzer:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def generate_structured_analysis(self, **kwargs: object) -> rag_ingestion.TranslatedNewsPayload:
+            raise rag_ingestion.AIProviderRateLimitError("quota", provider="gemini")
+
+        async def aclose(self) -> None:
+            pass
+
+    class UnexpectedOpenAIAnalyzer:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            raise AssertionError("OpenAI fallback must not run during scheduled cost guard")
+
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-gemini")
+    monkeypatch.setattr(rag_ingestion.settings, "OPENAI_API_KEY", "test-openai")
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", FakeGeminiAnalyzer)
+    monkeypatch.setattr(rag_ingestion, "OpenAIAnalyzer", UnexpectedOpenAIAnalyzer)
+    document = rag_ingestion.RawNewsDocument(
+        title="Bitcoin liquidity improves",
+        content="Institutional inflows improved market sentiment.",
+        published_at=datetime(2026, 5, 6, 3, 0, tzinfo=UTC),
+        source="rss:example.com",
+        link="https://example.com/news/no-openai-fallback",
+    )
+
+    documents, stats = asyncio.run(
+        rag_ingestion._translate_news_documents([document], allow_openai_fallback=False)
+    )
+
+    assert documents[0].title == document.title
+    assert documents[0].translation_status == "failed"
+    assert documents[0].translation_error == "rate_limited"
+    assert stats["translation_succeeded"] == 0
+    assert stats["translation_failed"] == 1
+    assert stats["translation_provider_error_breakdown"] == {"gemini:rate_limited": 1}
+    assert "openai" not in stats["translation_provider_stats"]
+
+
 def test_translate_news_documents_keeps_original_when_all_providers_fail(monkeypatch) -> None:
     class FailingAnalyzer:
         def __init__(self, *args: object, **kwargs: object) -> None:

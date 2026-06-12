@@ -62,6 +62,7 @@ INGESTION_RUNS_INDEX_BODY = {
     "mappings": {
         "properties": {
             "run_id": {"type": "keyword"},
+            "context": {"type": "keyword"},
             "started_at": {"type": "date"},
             "finished_at": {"type": "date"},
             "status": {"type": "keyword"},
@@ -92,6 +93,7 @@ INGESTION_RUNS_INDEX_BODY = {
             "translation_failed": {"type": "integer"},
             "translation_skipped": {"type": "integer"},
             "translation_error": {"type": "keyword"},
+            "translation_openai_fallback_allowed": {"type": "boolean"},
             "translation_provider_error_breakdown": {"type": "object"},
             "translation_provider_stats": {"type": "object"},
             "backfill_requested": {"type": "integer"},

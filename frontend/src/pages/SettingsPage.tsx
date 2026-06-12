@@ -16,6 +16,7 @@ import type {
 } from '../services/api'
 
 interface AiRuntimeDraft {
+  newsIntervalHours: string
   autonomousAiIntervalMinutes: string
   maxAllocationPct: string
   hardTakeProfitPct: string
@@ -25,6 +26,9 @@ interface AiRuntimeDraft {
   aiAnalysisMaxAgeMinutes: string
   liveBuyEnabled: boolean
   aiEntryShadowMode: boolean
+  ragScheduledOpenaiTranslationFallbackEnabled: boolean
+  ragBuyPrecheckNewsRefreshEnabled: boolean
+  ragBuyPrecheckNewsMaxAgeMinutes: string
   aiCustomPersonaPrompt: string
   aiProviderPriority: AiProviderName[]
   aiProviderSettings: AiProviderSettings
@@ -97,6 +101,7 @@ interface SlackPortfolioAlertSettings {
 }
 
 const AUTONOMOUS_AI_INTERVAL_MINUTES_KEY = 'autonomous_ai_interval_minutes'
+const NEWS_INTERVAL_HOURS_KEY = 'news_interval_hours'
 const MAX_ALLOCATION_PCT_KEY = 'max_allocation_pct'
 const HARD_TAKE_PROFIT_PCT_KEY = 'hard_take_profit_pct'
 const HARD_STOP_LOSS_PCT_KEY = 'hard_stop_loss_pct'
@@ -105,6 +110,10 @@ const AI_MIN_CONFIDENCE_TRADE_KEY = 'ai_min_confidence_trade'
 const AI_ANALYSIS_MAX_AGE_MINUTES_KEY = 'ai_analysis_max_age_minutes'
 const LIVE_BUY_ENABLED_KEY = 'live_buy_enabled'
 const AI_ENTRY_SHADOW_MODE_KEY = 'ai_entry_shadow_mode'
+const RAG_SCHEDULED_OPENAI_TRANSLATION_FALLBACK_ENABLED_KEY =
+  'rag_scheduled_openai_translation_fallback_enabled'
+const RAG_BUY_PRECHECK_NEWS_REFRESH_ENABLED_KEY = 'rag_buy_precheck_news_refresh_enabled'
+const RAG_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES_KEY = 'rag_buy_precheck_news_max_age_minutes'
 const AI_CUSTOM_PERSONA_PROMPT_KEY = 'ai_custom_persona_prompt'
 const AI_PROVIDER_PRIORITY_KEY = 'ai_provider_priority'
 const AI_PROVIDER_SETTINGS_KEY = 'ai_provider_settings'
@@ -570,6 +579,7 @@ function stringifyBooleanConfig(value: boolean): string {
 
 function buildAiRuntimeDraft(items: SystemConfigItem[] | undefined): AiRuntimeDraft {
   return {
+    newsIntervalHours: findConfigValue(items, NEWS_INTERVAL_HOURS_KEY, '12'),
     autonomousAiIntervalMinutes: findConfigValue(items, AUTONOMOUS_AI_INTERVAL_MINUTES_KEY, '15'),
     maxAllocationPct: findConfigValue(items, MAX_ALLOCATION_PCT_KEY, '10'),
     hardTakeProfitPct: findConfigValue(items, HARD_TAKE_PROFIT_PCT_KEY, '5.0'),
@@ -579,6 +589,19 @@ function buildAiRuntimeDraft(items: SystemConfigItem[] | undefined): AiRuntimeDr
     aiAnalysisMaxAgeMinutes: findConfigValue(items, AI_ANALYSIS_MAX_AGE_MINUTES_KEY, '90'),
     liveBuyEnabled: parseBooleanConfig(findConfigValue(items, LIVE_BUY_ENABLED_KEY, 'false'), false),
     aiEntryShadowMode: parseBooleanConfig(findConfigValue(items, AI_ENTRY_SHADOW_MODE_KEY, 'true'), true),
+    ragScheduledOpenaiTranslationFallbackEnabled: parseBooleanConfig(
+      findConfigValue(items, RAG_SCHEDULED_OPENAI_TRANSLATION_FALLBACK_ENABLED_KEY, 'false'),
+      false,
+    ),
+    ragBuyPrecheckNewsRefreshEnabled: parseBooleanConfig(
+      findConfigValue(items, RAG_BUY_PRECHECK_NEWS_REFRESH_ENABLED_KEY, 'true'),
+      true,
+    ),
+    ragBuyPrecheckNewsMaxAgeMinutes: findConfigValue(
+      items,
+      RAG_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES_KEY,
+      '60',
+    ),
     aiCustomPersonaPrompt: findConfigValue(items, AI_CUSTOM_PERSONA_PROMPT_KEY, ''),
     aiProviderPriority: normalizeProviderPriority(
       findConfigValue(items, AI_PROVIDER_PRIORITY_KEY, stringifyJson(DEFAULT_AI_PROVIDER_PRIORITY)),
@@ -1115,6 +1138,12 @@ function AiRuntimeSettingsPanel() {
   const handleSave = async () => {
     const updates: SystemConfigUpdateItem[] = []
 
+    if (draft.newsIntervalHours !== serverDraft.newsIntervalHours) {
+      updates.push({
+        config_key: NEWS_INTERVAL_HOURS_KEY,
+        config_value: draft.newsIntervalHours,
+      })
+    }
     if (draft.autonomousAiIntervalMinutes !== serverDraft.autonomousAiIntervalMinutes) {
       updates.push({
         config_key: AUTONOMOUS_AI_INTERVAL_MINUTES_KEY,
@@ -1155,6 +1184,27 @@ function AiRuntimeSettingsPanel() {
       updates.push({
         config_key: AI_ANALYSIS_MAX_AGE_MINUTES_KEY,
         config_value: draft.aiAnalysisMaxAgeMinutes,
+      })
+    }
+    if (
+      draft.ragScheduledOpenaiTranslationFallbackEnabled !==
+      serverDraft.ragScheduledOpenaiTranslationFallbackEnabled
+    ) {
+      updates.push({
+        config_key: RAG_SCHEDULED_OPENAI_TRANSLATION_FALLBACK_ENABLED_KEY,
+        config_value: stringifyBooleanConfig(draft.ragScheduledOpenaiTranslationFallbackEnabled),
+      })
+    }
+    if (draft.ragBuyPrecheckNewsRefreshEnabled !== serverDraft.ragBuyPrecheckNewsRefreshEnabled) {
+      updates.push({
+        config_key: RAG_BUY_PRECHECK_NEWS_REFRESH_ENABLED_KEY,
+        config_value: stringifyBooleanConfig(draft.ragBuyPrecheckNewsRefreshEnabled),
+      })
+    }
+    if (draft.ragBuyPrecheckNewsMaxAgeMinutes !== serverDraft.ragBuyPrecheckNewsMaxAgeMinutes) {
+      updates.push({
+        config_key: RAG_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES_KEY,
+        config_value: draft.ragBuyPrecheckNewsMaxAgeMinutes,
       })
     }
     if (draft.liveBuyEnabled !== serverDraft.liveBuyEnabled) {
@@ -1505,6 +1555,93 @@ function AiRuntimeSettingsPanel() {
               <p className="mt-4 rounded-lg bg-[#ffb4ab]/10 px-4 py-3 text-xs font-semibold leading-6 text-[#ffdad6]">
                 실제 매수는 이 스위치 외에도 Entry Gate, 최소 확신도, 자산 조회, 봇 런타임 상태를 모두 통과해야 실행됩니다.
               </p>
+            </div>
+
+            <div className={SETTINGS_PANEL_CLASS}>
+              <div className="flex flex-col gap-3 border-b border-[#3b494b]/35 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-[#dfe2eb]">RAG 뉴스 비용 제어</h3>
+                    <InfoTooltip
+                      title="정기 수집과 BUY 직전 갱신"
+                      content="정기 뉴스 수집은 비용을 줄이는 방향으로 운용하고, 실제 BUY 후보가 생긴 경우에만 주문 직전 뉴스 최신화를 허용합니다."
+                    />
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-[#b9cacb]">
+                    평소에는 12시간 단위로 수집하고, Gemini 한도 초과 시 OpenAI 번역 fallback을 막아 비용 폭주를 줄입니다.
+                  </p>
+                </div>
+                <span className="inline-flex w-fit rounded-full bg-[#00dbe9]/12 px-3 py-1 text-xs font-bold text-[#7df4ff]">
+                  COST GUARD
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <label className="block">
+                  <span className={SETTINGS_LABEL_CLASS}>뉴스 수집 주기(시간)</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="24"
+                    value={draft.newsIntervalHours}
+                    onChange={(event) => setDraftValue('newsIntervalHours', event.target.value)}
+                    className={SETTINGS_FIELD_CLASS}
+                  />
+                  <p className={SETTINGS_HINT_CLASS}>추천값: 12시간</p>
+                </label>
+
+                <label className="flex h-full flex-col justify-between rounded-lg bg-[#10141a]/80 p-3">
+                  <span>
+                    <span className={SETTINGS_LABEL_CLASS}>정기 번역 fallback</span>
+                    <span className="mt-2 block text-sm leading-6 text-[#b9cacb]">
+                      정기 수집에서 Gemini rate limit 시 OpenAI 번역 fallback 허용
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={draft.ragScheduledOpenaiTranslationFallbackEnabled}
+                    onChange={(event) =>
+                      setDraftValue(
+                        'ragScheduledOpenaiTranslationFallbackEnabled',
+                        event.target.checked,
+                      )
+                    }
+                    className="mt-4 h-4 w-4 rounded border-[#3b494b] bg-[#10141a] text-[#00dbe9] focus:ring-[#00dbe9]/30"
+                  />
+                </label>
+
+                <label className="flex h-full flex-col justify-between rounded-lg bg-[#10141a]/80 p-3">
+                  <span>
+                    <span className={SETTINGS_LABEL_CLASS}>BUY 직전 뉴스 갱신</span>
+                    <span className="mt-2 block text-sm leading-6 text-[#b9cacb]">
+                      Entry Gate 통과 BUY 후보에만 최신 뉴스 갱신 허용
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={draft.ragBuyPrecheckNewsRefreshEnabled}
+                    onChange={(event) =>
+                      setDraftValue('ragBuyPrecheckNewsRefreshEnabled', event.target.checked)
+                    }
+                    className="mt-4 h-4 w-4 rounded border-[#3b494b] bg-[#10141a] text-[#00dbe9] focus:ring-[#00dbe9]/30"
+                  />
+                </label>
+              </div>
+
+              <label className="mt-4 block max-w-xs">
+                <span className={SETTINGS_LABEL_CLASS}>BUY 직전 뉴스 허용 나이(분)</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="1440"
+                  value={draft.ragBuyPrecheckNewsMaxAgeMinutes}
+                  onChange={(event) =>
+                    setDraftValue('ragBuyPrecheckNewsMaxAgeMinutes', event.target.value)
+                  }
+                  className={SETTINGS_FIELD_CLASS}
+                />
+                <p className={SETTINGS_HINT_CLASS}>추천값: 60분</p>
+              </label>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">

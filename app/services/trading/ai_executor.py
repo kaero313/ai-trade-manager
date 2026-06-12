@@ -14,6 +14,8 @@ from app.db.repository import HARD_TAKE_PROFIT_PCT_KEY
 from app.db.repository import LIVE_BUY_ENABLED_KEY
 from app.db.repository import MAX_ALLOCATION_PCT_KEY
 from app.db.repository import PAPER_TRADING_KRW_BALANCE_KEY
+from app.db.repository import RAG_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES_KEY
+from app.db.repository import RAG_BUY_PRECHECK_NEWS_REFRESH_ENABLED_KEY
 from app.db.repository import get_system_config_value
 from app.models.domain import AIAnalysisLog, Asset, OrderHistory, Position, SystemConfig
 from app.models.schemas import AIAnalysisResponse
@@ -41,6 +43,8 @@ DEFAULT_AI_ANALYSIS_MAX_AGE_MINUTES = 90
 DEFAULT_MAX_ALLOCATION_PCT = 30.0
 DEFAULT_AI_MAX_BUY_WEIGHT_PCT = 30.0
 DEFAULT_LIVE_BUY_ENABLED = False
+DEFAULT_BUY_PRECHECK_NEWS_REFRESH_ENABLED = True
+DEFAULT_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES = 60
 DEFAULT_HARD_TAKE_PROFIT_PCT = 0.0
 DEFAULT_HARD_STOP_LOSS_PCT = 0.0
 MIN_ORDER_KRW = 5000.0
@@ -207,6 +211,31 @@ async def _load_live_buy_enabled(db: AsyncSession) -> bool:
         default=str(DEFAULT_LIVE_BUY_ENABLED).lower(),
     )
     return _parse_bool_config(raw_value, default=DEFAULT_LIVE_BUY_ENABLED)
+
+
+async def _load_buy_precheck_news_refresh_config(db: AsyncSession) -> tuple[bool, int]:
+    enabled_raw = await get_system_config_value(
+        db,
+        RAG_BUY_PRECHECK_NEWS_REFRESH_ENABLED_KEY,
+        default=str(DEFAULT_BUY_PRECHECK_NEWS_REFRESH_ENABLED).lower(),
+    )
+    max_age_raw = await get_system_config_value(
+        db,
+        RAG_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES_KEY,
+        default=str(DEFAULT_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES),
+    )
+    return (
+        _parse_bool_config(
+            enabled_raw,
+            default=DEFAULT_BUY_PRECHECK_NEWS_REFRESH_ENABLED,
+        ),
+        _parse_int_config(
+            max_age_raw,
+            default=DEFAULT_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES,
+            minimum=1,
+            maximum=24 * 60,
+        ),
+    )
 
 
 async def _load_hard_tp_sl_thresholds(db: AsyncSession) -> tuple[float, float]:
@@ -768,6 +797,7 @@ def _build_buy_precheck_user_prompt(
     portfolio: PortfolioSummary,
     trading_mode: str,
     min_confidence: int,
+    news_refresh_status: dict[str, Any] | None = None,
 ) -> str:
     target_currency = _extract_target_currency(symbol)
     target_item = _find_portfolio_item(portfolio, target_currency)
@@ -785,6 +815,8 @@ def _build_buy_precheck_user_prompt(
             "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
         },
         "entry_gate": entry_gate.to_log_dict(),
+        "buy_precheck_news_refresh": news_refresh_status
+        or {"enabled": False, "reason": "disabled"},
         "portfolio": {
             "total_net_worth": portfolio.total_net_worth,
             "total_pnl": portfolio.total_pnl,
@@ -863,6 +895,29 @@ async def _run_buy_precheck(
     trading_mode: str,
     min_confidence: int,
 ) -> AIAnalysisLog | None:
+    news_refresh_status: dict[str, Any] = {"enabled": False, "reason": "disabled"}
+    try:
+        refresh_enabled, max_age_minutes = await _load_buy_precheck_news_refresh_config(db)
+        if refresh_enabled:
+            from app.services.rag.ingestion import refresh_market_news_for_buy_precheck_if_stale
+
+            news_refresh_status = await refresh_market_news_for_buy_precheck_if_stale(
+                max_age_minutes=max_age_minutes,
+            )
+    except Exception as exc:
+        logger.warning(
+            "BUY precheck news refresh context failed: symbol=%s error=%s",
+            symbol,
+            exc,
+            exc_info=True,
+        )
+        news_refresh_status = {
+            "enabled": True,
+            "refreshed": False,
+            "reason": "refresh_context_failed",
+            "error": str(exc)[:240],
+        }
+
     try:
         routed_result = await AIProviderRouter(db).generate_structured_analysis(
             system_prompt=_build_buy_precheck_system_prompt(),
@@ -873,6 +928,7 @@ async def _run_buy_precheck(
                 portfolio=portfolio,
                 trading_mode=trading_mode,
                 min_confidence=min_confidence,
+                news_refresh_status=news_refresh_status,
             ),
             response_model=AIAnalysisResponse,
             preferred_provider="openai",
