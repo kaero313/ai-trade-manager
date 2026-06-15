@@ -1,6 +1,4 @@
 from app.services.ai.providers.base import BaseAIAnalyzer
-from app.services.ai.providers.gemini import GeminiAnalyzer
-from app.services.ai.providers.openai import OpenAIAnalyzer
 
 
 class AIAnalyzerFactory:
@@ -9,6 +7,10 @@ class AIAnalyzerFactory:
         normalized = (provider or "").strip().lower()
 
         if normalized == "openai":
+            from app.services.ai.providers.openai import OpenAIAnalyzer
+
             return OpenAIAnalyzer(model=model)
+
+        from app.services.ai.providers.gemini import GeminiAnalyzer
 
         return GeminiAnalyzer(model=model)

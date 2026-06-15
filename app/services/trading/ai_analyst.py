@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
@@ -16,8 +18,6 @@ from app.schemas.portfolio import AssetItem
 from app.schemas.portfolio import PortfolioSummary
 from app.services.ai.analyzer import AIAnalyzerFactory
 from app.services.ai.providers.base import AIProviderRateLimitError
-from app.services.ai.providers.gemini import GeminiAnalyzer
-from app.services.ai.providers.openai import OpenAIAnalyzer
 from app.services.ai.provider_router import AIProviderRouter
 from app.services.ai.provider_router import AIProviderUnavailableError
 from app.services.brokers.factory import BrokerFactory
@@ -30,6 +30,9 @@ from app.services.rag.opensearch_client import ensure_market_news_index
 from app.services.rag.opensearch_client import get_opensearch_client
 
 logger = logging.getLogger(__name__)
+
+GeminiAnalyzer: Any = None
+OpenAIAnalyzer: Any = None
 
 TECHNICAL_CANDLE_COUNT = 200
 NEWS_RESULT_LIMIT = 3
@@ -896,9 +899,28 @@ async def _close_query_embedding_analyzer(analyzer: Any) -> None:
         close()
 
 
+def _resolve_openai_analyzer_class() -> Any:
+    global OpenAIAnalyzer
+    if OpenAIAnalyzer is None:
+        from app.services.ai.providers.openai import OpenAIAnalyzer as _OpenAIAnalyzer
+
+        OpenAIAnalyzer = _OpenAIAnalyzer
+    return OpenAIAnalyzer
+
+
+def _resolve_gemini_analyzer_class() -> Any:
+    global GeminiAnalyzer
+    if GeminiAnalyzer is None:
+        from app.services.ai.providers.gemini import GeminiAnalyzer as _GeminiAnalyzer
+
+        GeminiAnalyzer = _GeminiAnalyzer
+    return GeminiAnalyzer
+
+
 def _get_openai_analyzer() -> OpenAIAnalyzer:
+    openai_analyzer_class = _resolve_openai_analyzer_class()
     analyzer = AIAnalyzerFactory.get_analyzer("openai")
-    if not isinstance(analyzer, OpenAIAnalyzer):
+    if not isinstance(analyzer, openai_analyzer_class):
         raise RuntimeError("OpenAI analyzer initialization failed.")
     return analyzer
 
@@ -931,8 +953,9 @@ async def _generate_market_news_query_embedding(query_text: str) -> list[float] 
 
 
 def _get_gemini_analyzer() -> GeminiAnalyzer:
+    gemini_analyzer_class = _resolve_gemini_analyzer_class()
     analyzer = AIAnalyzerFactory.get_analyzer("gemini")
-    if not isinstance(analyzer, GeminiAnalyzer):
+    if not isinstance(analyzer, gemini_analyzer_class):
         raise RuntimeError("Gemini 분석기 초기화에 실패했습니다.")
     return analyzer
 

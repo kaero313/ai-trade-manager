@@ -6,7 +6,6 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
@@ -99,6 +98,8 @@ def _build_chat_model(candidate: AIProviderCandidate) -> Any:
     if candidate.provider == "openai":
         if not settings.OPENAI_API_KEY:
             raise RuntimeError("OPENAI_API_KEY가 설정되지 않아 Chat Orchestrator를 실행할 수 없습니다.")
+        from langchain_openai import ChatOpenAI
+
         return ChatOpenAI(model=candidate.model, api_key=settings.OPENAI_API_KEY)
 
     if not settings.GEMINI_API_KEY:
