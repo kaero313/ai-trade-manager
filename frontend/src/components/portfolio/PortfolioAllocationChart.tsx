@@ -32,16 +32,16 @@ interface CustomTooltipProps {
 }
 
 const COLORS = [
-  '#f59e0b',
-  '#3b82f6',
-  '#10b981',
-  '#ef4444',
-  '#8b5cf6',
-  '#06b6d4',
-  '#f97316',
-  '#ec4899',
-  '#a3e635',
-  '#64748b',
+  '#00dbe9',
+  '#eac324',
+  '#ffb4ab',
+  '#cdbdff',
+  '#7df4ff',
+  '#fed639',
+  '#849495',
+  '#fff5de',
+  '#5203d5',
+  '#3b494b',
 ]
 
 function formatKrw(value: number): string {
@@ -86,11 +86,11 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
   const item = payload[0].payload
   return (
     <div className={`${PORTFOLIO_TOOLTIP_CLASS_NAME} px-4 py-3`}>
-      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{item.name}</p>
-      <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
+      <p className="text-sm font-semibold text-[#dfe2eb]">{item.name}</p>
+      <p className="mt-1 text-xs text-[#b9cacb]">
         평가금액: {formatKrw(item.value)}
       </p>
-      <p className="text-xs text-gray-600 dark:text-gray-300">
+      <p className="text-xs text-[#b9cacb]">
         비중: {item.percent.toFixed(1)}%
       </p>
     </div>
@@ -101,16 +101,16 @@ function ChartLoadingState() {
   return (
     <div className={`${PORTFOLIO_PANEL_CLASS_NAME} relative overflow-hidden p-6`}>
       <div className="animate-pulse">
-        <div className="h-3 w-28 rounded-full bg-gray-200 dark:bg-gray-700" />
-        <div className="mt-3 h-5 w-48 rounded-full bg-gray-200 dark:bg-gray-700" />
+        <div className="h-3 w-28 rounded-full bg-[#262a31]" />
+        <div className="mt-3 h-5 w-48 rounded-full bg-[#262a31]" />
 
         <div className="mt-8 flex flex-col items-center justify-center gap-5">
-          <div className="h-44 w-44 rounded-full border-[22px] border-gray-200 dark:border-gray-700" />
+          <div className="h-44 w-44 rounded-full border-[22px] border-[#00dbe9]/15" />
           <div className="grid w-full max-w-[220px] gap-3">
-            <div className="h-4 rounded-full bg-gray-200 dark:bg-gray-700" />
-            <div className="h-4 rounded-full bg-gray-200 dark:bg-gray-700" />
-            <div className="h-4 rounded-full bg-gray-200 dark:bg-gray-700" />
-            <div className="h-4 rounded-full bg-gray-200 dark:bg-gray-700" />
+            <div className="h-4 rounded-full bg-[#262a31]" />
+            <div className="h-4 rounded-full bg-[#262a31]" />
+            <div className="h-4 rounded-full bg-[#262a31]" />
+            <div className="h-4 rounded-full bg-[#262a31]" />
           </div>
         </div>
       </div>
@@ -122,10 +122,10 @@ function ChartEmptyState() {
   return (
     <div className={`${PORTFOLIO_PANEL_CLASS_NAME} flex min-h-[320px] items-center justify-center px-6 text-center`}>
       <div>
-        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+        <p className="text-sm font-semibold text-[#dfe2eb]">
           자산 배분 데이터를 표시할 수 없습니다
         </p>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+        <p className="mt-2 text-sm text-[#b9cacb]">
           평가금액이 있는 자산이 생기면 포트폴리오 비중 차트가 이 영역에 표시됩니다.
         </p>
       </div>
@@ -170,8 +170,8 @@ function PortfolioAllocationChart({
                   innerRadius={58}
                   outerRadius={98}
                   paddingAngle={2}
-                  stroke="#ffffff"
-                  strokeWidth={2}
+                  stroke="#10141a"
+                  strokeWidth={1}
                 >
                   {chartData.map((entry) => (
                     <Cell key={entry.name} fill={entry.color} />
@@ -183,10 +183,10 @@ function PortfolioAllocationChart({
                   align="center"
                   verticalAlign="bottom"
                   iconType="circle"
-                  wrapperStyle={{ paddingTop: '12px' }}
+                  wrapperStyle={{ paddingTop: '12px', color: '#b9cacb', fontSize: '12px' }}
                   formatter={(value, _entry, index) => {
                     const item = chartData[index]
-                    return `${value} (${item.percent.toFixed(1)}%)`
+                    return <span className="text-[#b9cacb]">{`${value} (${item.percent.toFixed(1)}%)`}</span>
                   }}
                 />
               </PieChart>

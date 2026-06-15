@@ -261,10 +261,16 @@ function PortfolioAiBriefing({
     void runBriefingRequest()
   }, [isPortfolioLoading, runBriefingRequest])
 
+  const aiAnalyses = Object.values(aiAnalysisMap).filter((item): item is AIAnalysisItem => Boolean(item))
+  const strongestAnalysis = [...aiAnalyses].sort((a, b) => b.confidence - a.confidence)[0]
+  const strongestDecisionText = strongestAnalysis
+    ? `${strongestAnalysis.symbol} ${strongestAnalysis.decision} ${Math.round(strongestAnalysis.confidence)}%`
+    : '분석 대기'
+
   return (
     <section className={`${PORTFOLIO_CARD_CLASS_NAME} h-full overflow-hidden p-6`}>
       <div>
-        <header className="mb-5 flex items-start justify-between gap-4">
+        <header className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
               AI PORTFOLIO BRIEFING
@@ -286,7 +292,7 @@ function PortfolioAiBriefing({
               void runBriefingRequest()
             }}
             disabled={isPortfolioLoading || isLoading}
-            className="inline-flex shrink-0 items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-950"
+            className="inline-flex w-fit shrink-0 items-center gap-2 rounded-lg bg-[#00dbe9]/10 px-4 py-2 text-sm font-bold text-[#7df4ff] transition-colors hover:bg-[#00dbe9]/16 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             다시 분석
@@ -296,8 +302,8 @@ function PortfolioAiBriefing({
         {isPortfolioLoading ? (
           <div className={`${PORTFOLIO_PANEL_CLASS_NAME} flex min-h-[180px] items-center justify-center px-6 text-center`}>
             <div className="flex flex-col items-center gap-4">
-              <Loader2 className="h-8 w-8 animate-spin text-emerald-500 dark:text-emerald-300" />
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+              <Loader2 className="h-8 w-8 animate-spin text-[#00dbe9]" />
+              <p className="text-sm font-medium text-[#b9cacb]">
                 포트폴리오 데이터를 불러오고 있습니다...
               </p>
             </div>
@@ -307,20 +313,37 @@ function PortfolioAiBriefing({
         {!isPortfolioLoading ? (
           <div className="space-y-4">
             {briefingEntry?.errorMessage ? (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700 dark:border-amber-300/20 dark:bg-amber-500/12 dark:text-amber-200">
+              <div className="rounded-lg bg-[#eac324]/10 px-4 py-3 text-sm font-medium text-[#ffe179]">
                 {briefingEntry.errorMessage}
               </div>
             ) : null}
 
             {isLoading ? (
-              <div className="inline-flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:border-emerald-300/20 dark:bg-emerald-500/12 dark:text-emerald-200">
+              <div className="inline-flex items-center gap-2 rounded-lg bg-[#00dbe9]/10 px-3 py-2 text-xs font-bold text-[#7df4ff]">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 AI 브리핑 생성 중
               </div>
             ) : null}
 
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className={`${PORTFOLIO_PANEL_CLASS_NAME} px-4 py-4`}>
+                <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>NET WORTH</p>
+                <p className="mt-3 font-mono text-lg font-bold text-[#dfe2eb]">{formatKrw(totalNetWorth)}</p>
+              </div>
+              <div className={`${PORTFOLIO_PANEL_CLASS_NAME} px-4 py-4`}>
+                <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>PNL FLOW</p>
+                <p className={`mt-3 font-mono text-lg font-bold ${totalPnl < 0 ? 'text-[#ffb4ab]' : 'text-[#7df4ff]'}`}>
+                  {formatSignedKrw(totalPnl)}
+                </p>
+              </div>
+              <div className={`${PORTFOLIO_PANEL_CLASS_NAME} px-4 py-4`}>
+                <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>AI SIGNAL</p>
+                <p className="mt-3 truncate font-mono text-lg font-bold text-[#ffe179]">{strongestDecisionText}</p>
+              </div>
+            </div>
+
             <div className={`${PORTFOLIO_PANEL_CLASS_NAME} px-5 py-6`}>
-              <p className="whitespace-pre-wrap break-words text-sm leading-7 text-gray-700 dark:text-gray-200">
+              <p className="whitespace-pre-wrap break-words text-sm leading-7 text-[#dfe2eb]">
                 {visibleBriefingText}
               </p>
             </div>

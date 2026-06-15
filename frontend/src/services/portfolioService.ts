@@ -72,7 +72,7 @@ interface PortfolioSnapshotListResponse {
 
 export async function getPortfolioSummary(): Promise<PortfolioSummary> {
   const { data } = await apiClient.get<PortfolioSummary>('/dashboard', {
-    timeout: 6000,
+    timeout: 15000,
   })
   return data
 }

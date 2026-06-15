@@ -102,12 +102,12 @@ function formatTooltipDate(value: string): string {
 
 function resolveToneClassName(value: number): string {
   if (value > 0) {
-    return 'text-emerald-600 dark:text-emerald-300'
+    return 'text-[#7df4ff]'
   }
   if (value < 0) {
-    return 'text-rose-600 dark:text-rose-300'
+    return 'text-[#ffb4ab]'
   }
-  return 'text-gray-900 dark:text-gray-100'
+  return 'text-[#dfe2eb]'
 }
 
 function sortSnapshots(snapshots: PortfolioSnapshotItem[]): PortfolioSnapshotItem[] {
@@ -169,13 +169,13 @@ function buildPnlData(
 function ChartLoadingState() {
   return (
     <div className={`${PORTFOLIO_PANEL_CLASS_NAME} h-[340px] animate-pulse p-5`}>
-      <div className="h-full rounded-md border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-900">
+      <div className="h-full rounded-lg border border-[#3b494b]/30 bg-[#0a0e14]/70">
         <div className="flex h-full items-end gap-3 px-5 pb-8">
-          <div className="h-20 w-full rounded-t-lg bg-emerald-100 dark:bg-emerald-500/20" />
-          <div className="h-32 w-full rounded-t-lg bg-emerald-100 dark:bg-emerald-500/20" />
-          <div className="h-24 w-full rounded-t-lg bg-emerald-100 dark:bg-emerald-500/20" />
-          <div className="h-40 w-full rounded-t-lg bg-emerald-100 dark:bg-emerald-500/20" />
-          <div className="h-28 w-full rounded-t-lg bg-emerald-100 dark:bg-emerald-500/20" />
+          <div className="h-20 w-full rounded-t-lg bg-[#00dbe9]/15" />
+          <div className="h-32 w-full rounded-t-lg bg-[#00dbe9]/15" />
+          <div className="h-24 w-full rounded-t-lg bg-[#00dbe9]/15" />
+          <div className="h-40 w-full rounded-t-lg bg-[#00dbe9]/15" />
+          <div className="h-28 w-full rounded-t-lg bg-[#00dbe9]/15" />
         </div>
       </div>
     </div>
@@ -186,10 +186,10 @@ function ChartEmptyState() {
   return (
     <div className={`${PORTFOLIO_PANEL_CLASS_NAME} flex min-h-[300px] items-center justify-center px-6 text-center`}>
       <div>
-        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+        <p className="text-sm font-semibold text-[#dfe2eb]">
           기간 손익 데이터가 아직 없습니다.
         </p>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+        <p className="mt-2 text-sm text-[#b9cacb]">
           포트폴리오 스냅샷이 쌓이면 기간별 손익 변화가 표시됩니다.
         </p>
       </div>
@@ -205,13 +205,13 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   const item = payload[0]
   return (
     <div className={`${PORTFOLIO_TOOLTIP_CLASS_NAME} px-4 py-3`}>
-      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+      <p className="text-sm font-semibold text-[#dfe2eb]">
         {formatTooltipDate(label ?? item.payload.created_at)}
       </p>
       <p className={`mt-1 text-xs font-semibold ${resolveToneClassName(item.value)}`}>
         기간 손익: {formatSignedKrw(item.value)}
       </p>
-      <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
+      <p className="mt-1 text-xs text-[#b9cacb]">
         총 자산: {formatKrw(item.payload.total_net_worth)}
       </p>
     </div>
@@ -240,7 +240,7 @@ function PortfolioPeriodPnlChart({
           </p>
         </div>
 
-        <div className="inline-flex w-full rounded-md border border-gray-200 bg-gray-50 p-1 dark:border-gray-700 dark:bg-gray-900 sm:w-auto">
+        <div className="inline-flex w-full rounded-lg bg-[#0a0e14] p-1 sm:w-auto">
           {PERIOD_OPTIONS.map((option) => {
             const isSelected = option.key === selectedPeriodKey
             return (
@@ -250,8 +250,8 @@ function PortfolioPeriodPnlChart({
                 onClick={() => setSelectedPeriodKey(option.key)}
                 className={`min-h-9 flex-1 rounded px-3 text-sm font-semibold transition sm:flex-none ${
                   isSelected
-                    ? 'bg-white text-gray-950 shadow-sm dark:bg-gray-800 dark:text-white'
-                    : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100'
+                    ? 'bg-[#00dbe9]/14 text-[#7df4ff]'
+                    : 'text-[#849495] hover:bg-[#262a31]/80 hover:text-[#dfe2eb]'
                 }`}
               >
                 {option.label}
@@ -268,7 +268,7 @@ function PortfolioPeriodPnlChart({
         <div className="-mx-2 overflow-x-auto px-2">
           <div
             ref={containerRef}
-            className="h-[340px] min-w-[560px] rounded-md border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/60"
+            className="h-[340px] min-w-[560px] rounded-lg border border-[#3b494b]/30 bg-[#0a0e14]/70 p-4"
           >
             <ComposedChart
               width={resolvedChartWidth}
@@ -278,8 +278,8 @@ function PortfolioPeriodPnlChart({
             >
               <defs>
                 <linearGradient id="periodPnlFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.32} />
-                  <stop offset="100%" stopColor="#10b981" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="#00dbe9" stopOpacity={0.28} />
+                  <stop offset="100%" stopColor="#00dbe9" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
               <CartesianGrid
@@ -290,7 +290,7 @@ function PortfolioPeriodPnlChart({
               <XAxis
                 dataKey="created_at"
                 tickFormatter={formatAxisDate}
-                tick={{ fill: '#64748b', fontSize: 12 }}
+                tick={{ fill: '#849495', fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
                 minTickGap={24}
@@ -298,13 +298,13 @@ function PortfolioPeriodPnlChart({
               <YAxis
                 yAxisId="left"
                 tickFormatter={formatSignedKrw}
-                tick={{ fill: '#64748b', fontSize: 12 }}
+                tick={{ fill: '#849495', fontSize: 12 }}
                 tickLine={false}
                 axisLine={false}
                 width={100}
               />
               <Tooltip content={<CustomTooltip />} />
-              <ReferenceLine yAxisId="left" y={0} stroke="#94a3b8" strokeDasharray="3 3" />
+              <ReferenceLine yAxisId="left" y={0} stroke="#3b494b" strokeDasharray="3 3" />
               <Area
                 yAxisId="left"
                 type="monotone"
@@ -316,10 +316,10 @@ function PortfolioPeriodPnlChart({
                 yAxisId="left"
                 type="monotone"
                 dataKey="pnl_delta"
-                stroke="#10b981"
+                stroke="#00dbe9"
                 strokeWidth={3}
                 dot={false}
-                activeDot={{ r: 5, fill: '#10b981', stroke: '#ffffff', strokeWidth: 2 }}
+                activeDot={{ r: 5, fill: '#00dbe9', stroke: '#10141a', strokeWidth: 2 }}
               />
             </ComposedChart>
           </div>

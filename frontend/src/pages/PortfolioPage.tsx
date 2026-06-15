@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import PortfolioAiBriefing from '../components/portfolio/PortfolioAiBriefing'
 import PortfolioAllocationChart from '../components/portfolio/PortfolioAllocationChart'
@@ -6,17 +6,16 @@ import PortfolioHoldingsTable from '../components/portfolio/PortfolioHoldingsTab
 import PortfolioMiniChat from '../components/portfolio/PortfolioMiniChat'
 import PortfolioPeriodPnlChart from '../components/portfolio/PortfolioPeriodPnlChart'
 import PortfolioSummaryCard from '../components/portfolio/PortfolioSummaryCard'
+import { usePortfolioSummary } from '../hooks/usePortfolioSummary'
 import { createChatSession } from '../services/api'
 import {
   fetchLatestAnalysisBatch,
   fetchPortfolioSnapshots,
-  getPortfolioSummary,
 } from '../services/portfolioService'
 import type {
   AIAnalysisItem,
   AssetItem,
   PortfolioSnapshotItem,
-  PortfolioSummary,
 } from '../services/portfolioService'
 
 function buildPortfolioSymbols(items: AssetItem[]): string[] {
@@ -33,130 +32,80 @@ function isKrwAsset(item: AssetItem): boolean {
 }
 
 function PortfolioPage() {
-  const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null)
+  const portfolioSummaryQuery = usePortfolioSummary()
   const [snapshots, setSnapshots] = useState<PortfolioSnapshotItem[]>([])
   const [aiAnalysisMap, setAiAnalysisMap] = useState<Record<string, AIAnalysisItem | null>>({})
-  const [isLoading, setIsLoading] = useState(true)
   const [isSnapshotsLoading, setIsSnapshotsLoading] = useState(true)
   const [sessionId, setSessionId] = useState<string | null>(null)
 
   useEffect(() => {
     let isMounted = true
-    let isPolling = false
-    let pollingIntervalId: number | undefined
 
-    const loadInitialData = async () => {
-      setIsLoading(true)
+    const loadSnapshots = async () => {
       setIsSnapshotsLoading(true)
 
-      const [portfolioResult, snapshotsResult] = await Promise.allSettled([
-        getPortfolioSummary(),
-        fetchPortfolioSnapshots(),
-      ])
-
-      if (!isMounted) {
-        return
-      }
-
-      let nextPortfolio: PortfolioSummary | null = null
-
-      if (portfolioResult.status === 'fulfilled') {
-        nextPortfolio = portfolioResult.value
-        setPortfolio(portfolioResult.value)
-      } else {
-        setPortfolio(null)
-        console.warn('[PortfolioPage initial] portfolio fetch failed', portfolioResult.reason)
-      }
-
-      if (snapshotsResult.status === 'fulfilled') {
-        setSnapshots(snapshotsResult.value)
-      } else {
-        setSnapshots([])
-        console.warn('[PortfolioPage initial] snapshots fetch failed', snapshotsResult.reason)
-      }
-
-      setIsSnapshotsLoading(false)
-
-      const symbols = buildPortfolioSymbols(nextPortfolio?.items ?? [])
-      if (symbols.length > 0) {
-        try {
-          const nextAiAnalysisMap = await fetchLatestAnalysisBatch(symbols)
-          if (!isMounted) {
-            return
-          }
-          setAiAnalysisMap(nextAiAnalysisMap)
-        } catch (error) {
-          if (!isMounted) {
-            return
-          }
-          setAiAnalysisMap({})
-          console.warn('[PortfolioPage initial] ai analysis fetch failed', error)
-        }
-      } else {
-        setAiAnalysisMap({})
-      }
-
-      setIsLoading(false)
-    }
-
-    const refreshPortfolioData = async () => {
-      if (isPolling) {
-        return
-      }
-
-      isPolling = true
       try {
-        const nextPortfolio = await getPortfolioSummary()
+        const nextSnapshots = await fetchPortfolioSnapshots()
         if (!isMounted) {
           return
         }
-
-        setPortfolio(nextPortfolio)
-
-        const symbols = buildPortfolioSymbols(nextPortfolio.items)
-        if (symbols.length > 0) {
-          try {
-            const nextAiAnalysisMap = await fetchLatestAnalysisBatch(symbols)
-            if (!isMounted) {
-              return
-            }
-            setAiAnalysisMap(nextAiAnalysisMap)
-          } catch (error) {
-            if (!isMounted) {
-              return
-            }
-            console.warn('[PortfolioPage polling] ai analysis refresh failed', error)
-          }
-        } else {
-          setAiAnalysisMap({})
-        }
+        setSnapshots(nextSnapshots)
       } catch (error) {
-        console.warn('[PortfolioPage polling] portfolio refresh failed', error)
+        if (!isMounted) {
+          return
+        }
+        setSnapshots([])
+        console.warn('[PortfolioPage initial] snapshots fetch failed', error)
       } finally {
-        isPolling = false
+        if (isMounted) {
+          setIsSnapshotsLoading(false)
+        }
       }
     }
 
-    const bootstrap = async () => {
-      await loadInitialData()
-      if (!isMounted) {
-        return
-      }
-
-      pollingIntervalId = window.setInterval(() => {
-        void refreshPortfolioData()
-      }, 30000)
-    }
-
-    void bootstrap()
+    void loadSnapshots()
 
     return () => {
       isMounted = false
-      if (pollingIntervalId !== undefined) {
-        window.clearInterval(pollingIntervalId)
-      }
     }
   }, [])
+
+  const portfolio = portfolioSummaryQuery.data ?? null
+  const portfolioItems = useMemo(() => portfolio?.items ?? [], [portfolio?.items])
+  const portfolioSymbols = useMemo(() => buildPortfolioSymbols(portfolioItems), [portfolioItems])
+  const portfolioSymbolKey = portfolioSymbols.join(',')
+  const isLoading = portfolioSummaryQuery.isLoading && portfolio === null
+
+  useEffect(() => {
+    let isMounted = true
+
+    const refreshAiAnalysis = async () => {
+      if (portfolioSymbols.length === 0) {
+        setAiAnalysisMap({})
+        return
+      }
+
+      try {
+        const nextAiAnalysisMap = await fetchLatestAnalysisBatch(portfolioSymbols)
+        if (!isMounted) {
+          return
+        }
+        setAiAnalysisMap(nextAiAnalysisMap)
+      } catch (error) {
+        if (!isMounted) {
+          return
+        }
+        setAiAnalysisMap({})
+        console.warn('[PortfolioPage] ai analysis fetch failed', error)
+      }
+    }
+
+    void refreshAiAnalysis()
+
+    return () => {
+      isMounted = false
+    }
+  }, [portfolioSymbolKey, portfolioSymbols])
 
   useEffect(() => {
     let isMounted = true
@@ -180,7 +129,6 @@ function PortfolioPage() {
     }
   }, [])
 
-  const portfolioItems = portfolio?.items ?? []
   const krwAsset = portfolioItems.find(isKrwAsset)
   const totalNetWorth = portfolio?.total_net_worth ?? 0
   const totalPnl = portfolio?.total_pnl ?? 0
@@ -199,10 +147,10 @@ function PortfolioPage() {
   }
 
   return (
-    <div className="min-h-full space-y-6">
+    <div className="dashboard-quantum min-h-full space-y-5">
       <section
         aria-label="AI 포트폴리오 분석"
-        className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]"
+        className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]"
       >
         <div className="min-h-[360px]">
           <PortfolioAiBriefing
@@ -219,7 +167,7 @@ function PortfolioPage() {
         </div>
       </section>
 
-      <section className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+      <section className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
         <PortfolioSummaryCard
           totalNetWorth={totalNetWorth}
           totalPnl={totalPnl}
@@ -230,7 +178,7 @@ function PortfolioPage() {
         <PortfolioPeriodPnlChart snapshots={snapshots} isLoading={isSnapshotsLoading} />
       </section>
 
-      <section className="grid min-w-0 grid-cols-1 gap-6 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
+      <section className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
         <PortfolioAllocationChart items={portfolioItems} isLoading={isLoading} />
         <PortfolioHoldingsTable
           items={portfolioItems}

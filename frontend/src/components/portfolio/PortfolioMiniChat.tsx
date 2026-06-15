@@ -146,12 +146,12 @@ function finishRunningActivities(items: ChatRenderItem[], fallbackText: string):
 
 function resolveActivityCardClassName(status: ChatRenderActivityItem['status']): string {
   if (status === 'completed') {
-    return 'border-slate-200/80 bg-slate-100/80 text-slate-800 dark:border-slate-600/60 dark:bg-slate-700/40 dark:text-slate-100'
+    return 'border-[#00dbe9]/24 bg-[#00dbe9]/8 text-[#dfe2eb]'
   }
   if (status === 'failed') {
-    return 'border-rose-200/80 bg-rose-50/90 text-rose-800 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-100'
+    return 'border-[#ffb4ab]/24 bg-[#ffb4ab]/10 text-[#ffdad6]'
   }
-  return 'border-slate-200/80 bg-slate-100/85 text-slate-800 dark:border-slate-600/60 dark:bg-slate-700/35 dark:text-slate-100'
+  return 'border-[#eac324]/24 bg-[#eac324]/10 text-[#ffe179]'
 }
 
 function resolveErrorMessage(error: unknown, fallback: string): string {
@@ -356,19 +356,19 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
   return (
     <section className={`${PORTFOLIO_CARD_CLASS_NAME} flex h-full min-h-0 flex-col overflow-hidden`}>
       <div className="flex min-h-0 flex-1 flex-col">
-        <header className="border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+        <header className="border-b border-[#3b494b]/35 px-5 py-4">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
                 AI MINI CHAT
               </p>
-              <h2 className="mt-2 text-xl font-semibold tracking-tight text-gray-950 dark:text-white">
+              <h2 className="mt-2 text-xl font-bold tracking-tight text-[#dfe2eb]">
                 💬 AI에게 질문하기
               </h2>
             </div>
 
             {isStreaming ? (
-              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200/80 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-300/20 dark:bg-emerald-500/15 dark:text-emerald-200">
+              <span className="inline-flex items-center gap-2 rounded-lg bg-[#00dbe9]/10 px-3 py-1.5 text-xs font-bold text-[#7df4ff]">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 응답 생성 중
               </span>
@@ -378,19 +378,19 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
           {!sessionId ? (
-            <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 text-center dark:border-gray-600 dark:bg-gray-900/50">
-              <MessageSquare className="h-10 w-10 text-emerald-500 dark:text-emerald-300" />
-              <h3 className="mt-4 text-lg font-semibold text-slate-950 dark:text-white">
+            <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-lg border border-dashed border-[#3b494b]/50 bg-[#0a0e14]/70 px-6 text-center">
+              <MessageSquare className="h-10 w-10 text-[#00dbe9]" />
+              <h3 className="mt-4 text-lg font-semibold text-[#dfe2eb]">
                 채팅 세션이 없습니다
               </h3>
-              <p className="mt-2 max-w-sm text-sm leading-6 text-slate-600 dark:text-slate-300">
+              <p className="mt-2 max-w-sm text-sm leading-6 text-[#b9cacb]">
                 새 대화를 시작하면 포트폴리오 페이지 안에서 바로 AI에게 질문할 수 있습니다.
               </p>
               <button
                 type="button"
                 onClick={() => void handleCreateSession()}
                 disabled={isCreatingSession}
-                className="mt-5 inline-flex items-center gap-2 rounded-full bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                className="mt-5 inline-flex items-center gap-2 rounded-lg bg-[#00dbe9]/14 px-4 py-2.5 text-sm font-bold text-[#7df4ff] transition hover:bg-[#00dbe9]/20 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isCreatingSession ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -403,12 +403,12 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
           ) : null}
 
           {sessionId && liveItems.length === 0 ? (
-            <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 px-6 text-center dark:border-gray-600 dark:bg-gray-900/50">
-              <MessageSquare className="h-10 w-10 text-sky-500 dark:text-sky-300" />
-              <h3 className="mt-4 text-lg font-semibold text-slate-950 dark:text-white">
+            <div className="flex h-full min-h-[220px] flex-col items-center justify-center rounded-lg border border-dashed border-[#3b494b]/50 bg-[#0a0e14]/70 px-6 text-center">
+              <MessageSquare className="h-10 w-10 text-[#00dbe9]" />
+              <h3 className="mt-4 text-lg font-semibold text-[#dfe2eb]">
                 첫 질문을 남겨보세요
               </h3>
-              <p className="mt-2 max-w-sm text-sm leading-6 text-slate-600 dark:text-slate-300">
+              <p className="mt-2 max-w-sm text-sm leading-6 text-[#b9cacb]">
                 포트폴리오, 리스크, 시장 상황에 대해 짧게 물어보면 여기서 바로 답변을 받을 수 있습니다.
               </p>
             </div>
@@ -421,16 +421,16 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
                   return (
                     <div key={item.key} className="flex justify-start">
                       <div
-                        className={`w-full max-w-xl rounded-2xl border px-4 py-3 text-sm shadow-sm ${resolveActivityCardClassName(item.status)}`}
+                        className={`w-full max-w-xl rounded-lg border px-4 py-3 text-sm ${resolveActivityCardClassName(item.status)}`}
                       >
                         <div className="flex items-start gap-3">
-                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white dark:bg-gray-900">
+                          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0a0e14]">
                             {item.status === 'running' ? (
-                              <Loader2 className="h-4 w-4 animate-spin text-slate-600 dark:text-slate-200" />
+                              <Loader2 className="h-4 w-4 animate-spin text-[#ffe179]" />
                             ) : item.status === 'completed' ? (
-                              <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
+                              <Check className="h-4 w-4 text-[#00dbe9]" />
                             ) : (
-                              <AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-300" />
+                              <AlertTriangle className="h-4 w-4 text-[#ffb4ab]" />
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
@@ -455,9 +455,9 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
                 if (item.role === 'user') {
                   return (
                     <div key={item.key} className="flex justify-end">
-                      <div className="max-w-[82%] rounded-2xl rounded-br-md bg-blue-600 px-4 py-3 text-white shadow-sm">
+                      <div className="max-w-[82%] rounded-lg rounded-br-sm bg-[#00dbe9]/16 px-4 py-3 text-[#dfe2eb]">
                         <p className="whitespace-pre-wrap break-words text-sm leading-6">{item.content}</p>
-                        <div className="mt-2 text-right text-[11px] font-medium text-indigo-100/90">
+                        <div className="mt-2 text-right text-[11px] font-medium text-[#7df4ff]">
                           {formatMessageTimestamp(item.createdAt)}
                         </div>
                       </div>
@@ -468,16 +468,16 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
                 return (
                   <div key={item.key} className="flex justify-start">
                     <div className="flex max-w-[82%] items-start gap-3">
-                      <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm text-white shadow-sm dark:bg-slate-100 dark:text-slate-900">
+                      <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#00dbe9]/12 text-sm font-bold text-[#7df4ff]">
                         <span aria-hidden="true">AI</span>
                       </div>
-                      <div className="rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                      <div className="rounded-lg rounded-bl-sm border border-[#3b494b]/30 bg-[#0a0e14]/88 px-4 py-3 text-[#dfe2eb]">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                          <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#849495]">
                             {item.agentName ?? 'assistant'}
                           </span>
                           {item.isPending ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">
+                            <span className="inline-flex items-center gap-1 rounded-lg bg-[#00dbe9]/10 px-2 py-1 text-[11px] font-semibold text-[#7df4ff]">
                               <Loader2 className="h-3 w-3 animate-spin" />
                               작성 중
                             </span>
@@ -486,7 +486,7 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
                         <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">
                           {item.content}
                         </p>
-                        <div className="mt-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                        <div className="mt-2 text-[11px] font-medium text-[#849495]">
                           {formatMessageTimestamp(item.createdAt)}
                         </div>
                       </div>
@@ -499,20 +499,20 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
           ) : null}
         </div>
 
-        <div className="border-t border-gray-200 px-5 py-4 dark:border-gray-700">
+        <div className="border-t border-[#3b494b]/35 px-5 py-4">
           {notice ? (
             <div
               className={`mb-3 rounded-xl px-4 py-3 text-sm ${
                 notice.type === 'info'
-                  ? 'border border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
-                  : 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200'
+                  ? 'bg-[#00dbe9]/10 text-[#7df4ff]'
+                  : 'bg-[#ffb4ab]/10 text-[#ffdad6]'
               }`}
             >
               {notice.message}
             </div>
           ) : null}
 
-          <form onSubmit={handleSubmit} className="flex items-center gap-3">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <input
               type="text"
               value={draftMessage}
@@ -523,12 +523,12 @@ function PortfolioMiniChat({ sessionId, onCreateSession }: PortfolioMiniChatProp
                   : '새 대화를 시작하면 입력할 수 있습니다.'
               }
               disabled={!sessionId || isStreaming}
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-emerald-400 dark:focus:ring-emerald-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
+              className="w-full rounded-lg border border-[#3b494b] bg-[#0a0e14] px-4 py-3 text-sm text-[#dfe2eb] outline-none transition placeholder:text-[#849495] focus:border-[#00dbe9]/60 focus:ring-2 focus:ring-[#00dbe9]/15 disabled:cursor-not-allowed disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={!sessionId || isStreaming || draftMessage.trim().length === 0}
-              className="inline-flex min-w-[108px] items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-500 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white dark:disabled:bg-slate-600 dark:disabled:text-slate-300"
+              className="inline-flex min-w-[108px] items-center justify-center gap-2 rounded-lg bg-[#00dbe9] px-4 py-3 text-sm font-bold text-[#00363a] transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-[#262a31] disabled:text-[#849495] sm:w-auto"
             >
               {isStreaming ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
