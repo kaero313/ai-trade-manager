@@ -118,7 +118,7 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     },
     {
         "config_key": AUTONOMOUS_AI_INTERVAL_MINUTES_KEY,
-        "config_value": "15",
+        "config_value": "60",
         "description": "AI 단타 자율주행 분석 주기 단위(분)",
     },
     {
@@ -148,7 +148,7 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     },
     {
         "config_key": AI_MIN_CONFIDENCE_TRADE_KEY,
-        "config_value": "85",
+        "config_value": "75",
         "description": "AI 자율 체결 최소 확신도(0~100)",
     },
     {
@@ -183,7 +183,7 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     },
     {
         "config_key": AI_ENTRY_SCORE_THRESHOLD_KEY,
-        "config_value": "70",
+        "config_value": "60",
         "description": "AI 신규 BUY 전 deterministic 진입 점수 최소값",
     },
     {

@@ -13,6 +13,17 @@ def test_buy_precheck_approves_strong_buy() -> None:
     assert _is_buy_precheck_approved(analysis, 85) is True
 
 
+def test_buy_precheck_uses_balanced_confidence_threshold() -> None:
+    analysis = AIAnalysisResponse(
+        decision="BUY",
+        confidence=75,
+        recommended_weight=10,
+        reasoning="balanced threshold buy",
+    )
+
+    assert _is_buy_precheck_approved(analysis, 75) is True
+
+
 def test_buy_precheck_rejects_non_buy() -> None:
     analysis = AIAnalysisResponse(
         decision="HOLD",

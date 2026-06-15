@@ -38,7 +38,7 @@ from app.services.trading.entry_policy import evaluate_ai_buy_entry_gate
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_AI_MIN_CONFIDENCE_TRADE = 85
+DEFAULT_AI_MIN_CONFIDENCE_TRADE = 75
 DEFAULT_AI_ANALYSIS_MAX_AGE_MINUTES = 90
 DEFAULT_MAX_ALLOCATION_PCT = 30.0
 DEFAULT_AI_MAX_BUY_WEIGHT_PCT = 30.0

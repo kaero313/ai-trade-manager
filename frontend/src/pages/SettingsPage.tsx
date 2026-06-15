@@ -23,6 +23,7 @@ interface AiRuntimeDraft {
   hardStopLossPct: string
   aiBriefingTime: string
   aiMinConfidenceTrade: string
+  aiEntryScoreThreshold: string
   aiAnalysisMaxAgeMinutes: string
   liveBuyEnabled: boolean
   aiEntryShadowMode: boolean
@@ -107,6 +108,7 @@ const HARD_TAKE_PROFIT_PCT_KEY = 'hard_take_profit_pct'
 const HARD_STOP_LOSS_PCT_KEY = 'hard_stop_loss_pct'
 const AI_BRIEFING_TIME_KEY = 'ai_briefing_time'
 const AI_MIN_CONFIDENCE_TRADE_KEY = 'ai_min_confidence_trade'
+const AI_ENTRY_SCORE_THRESHOLD_KEY = 'ai_entry_score_threshold'
 const AI_ANALYSIS_MAX_AGE_MINUTES_KEY = 'ai_analysis_max_age_minutes'
 const LIVE_BUY_ENABLED_KEY = 'live_buy_enabled'
 const AI_ENTRY_SHADOW_MODE_KEY = 'ai_entry_shadow_mode'
@@ -580,12 +582,13 @@ function stringifyBooleanConfig(value: boolean): string {
 function buildAiRuntimeDraft(items: SystemConfigItem[] | undefined): AiRuntimeDraft {
   return {
     newsIntervalHours: findConfigValue(items, NEWS_INTERVAL_HOURS_KEY, '12'),
-    autonomousAiIntervalMinutes: findConfigValue(items, AUTONOMOUS_AI_INTERVAL_MINUTES_KEY, '15'),
+    autonomousAiIntervalMinutes: findConfigValue(items, AUTONOMOUS_AI_INTERVAL_MINUTES_KEY, '60'),
     maxAllocationPct: findConfigValue(items, MAX_ALLOCATION_PCT_KEY, '10'),
     hardTakeProfitPct: findConfigValue(items, HARD_TAKE_PROFIT_PCT_KEY, '5.0'),
     hardStopLossPct: findConfigValue(items, HARD_STOP_LOSS_PCT_KEY, '-3.0'),
     aiBriefingTime: findConfigValue(items, AI_BRIEFING_TIME_KEY, '08:30'),
-    aiMinConfidenceTrade: findConfigValue(items, AI_MIN_CONFIDENCE_TRADE_KEY, '70'),
+    aiMinConfidenceTrade: findConfigValue(items, AI_MIN_CONFIDENCE_TRADE_KEY, '75'),
+    aiEntryScoreThreshold: findConfigValue(items, AI_ENTRY_SCORE_THRESHOLD_KEY, '60'),
     aiAnalysisMaxAgeMinutes: findConfigValue(items, AI_ANALYSIS_MAX_AGE_MINUTES_KEY, '90'),
     liveBuyEnabled: parseBooleanConfig(findConfigValue(items, LIVE_BUY_ENABLED_KEY, 'false'), false),
     aiEntryShadowMode: parseBooleanConfig(findConfigValue(items, AI_ENTRY_SHADOW_MODE_KEY, 'true'), true),
@@ -1180,6 +1183,12 @@ function AiRuntimeSettingsPanel() {
         config_value: draft.aiMinConfidenceTrade,
       })
     }
+    if (draft.aiEntryScoreThreshold !== serverDraft.aiEntryScoreThreshold) {
+      updates.push({
+        config_key: AI_ENTRY_SCORE_THRESHOLD_KEY,
+        config_value: draft.aiEntryScoreThreshold,
+      })
+    }
     if (draft.aiAnalysisMaxAgeMinutes !== serverDraft.aiAnalysisMaxAgeMinutes) {
       updates.push({
         config_key: AI_ANALYSIS_MAX_AGE_MINUTES_KEY,
@@ -1664,7 +1673,7 @@ function AiRuntimeSettingsPanel() {
                     </option>
                   ))}
                 </select>
-                <p className={SETTINGS_HINT_CLASS}>추천값: 15분</p>
+                <p className={SETTINGS_HINT_CLASS}>비용 절감 추천값: 60분</p>
               </label>
 
               <label className={SETTINGS_PANEL_CLASS}>
@@ -1745,7 +1754,26 @@ function AiRuntimeSettingsPanel() {
                   onChange={(event) => setDraftValue('aiMinConfidenceTrade', event.target.value)}
                   className={SETTINGS_FIELD_CLASS}
                 />
-                <p className={SETTINGS_HINT_CLASS}>추천값: 70~80</p>
+                <p className={SETTINGS_HINT_CLASS}>균형형 추천값: 75</p>
+              </label>
+
+              <label className={SETTINGS_PANEL_CLASS}>
+                <span className={SETTINGS_LABEL_CLASS}>
+                  <span>Entry Gate 점수 기준</span>
+                  <InfoTooltip
+                    title="Entry Gate 점수 기준"
+                    content="AI가 BUY를 제안해도 기술 지표, 리스크, 보유 상태를 합산한 진입 점수가 이 값보다 낮으면 주문 직전 단계로 넘기지 않습니다."
+                  />
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={draft.aiEntryScoreThreshold}
+                  onChange={(event) => setDraftValue('aiEntryScoreThreshold', event.target.value)}
+                  className={SETTINGS_FIELD_CLASS}
+                />
+                <p className={SETTINGS_HINT_CLASS}>균형형 추천값: 60</p>
               </label>
 
               <label className={SETTINGS_PANEL_CLASS}>
