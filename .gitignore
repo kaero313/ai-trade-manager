@@ -28,6 +28,7 @@ logs/
 # Local scratch diagnostics
 /tmp_*.py
 /tmp_*.png
+.playwright-mcp/
 
 # DB
 *.db
