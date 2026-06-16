@@ -1,5 +1,16 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronDown, ChevronRight, Loader2, MessageSquare, Plus, SendHorizontal, Trash2, X } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  MessageSquare,
+  Plus,
+  SendHorizontal,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import AIBankerPortfolioSnapshot from '../components/common/AIBankerPortfolioSnapshot'
@@ -134,7 +145,7 @@ function buildActivityCard(agentName: string, key: string): ChatRenderActivityIt
     key,
     agentName,
     status: 'running',
-    summaryText: `🔄 [${agentName}] 작업을 시작합니다...`,
+    summaryText: `AI [${agentName}] 작업을 시작합니다...`,
     detailsText: '',
     isCollapsed: false,
   }
@@ -288,7 +299,7 @@ function finishRunningActivities(items: ChatRenderItem[], fallbackText: string):
     return {
       ...item,
       status: 'failed',
-      summaryText: `⚠️ [${item.agentName}] 응답이 중단되었습니다.`,
+      summaryText: `ERROR [${item.agentName}] 응답이 중단되었습니다.`,
       detailsText: item.detailsText || fallbackText,
       isCollapsed: false,
     }
@@ -298,11 +309,11 @@ function finishRunningActivities(items: ChatRenderItem[], fallbackText: string):
 function resolveActivityCardClassName(status: ChatRenderActivityItem['status']): string {
   switch (status) {
     case 'completed':
-      return 'border-gray-200/80 bg-gray-100/80 text-gray-800 dark:border-gray-600/60 dark:bg-gray-700/40 dark:text-gray-100'
+      return 'border-[#00dbe9]/24 bg-[#00dbe9]/8 text-[#dfe2eb]'
     case 'failed':
-      return 'border-rose-200/80 bg-rose-50/85 text-rose-800 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-100'
+      return 'border-[#ffb4ab]/24 bg-[#ffb4ab]/10 text-[#ffdad6]'
     default:
-      return 'border-gray-200/80 bg-gray-100/85 text-gray-800 dark:border-gray-600/60 dark:bg-gray-700/35 dark:text-gray-100'
+      return 'border-[#eac324]/24 bg-[#eac324]/10 text-[#ffe179]'
   }
 }
 
@@ -324,15 +335,15 @@ function resolveApprovalStatusLabel(status: ChatRenderApprovalItem['status']): s
 function resolveApprovalStatusClassName(status: ChatRenderApprovalItem['status']): string {
   switch (status) {
     case 'applying':
-      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200'
+      return 'bg-[#00dbe9]/10 text-[#7df4ff]'
     case 'applied':
-      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200'
+      return 'bg-[#00dbe9]/10 text-[#7df4ff]'
     case 'rejected':
-      return 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200'
+      return 'bg-[#eac324]/10 text-[#ffe179]'
     case 'failed':
-      return 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-200'
+      return 'bg-[#ffb4ab]/10 text-[#ffdad6]'
     default:
-      return 'bg-slate-100 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200'
+      return 'bg-[#262a31]/80 text-[#b9cacb]'
   }
 }
 
@@ -357,15 +368,15 @@ function MessageSkeleton() {
           className={`flex ${index % 2 === 0 ? 'justify-start' : 'justify-end'} animate-pulse`}
         >
           <div
-            className={`max-w-[78%] rounded-2xl px-4 py-4 ${
+            className={`max-w-[78%] rounded-lg px-4 py-4 ${
               index % 2 === 0
-                ? 'border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800'
-                : 'bg-indigo-300/70 dark:bg-indigo-500/40'
+                ? 'border border-[#3b494b]/30 bg-[#0a0e14]/70'
+                : 'bg-[#00dbe9]/12'
             }`}
           >
-            <div className="h-3 w-20 rounded bg-gray-200 dark:bg-gray-700" />
-            <div className="mt-3 h-3 w-64 rounded bg-gray-200 dark:bg-gray-700" />
-            <div className="mt-2 h-3 w-40 rounded bg-gray-200 dark:bg-gray-700" />
+            <div className="h-3 w-20 rounded bg-[#262a31]" />
+            <div className="mt-3 h-3 w-64 rounded bg-[#262a31]" />
+            <div className="mt-2 h-3 w-40 rounded bg-[#262a31]" />
           </div>
         </div>
       ))}
@@ -756,52 +767,52 @@ function AIChatPage() {
   }
 
   const sidebarContent = (
-    <div className="flex h-full min-h-0 flex-col rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
-      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-4 dark:border-gray-700">
+    <div className="quantum-card flex h-full min-h-0 flex-col rounded-xl text-[#dfe2eb]">
+      <div className="flex items-center justify-between border-b border-[#3b494b]/35 px-4 py-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-600 dark:text-emerald-300">
+          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#00dbe9]">
             AI Banker
           </p>
-          <h2 className="mt-2 text-lg font-semibold text-gray-900 dark:text-gray-100">대화 세션</h2>
+          <h2 className="mt-2 text-lg font-bold text-[#dfe2eb]">대화 세션</h2>
         </div>
         <button
           type="button"
           onClick={() => setIsSidebarOpen(false)}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 lg:hidden dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#3b494b] text-[#b9cacb] transition hover:border-[#00dbe9]/40 hover:bg-[#00dbe9]/10 hover:text-[#7df4ff] lg:hidden"
           aria-label="세션 사이드바 닫기"
         >
           <X className="h-5 w-5" />
         </button>
       </div>
 
-      <div className="border-b border-gray-200 px-4 py-4 dark:border-gray-700">
+      <div className="border-b border-[#3b494b]/35 px-4 py-4">
         <button
           type="button"
           onClick={() => void handleCreateSession()}
           disabled={isCreatingSession || isStreaming || deletingSessionId !== null}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-emerald-300"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#00dbe9] px-4 py-3 text-sm font-bold text-[#00363a] transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-[#262a31] disabled:text-[#849495]"
         >
           {isCreatingSession ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          <span>{isCreatingSession ? '생성 중...' : '+ 새 대화'}</span>
+          <span>{isCreatingSession ? '생성 중...' : '새 대화'}</span>
         </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {chatSessionsQuery.isLoading && (
-          <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+          <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-[#b9cacb]">
             <Loader2 className="h-4 w-4 animate-spin" />
             세션 목록을 불러오는 중입니다.
           </div>
         )}
 
         {chatSessionsQuery.isError && (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+          <div className="rounded-lg bg-[#ffb4ab]/10 px-4 py-3 text-sm font-medium text-[#ffdad6]">
             {resolveErrorMessage(chatSessionsQuery.error, '세션 목록을 불러오지 못했습니다.')}
           </div>
         )}
 
         {!chatSessionsQuery.isLoading && !chatSessionsQuery.isError && sessions.length === 0 && (
-          <div className="rounded-xl border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
+          <div className="rounded-lg border border-dashed border-[#3b494b]/50 bg-[#0a0e14]/70 px-4 py-8 text-center text-sm text-[#849495]">
             아직 대화 세션이 없습니다.
           </div>
         )}
@@ -814,10 +825,10 @@ function AIChatPage() {
             return (
               <div
                 key={session.session_id}
-                className={`rounded-xl border transition ${
+                className={`rounded-lg border transition ${
                   isSelected
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200'
-                    : 'border-transparent bg-gray-50 text-gray-700 hover:border-gray-200 hover:bg-gray-100 dark:bg-gray-700/40 dark:text-gray-200 dark:hover:border-gray-600 dark:hover:bg-gray-700'
+                    ? 'border-[#00dbe9]/35 bg-[#00dbe9]/10 text-[#dfe2eb]'
+                    : 'border-transparent bg-[#0a0e14]/70 text-[#b9cacb] hover:border-[#3b494b]/60 hover:bg-[#10141a]/85 hover:text-[#dfe2eb]'
                 }`}
               >
                 <div className="flex items-start gap-2 px-4 py-3">
@@ -841,7 +852,7 @@ function AIChatPage() {
                     type="button"
                     onClick={() => void handleDeleteSession(session.session_id)}
                     disabled={isStreaming || deletingSessionId !== null}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-500/20 dark:bg-gray-900 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ffb4ab]/10 text-[#ffb4ab] transition hover:bg-[#ffb4ab]/16 disabled:cursor-not-allowed disabled:opacity-60"
                     aria-label={`세션 ${session.session_id} 삭제`}
                   >
                     {isDeletingThisSession ? (
@@ -867,30 +878,30 @@ function AIChatPage() {
     renderedConversation.length === 0
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-6">
+    <div className="dashboard-quantum flex h-full min-h-0 min-w-0 flex-col gap-5">
       <AIBankerPortfolioSnapshot onOpenSessions={() => setIsSidebarOpen(true)} />
 
-      <div className="grid min-h-0 flex-1 gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <div className="grid min-h-0 min-w-0 flex-1 gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="hidden min-h-0 lg:block">{sidebarContent}</aside>
 
-        <section className="flex min-h-0 flex-col rounded-2xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-          <header className="flex items-center justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+        <section className="quantum-card flex min-h-0 min-w-0 flex-col rounded-xl text-[#dfe2eb]">
+          <header className="flex items-center justify-between gap-4 border-b border-[#3b494b]/35 px-5 py-4">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">
+              <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#00dbe9]">
                 Conversation
               </p>
-              <h2 className="mt-2 truncate text-lg font-semibold text-gray-900 dark:text-gray-100">
-                {selectedSession ? '선택된 세션' : '새 대화를 시작하세요'}
+              <h2 className="mt-2 truncate text-lg font-bold text-[#dfe2eb]">
+                {selectedSession ? '선택된 세션' : 'AI 뱅커 대기 중'}
               </h2>
-              <p className="mt-1 truncate text-sm text-gray-500 dark:text-gray-400">
+              <p className="mt-1 truncate text-sm text-[#b9cacb]">
                 {selectedSession?.session_id ??
-                  '좌측 목록에서 세션을 선택하거나, 바로 질문을 입력하면 새 세션이 자동으로 생성됩니다.'}
+                  '세션을 선택하거나 바로 질문을 입력하면 새 대화가 자동으로 생성됩니다.'}
               </p>
             </div>
 
             <div className="flex items-center gap-3">
               {isStreaming && (
-                <div className="hidden items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 sm:inline-flex dark:bg-emerald-500/10 dark:text-emerald-200">
+                <div className="hidden items-center gap-2 rounded-lg bg-[#00dbe9]/10 px-3 py-1.5 text-xs font-bold text-[#7df4ff] sm:inline-flex">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   응답 생성 중
                 </div>
@@ -898,14 +909,14 @@ function AIChatPage() {
             </div>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50/80 px-5 py-5 dark:bg-gray-900/30">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-[#0a0e14]/35 px-5 py-5">
             {!selectedSession && (
-              <div className="flex h-full min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white/70 px-6 text-center dark:border-gray-600 dark:bg-gray-800/30">
-                <MessageSquare className="h-10 w-10 text-emerald-500" />
-                <h3 className="mt-4 text-xl font-semibold text-gray-900 dark:text-gray-100">
+              <div className="flex h-full min-h-[360px] flex-col items-center justify-center rounded-lg border border-dashed border-[#3b494b]/50 bg-[#0a0e14]/70 px-6 text-center">
+                <Sparkles className="h-10 w-10 text-[#00dbe9]" />
+                <h3 className="mt-4 text-xl font-bold text-[#dfe2eb]">
                   새 대화를 시작하세요
                 </h3>
-                <p className="mt-2 max-w-md text-sm leading-6 text-gray-500 dark:text-gray-400">
+                <p className="mt-2 max-w-md text-sm leading-6 text-[#b9cacb]">
                   상단의 새 대화 버튼을 누르거나 바로 질문을 입력하면, AI 뱅커 전용 세션이 자동으로
                   생성됩니다.
                 </p>
@@ -915,18 +926,18 @@ function AIChatPage() {
             {selectedSession && showMessagesSkeleton && <MessageSkeleton />}
 
             {selectedSession && chatMessagesQuery.isError && !showMessagesSkeleton && (
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+              <div className="rounded-lg bg-[#ffb4ab]/10 px-5 py-4 text-sm font-medium text-[#ffdad6]">
                 {resolveErrorMessage(chatMessagesQuery.error, '대화 이력을 불러오지 못했습니다.')}
               </div>
             )}
 
             {showEmptySelectedSession && (
-              <div className="flex h-full min-h-[360px] flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white/70 px-6 text-center dark:border-gray-600 dark:bg-gray-800/30">
-                <MessageSquare className="h-10 w-10 text-indigo-500" />
-                <h3 className="mt-4 text-xl font-semibold text-gray-900 dark:text-gray-100">
+              <div className="flex h-full min-h-[360px] flex-col items-center justify-center rounded-lg border border-dashed border-[#3b494b]/50 bg-[#0a0e14]/70 px-6 text-center">
+                <MessageSquare className="h-10 w-10 text-[#00dbe9]" />
+                <h3 className="mt-4 text-xl font-bold text-[#dfe2eb]">
                   아직 이 세션에 메시지가 없습니다
                 </h3>
-                <p className="mt-2 max-w-md text-sm leading-6 text-gray-500 dark:text-gray-400">
+                <p className="mt-2 max-w-md text-sm leading-6 text-[#b9cacb]">
                   아래 입력창에서 첫 질문을 보내면 대화 이력이 이 영역에 순서대로 쌓입니다.
                 </p>
               </div>
@@ -939,7 +950,7 @@ function AIChatPage() {
                     return (
                       <div key={item.key} className="flex justify-start">
                         <div
-                          className={`w-full max-w-2xl rounded-2xl border px-4 py-3 text-sm shadow-sm backdrop-blur-sm ${resolveActivityCardClassName(
+                          className={`w-full max-w-2xl rounded-lg border px-4 py-3 text-sm ${resolveActivityCardClassName(
                             item.status,
                           )}`}
                         >
@@ -949,11 +960,11 @@ function AIChatPage() {
                             className="flex w-full items-center justify-between gap-3 text-left"
                           >
                             <div className="flex min-w-0 items-center gap-3">
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/75 dark:bg-gray-900/40">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0a0e14]">
                                 {item.status === 'running' ? (
-                                  <Loader2 className="h-4 w-4 animate-spin text-gray-600 dark:text-gray-200" />
+                                  <Loader2 className="h-4 w-4 animate-spin text-[#00dbe9]" />
                                 ) : (
-                                  <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
+                                  <Check className="h-4 w-4 text-[#7df4ff]" />
                                 )}
                               </div>
                               <div className="min-w-0">
@@ -965,7 +976,7 @@ function AIChatPage() {
                                 </p>
                               </div>
                             </div>
-                            <div className="shrink-0 rounded-full bg-white/70 p-1 dark:bg-gray-900/30">
+                            <div className="shrink-0 rounded-lg bg-[#0a0e14]/70 p-1">
                               {item.isCollapsed ? (
                                 <ChevronRight className="h-4 w-4" />
                               ) : (
@@ -975,7 +986,7 @@ function AIChatPage() {
                           </button>
 
                           {!item.isCollapsed && item.detailsText && (
-                            <div className="mt-3 border-t border-white/60 pt-3 text-xs leading-6 text-gray-700 dark:border-gray-600/60 dark:text-gray-200">
+                            <div className="mt-3 border-t border-[#3b494b]/45 pt-3 text-xs leading-6 text-[#b9cacb]">
                               <p className="font-semibold opacity-80">상세 로그</p>
                               <p className="mt-1 whitespace-pre-wrap break-words opacity-90">{item.detailsText}</p>
                             </div>
@@ -994,12 +1005,12 @@ function AIChatPage() {
                     return (
                       <div key={item.key} className="flex justify-start">
                         <div className="flex max-w-[82%] items-start gap-3">
-                          <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-sm shadow-sm dark:bg-gray-100">
-                            <span aria-hidden="true">🤖</span>
+                          <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#00dbe9]/12 text-[#7df4ff]">
+                            <Sparkles className="h-4 w-4" aria-hidden="true" />
                           </div>
-                          <div className="w-full rounded-2xl rounded-bl-md border border-amber-200 bg-white px-4 py-4 text-gray-900 shadow-sm dark:border-amber-500/20 dark:bg-gray-800 dark:text-gray-100">
+                          <div className="w-full rounded-lg rounded-bl-sm border border-[#eac324]/24 bg-[#eac324]/8 px-4 py-4 text-[#dfe2eb]">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#ffe179]">
                                 {item.agentName}
                               </span>
                               <span
@@ -1013,32 +1024,32 @@ function AIChatPage() {
                               </span>
                             </div>
 
-                            <p className="mt-2 text-sm font-semibold leading-6 text-gray-900 dark:text-gray-100">
+                            <p className="mt-2 text-sm font-bold leading-6 text-[#dfe2eb]">
                               설정 변경 제안
                             </p>
-                            <p className="mt-1 text-sm leading-6 text-gray-500 dark:text-gray-400">
+                            <p className="mt-1 text-sm leading-6 text-[#b9cacb]">
                               Operations 에이전트가 아래 설정 변경을 제안했습니다.
                             </p>
 
-                            <div className="mt-4 overflow-hidden rounded-xl border border-amber-200/80 bg-amber-50/70 dark:border-amber-500/20 dark:bg-amber-500/5">
-                              <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-amber-200/80 px-4 py-3 text-sm dark:border-amber-500/10">
-                                <span className="font-semibold text-gray-700 dark:text-gray-200">변경 대상 키</span>
-                                <span className="break-all text-gray-900 dark:text-gray-100">{item.configKey}</span>
+                            <div className="mt-4 overflow-hidden rounded-lg bg-[#0a0e14]/70">
+                              <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-[#3b494b]/35 px-4 py-3 text-sm">
+                                <span className="font-semibold text-[#b9cacb]">변경 대상 키</span>
+                                <span className="break-all text-[#dfe2eb]">{item.configKey}</span>
                               </div>
-                              <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-amber-200/80 px-4 py-3 text-sm dark:border-amber-500/10">
-                                <span className="font-semibold text-gray-700 dark:text-gray-200">현재값</span>
-                                <span className="break-all text-gray-900 dark:text-gray-100">
+                              <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-[#3b494b]/35 px-4 py-3 text-sm">
+                                <span className="font-semibold text-[#b9cacb]">현재값</span>
+                                <span className="break-all text-[#dfe2eb]">
                                   {formatConfigValueLabel(displayedCurrentValue, systemConfigsQuery.isLoading)}
                                 </span>
                               </div>
                               <div className="grid grid-cols-[120px_minmax(0,1fr)] px-4 py-3 text-sm">
-                                <span className="font-semibold text-gray-700 dark:text-gray-200">제안값</span>
-                                <span className="break-all text-gray-900 dark:text-gray-100">{item.proposedValue}</span>
+                                <span className="font-semibold text-[#b9cacb]">제안값</span>
+                                <span className="break-all text-[#dfe2eb]">{item.proposedValue}</span>
                               </div>
                             </div>
 
                             {item.errorMessage && (
-                              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200">
+                              <div className="mt-3 rounded-lg bg-[#ffb4ab]/10 px-3 py-2 text-sm text-[#ffdad6]">
                                 {item.errorMessage}
                               </div>
                             )}
@@ -1048,7 +1059,7 @@ function AIChatPage() {
                                 type="button"
                                 onClick={() => void handleApproveRequest(item.key)}
                                 disabled={!canApprove || item.status === 'applying'}
-                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#00dbe9] px-4 py-2.5 text-sm font-bold text-[#00363a] transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-[#262a31] disabled:text-[#849495]"
                               >
                                 {item.status === 'applying' ? (
                                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1061,7 +1072,7 @@ function AIChatPage() {
                                 type="button"
                                 onClick={() => handleRejectRequest(item.key)}
                                 disabled={!canReject || item.status === 'applying'}
-                                className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-700"
+                                className="inline-flex items-center justify-center rounded-lg bg-[#262a31]/80 px-4 py-2.5 text-sm font-bold text-[#b9cacb] transition hover:bg-[#3b494b]/60 hover:text-[#dfe2eb] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 거부
                               </button>
@@ -1075,9 +1086,9 @@ function AIChatPage() {
                   if (item.role === 'user') {
                     return (
                       <div key={item.key} className="flex justify-end">
-                        <div className="max-w-[82%] rounded-2xl rounded-br-md bg-gradient-to-br from-indigo-600 to-blue-600 px-4 py-3 text-white shadow-sm">
+                        <div className="max-w-[82%] rounded-lg rounded-br-sm bg-[#00dbe9]/16 px-4 py-3 text-[#dfe2eb]">
                           <p className="whitespace-pre-wrap break-words text-sm leading-6">{item.content}</p>
-                          <div className="mt-2 text-right text-[11px] font-medium text-indigo-100/90">
+                          <div className="mt-2 text-right text-[11px] font-medium text-[#7df4ff]">
                             {formatMessageTimestamp(item.createdAt)}
                           </div>
                         </div>
@@ -1088,23 +1099,23 @@ function AIChatPage() {
                   return (
                     <div key={item.key} className="flex justify-start">
                       <div className="flex max-w-[82%] items-start gap-3">
-                        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-900 text-sm shadow-sm dark:bg-gray-100">
-                          <span aria-hidden="true">🤖</span>
+                        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#00dbe9]/12 text-[#7df4ff]">
+                          <Sparkles className="h-4 w-4" aria-hidden="true" />
                         </div>
-                        <div className="rounded-2xl rounded-bl-md border border-gray-200 bg-white px-4 py-3 text-gray-900 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
+                        <div className="rounded-lg rounded-bl-sm border border-[#3b494b]/30 bg-[#0a0e14]/88 px-4 py-3 text-[#dfe2eb]">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">
+                            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#849495]">
                               {item.agentName ?? 'assistant'}
                             </span>
                             {item.isPending && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">
+                              <span className="inline-flex items-center gap-1 rounded-lg bg-[#00dbe9]/10 px-2 py-1 text-[11px] font-semibold text-[#7df4ff]">
                                 <Loader2 className="h-3 w-3 animate-spin" />
                                 작성 중
                               </span>
                             )}
                           </div>
                           <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{item.content}</p>
-                          <div className="mt-2 text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                          <div className="mt-2 text-[11px] font-medium text-[#849495]">
                             {formatMessageTimestamp(item.createdAt)}
                           </div>
                         </div>
@@ -1117,15 +1128,15 @@ function AIChatPage() {
             )}
           </div>
 
-          <div className="border-t border-gray-200 px-5 py-4 dark:border-gray-700">
+          <div className="border-t border-[#3b494b]/35 px-5 py-4">
             {notice && (
               <div
-                className={`mb-4 rounded-xl px-4 py-3 text-sm ${
+                className={`mb-4 rounded-lg px-4 py-3 text-sm font-medium ${
                   notice.type === 'success'
-                    ? 'border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200'
+                    ? 'bg-[#00dbe9]/10 text-[#7df4ff]'
                     : notice.type === 'info'
-                      ? 'border border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-600 dark:bg-gray-700/40 dark:text-gray-200'
-                      : 'border border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200'
+                      ? 'bg-[#262a31]/80 text-[#b9cacb]'
+                      : 'bg-[#ffb4ab]/10 text-[#ffdad6]'
                 }`}
               >
                 {notice.message}
@@ -1139,12 +1150,12 @@ function AIChatPage() {
                 onChange={(event) => setDraftMessage(event.target.value)}
                 placeholder="AI 뱅커에게 무엇이든 물어보세요..."
                 disabled={isStreaming}
-                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:placeholder:text-gray-500 dark:focus:border-emerald-400 dark:focus:ring-emerald-400"
+                className="w-full rounded-lg border border-[#3b494b] bg-[#0a0e14] px-4 py-3 text-sm text-[#dfe2eb] outline-none transition placeholder:text-[#849495] focus:border-[#00dbe9]/60 focus:ring-2 focus:ring-[#00dbe9]/15 disabled:cursor-not-allowed disabled:opacity-50"
               />
               <button
                 type="submit"
                 disabled={isStreaming || draftMessage.trim().length === 0}
-                className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-500"
+                className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-lg bg-[#00dbe9] px-4 py-3 text-sm font-bold text-[#00363a] transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-[#262a31] disabled:text-[#849495]"
               >
                 {isStreaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
                 <span>{isStreaming ? '전송 중...' : '전송'}</span>

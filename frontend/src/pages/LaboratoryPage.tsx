@@ -90,6 +90,15 @@ type PolicyPresetKey = keyof typeof POLICY_PRESETS
 type ResultTab = 'price' | 'equity' | 'drawdown' | 'trades'
 type ResultVerdictTone = 'positive' | 'warning' | 'negative' | 'neutral'
 const CURVE_CHART_HEIGHT = 360
+const LAB_CARD_CLASS = 'quantum-card min-w-0 rounded-xl p-5 text-[#dfe2eb]'
+const LAB_FIELD_CLASS =
+  'min-w-0 w-full rounded-lg border border-[#3b494b]/45 bg-[#0a0e14]/70 px-3 py-2 text-sm text-[#dfe2eb] outline-none transition placeholder:text-[#849495] focus:border-[#00dbe9]/70 focus:ring-2 focus:ring-[#00dbe9]/20 disabled:cursor-not-allowed disabled:bg-[#262a31]/60 disabled:text-[#849495]'
+const LAB_LABEL_CLASS = 'mb-1 block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]'
+const LAB_HINT_CLASS = 'mt-2 block text-[11px] leading-4 text-[#849495]'
+const LAB_PRIMARY_BUTTON_CLASS =
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-[#00dbe9]/16 px-4 py-3 text-sm font-bold text-[#7df4ff] transition hover:bg-[#00dbe9]/24 disabled:cursor-not-allowed disabled:opacity-60'
+const LAB_SECONDARY_BUTTON_CLASS =
+  'inline-flex items-center justify-center gap-2 rounded-lg border border-[#3b494b]/50 bg-[#0a0e14]/70 px-3 py-2 text-sm font-bold text-[#dfe2eb] transition hover:border-[#00dbe9]/45 hover:text-[#7df4ff]'
 
 interface LaboratoryFormState {
   market: string
@@ -308,15 +317,15 @@ function buildResultInsights(result: BacktestRunResponse): ResultInsight[] {
 
 function resolveVerdictClassName(tone: ResultVerdictTone): string {
   if (tone === 'positive') {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200'
+    return 'bg-[#00dbe9]/12 text-[#7df4ff]'
   }
   if (tone === 'warning') {
-    return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'
+    return 'bg-[#eac324]/12 text-[#ffe179]'
   }
   if (tone === 'negative') {
-    return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200'
+    return 'bg-[#ffb4ab]/12 text-[#ffb4ab]'
   }
-  return 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300'
+  return 'bg-[#262a31]/70 text-[#b9cacb]'
 }
 
 function buildDefaultForm(): LaboratoryFormState {
@@ -367,25 +376,25 @@ function NumberInput({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+      <span className={LAB_LABEL_CLASS}>
         {label}
       </span>
-      <div className="flex rounded-md border border-gray-300 bg-white focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-500 dark:border-gray-700 dark:bg-gray-900">
+      <div className="flex rounded-lg border border-[#3b494b]/45 bg-[#0a0e14]/70 focus-within:border-[#00dbe9]/70 focus-within:ring-2 focus-within:ring-[#00dbe9]/20">
         <input
           type="number"
           value={value}
           min={min}
           step={step}
           onChange={(event) => onChange(event.target.value)}
-          className="min-w-0 flex-1 rounded-md bg-transparent px-3 py-2 text-sm text-gray-900 outline-none dark:text-gray-100"
+          className="min-w-0 flex-1 rounded-lg bg-transparent px-3 py-2 text-sm text-[#dfe2eb] outline-none"
         />
         {suffix && (
-          <span className="flex items-center border-l border-gray-200 px-3 text-xs font-semibold text-gray-500 dark:border-gray-700 dark:text-gray-400">
+          <span className="flex items-center border-l border-[#3b494b]/35 px-3 text-xs font-bold text-[#849495]">
             {suffix}
           </span>
         )}
       </div>
-      {hint && <span className="mt-1 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">{hint}</span>}
+      {hint && <span className={LAB_HINT_CLASS}>{hint}</span>}
     </label>
   )
 }
@@ -408,29 +417,29 @@ function PriceChart({
     const chart = createChart(container, {
       height: 420,
       layout: {
-        background: { type: ColorType.Solid, color: isDarkMode ? '#111827' : '#ffffff' },
-        textColor: isDarkMode ? '#d1d5db' : '#374151',
+        background: { type: ColorType.Solid, color: isDarkMode ? '#0a0e14' : '#10141a' },
+        textColor: isDarkMode ? '#b9cacb' : '#dfe2eb',
       },
       grid: {
-        vertLines: { color: isDarkMode ? 'rgba(75, 85, 99, 0.28)' : 'rgba(229, 231, 235, 0.8)' },
-        horzLines: { color: isDarkMode ? 'rgba(75, 85, 99, 0.28)' : 'rgba(229, 231, 235, 0.8)' },
+        vertLines: { color: 'rgba(59, 73, 75, 0.36)' },
+        horzLines: { color: 'rgba(59, 73, 75, 0.36)' },
       },
       rightPriceScale: {
-        borderColor: isDarkMode ? '#374151' : '#e5e7eb',
+        borderColor: '#3b494b',
       },
       timeScale: {
-        borderColor: isDarkMode ? '#374151' : '#e5e7eb',
+        borderColor: '#3b494b',
         timeVisible: true,
       },
     })
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#10b981',
-      downColor: '#ef4444',
-      borderUpColor: '#10b981',
-      borderDownColor: '#ef4444',
-      wickUpColor: '#10b981',
-      wickDownColor: '#ef4444',
+      upColor: '#00dbe9',
+      downColor: '#ffb4ab',
+      borderUpColor: '#00dbe9',
+      borderDownColor: '#ffb4ab',
+      wickUpColor: '#00dbe9',
+      wickDownColor: '#ffb4ab',
     })
 
     const candleData: CandlestickData<Time>[] = result.candles.map((item) => ({
@@ -512,13 +521,13 @@ function CurveChart({
   mode: 'equity' | 'drawdown'
   isDarkMode: boolean
 }) {
-  const stroke = mode === 'equity' ? '#10b981' : '#ef4444'
-  const tickColor = isDarkMode ? '#9ca3af' : '#6b7280'
+  const stroke = mode === 'equity' ? '#00dbe9' : '#ffb4ab'
+  const tickColor = isDarkMode ? '#b9cacb' : '#b9cacb'
   const { containerRef, width } = useMeasuredWidth()
 
   if (data.length === 0) {
     return (
-      <div className="flex h-[360px] min-w-0 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+      <div className="flex h-[360px] min-w-0 items-center justify-center text-sm text-[#849495]">
         표시할 곡선 데이터가 없습니다.
       </div>
     )
@@ -528,7 +537,7 @@ function CurveChart({
     return (
       <div
         ref={containerRef}
-        className="flex h-[360px] min-w-0 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+        className="flex h-[360px] min-w-0 items-center justify-center text-sm text-[#849495]"
       >
         차트 영역을 준비 중입니다.
       </div>
@@ -539,7 +548,7 @@ function CurveChart({
     return (
       <div ref={containerRef} className="h-[360px] min-w-0 overflow-hidden">
         <AreaChart width={width} height={CURVE_CHART_HEIGHT} data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? '#374151' : '#e5e7eb'} />
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(59, 73, 75, 0.36)" />
           <XAxis
             dataKey="time"
             tickFormatter={formatDateLabel}
@@ -552,8 +561,16 @@ function CurveChart({
           <Tooltip
             labelFormatter={(value) => formatDateLabel(Number(value))}
             formatter={(value) => [`${Number(value).toFixed(2)}%`, '드로다운']}
+            contentStyle={{
+              backgroundColor: '#0a0e14',
+              border: '1px solid rgba(59, 73, 75, 0.55)',
+              borderRadius: 8,
+              color: '#dfe2eb',
+            }}
+            labelStyle={{ color: '#7df4ff' }}
+            itemStyle={{ color: '#dfe2eb' }}
           />
-          <Area type="monotone" dataKey="value" stroke={stroke} fill="#fee2e2" />
+          <Area type="monotone" dataKey="value" stroke={stroke} fill="rgba(255, 180, 171, 0.14)" />
         </AreaChart>
       </div>
     )
@@ -562,7 +579,7 @@ function CurveChart({
   return (
     <div ref={containerRef} className="h-[360px] min-w-0 overflow-hidden">
       <LineChart width={width} height={CURVE_CHART_HEIGHT} data={data}>
-        <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? '#374151' : '#e5e7eb'} />
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(59, 73, 75, 0.36)" />
         <XAxis
           dataKey="time"
           tickFormatter={formatDateLabel}
@@ -575,6 +592,14 @@ function CurveChart({
         <Tooltip
           labelFormatter={(value) => formatDateLabel(Number(value))}
           formatter={(value) => [formatKrw(Number(value)), '자산']}
+          contentStyle={{
+            backgroundColor: '#0a0e14',
+            border: '1px solid rgba(59, 73, 75, 0.55)',
+            borderRadius: 8,
+            color: '#dfe2eb',
+          }}
+          labelStyle={{ color: '#7df4ff' }}
+          itemStyle={{ color: '#dfe2eb' }}
         />
         <Line type="monotone" dataKey="value" stroke={stroke} strokeWidth={2} dot={false} />
       </LineChart>
@@ -827,30 +852,30 @@ function LaboratoryPage() {
   const resultInsights = result ? buildResultInsights(result) : []
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-6 text-gray-950 dark:bg-gray-950 dark:text-gray-50 sm:px-6 lg:px-8">
-      <div className="mx-auto grid max-w-[1600px] gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="space-y-4">
-          <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+    <div className="dashboard-quantum min-h-full min-w-0 px-4 py-5 text-[#dfe2eb] sm:px-5 lg:px-6">
+      <div className="mx-auto grid min-w-0 max-w-[1600px] gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <aside className="min-w-0 space-y-4">
+          <section className={LAB_CARD_CLASS}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#00dbe9]">
                   AI Policy Lab
                 </p>
-                <h1 className="mt-2 text-2xl font-bold">AI 매매 정책 검증실</h1>
+                <h1 className="mt-2 text-2xl font-bold text-[#dfe2eb]">AI 매매 정책 검증실</h1>
               </div>
-              <Brain className="mt-1 h-6 w-6 text-emerald-500" />
+              <Brain className="mt-1 h-6 w-6 text-[#7df4ff]" />
             </div>
           </section>
 
-          <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <section className={LAB_CARD_CLASS}>
             <div className="mb-4 flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4 text-gray-500" />
-              <h2 className="text-sm font-semibold">실험 조건</h2>
+              <SlidersHorizontal className="h-4 w-4 text-[#7df4ff]" />
+              <h2 className="text-sm font-bold text-[#dfe2eb]">실험 조건</h2>
             </div>
 
             <div className="space-y-4">
               <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                <span className={LAB_LABEL_CLASS}>
                   종목
                 </span>
                 <input
@@ -859,7 +884,7 @@ function LaboratoryPage() {
                   onChange={(event) =>
                     setForm((current) => ({ ...current, market: event.target.value.toUpperCase() }))
                   }
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                  className={LAB_FIELD_CLASS}
                 />
                 <datalist id="laboratory-market-options">
                   {filteredMarkets.map((market) => (
@@ -869,18 +894,18 @@ function LaboratoryPage() {
                   ))}
                 </datalist>
                 {selectedMarket && (
-                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  <p className="mt-2 text-xs text-[#849495]">
                     {selectedMarket.korean_name} · {selectedMarket.english_name}
                   </p>
                 )}
                 {marketsError && (
-                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-300">{marketsError}</p>
+                  <p className="mt-2 text-xs text-[#ffe179]">{marketsError}</p>
                 )}
               </label>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                  <span className={LAB_LABEL_CLASS}>
                     시작일
                   </span>
                   <input
@@ -889,11 +914,11 @@ function LaboratoryPage() {
                     onChange={(event) =>
                       setForm((current) => ({ ...current, startDate: event.target.value }))
                     }
-                    className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                    className={LAB_FIELD_CLASS}
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">
+                  <span className={LAB_LABEL_CLASS}>
                     종료일
                   </span>
                   <input
@@ -902,12 +927,12 @@ function LaboratoryPage() {
                     onChange={(event) =>
                       setForm((current) => ({ ...current, endDate: event.target.value }))
                     }
-                    className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                    className={LAB_FIELD_CLASS}
                   />
                 </label>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 rounded-md border border-gray-200 bg-gray-50 p-1 dark:border-gray-800 dark:bg-gray-950">
+              <div className="grid grid-cols-3 gap-2 rounded-lg bg-[#0a0e14]/70 p-1">
                 {TIMEFRAME_OPTIONS.map((option) => (
                   <button
                     key={option.value}
@@ -915,10 +940,10 @@ function LaboratoryPage() {
                     onClick={() =>
                       setForm((current) => ({ ...current, timeframe: option.value }))
                     }
-                    className={`rounded px-3 py-2 text-sm font-semibold transition ${
+                    className={`rounded-lg px-3 py-2 text-sm font-bold transition ${
                       form.timeframe === option.value
-                        ? 'bg-white text-emerald-700 shadow-sm dark:bg-gray-800 dark:text-emerald-300'
-                        : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100'
+                        ? 'bg-[#00dbe9]/14 text-[#7df4ff]'
+                        : 'text-[#849495] hover:bg-[#262a31]/70 hover:text-[#dfe2eb]'
                     }`}
                   >
                     {option.label}
@@ -937,18 +962,18 @@ function LaboratoryPage() {
             </div>
           </section>
 
-          <section className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <section className={LAB_CARD_CLASS}>
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
-                  <h2 className="text-sm font-semibold">검증할 AI 정책</h2>
+                  <ShieldCheck className="h-4 w-4 text-[#7df4ff]" />
+                  <h2 className="text-sm font-bold text-[#dfe2eb]">검증할 AI 정책</h2>
                 </div>
-                <p className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                <p className="mt-1 text-xs leading-5 text-[#849495]">
                   {selectedPresetMeta?.headline ?? '직접 조정한 사용자 지정 정책'}
                 </p>
               </div>
-              <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+              <span className="shrink-0 rounded-full bg-[#00dbe9]/12 px-2.5 py-1 text-xs font-bold text-[#7df4ff]">
                 {selectedPresetMeta?.label ?? '사용자 지정'}
               </span>
             </div>
@@ -959,27 +984,27 @@ function LaboratoryPage() {
                   key={key}
                   type="button"
                   onClick={() => handlePreset(key)}
-                  className={`rounded-md border px-3 py-3 text-left transition ${
+                  className={`rounded-lg px-3 py-3 text-left transition ${
                     selectedPreset === key
-                      ? 'border-emerald-500 bg-emerald-50 text-emerald-800 dark:border-emerald-500 dark:bg-emerald-500/10 dark:text-emerald-200'
-                      : 'border-gray-200 text-gray-700 hover:border-emerald-400 hover:text-emerald-700 dark:border-gray-700 dark:text-gray-200 dark:hover:border-emerald-500 dark:hover:text-emerald-300'
+                      ? 'bg-[#00dbe9]/14 text-[#7df4ff]'
+                      : 'bg-[#0a0e14]/70 text-[#b9cacb] hover:bg-[#262a31]/70 hover:text-[#dfe2eb]'
                   }`}
                 >
                   <span className="block text-sm font-semibold">{POLICY_PRESETS[key].label}</span>
                   <span className="mt-1 block text-xs font-medium leading-5">
                     {POLICY_PRESETS[key].headline}
                   </span>
-                  <span className="mt-2 block text-[11px] leading-4 text-gray-500 dark:text-gray-400">
+                  <span className="mt-2 block text-[11px] leading-4 text-[#849495]">
                     {POLICY_PRESETS[key].riskLabel}
                   </span>
                 </button>
               ))}
             </div>
 
-            <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50/70 p-4 dark:border-emerald-500/20 dark:bg-emerald-500/10">
+            <div className="mb-4 rounded-lg bg-[#00dbe9]/10 p-4">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">정책 요약</p>
-                <p className="text-xs font-medium text-emerald-700 dark:text-emerald-200">
+                <p className="text-sm font-bold text-[#dfe2eb]">정책 요약</p>
+                <p className="text-xs font-semibold text-[#7df4ff]">
                   {selectedPresetMeta?.description ?? '고급 설정값을 직접 반영합니다.'}
                 </p>
               </div>
@@ -987,10 +1012,10 @@ function LaboratoryPage() {
                 {policySummaryItems.map((item) => (
                   <div
                     key={item.label}
-                    className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-xs dark:bg-gray-900"
+                    className="flex items-center justify-between gap-3 rounded-lg bg-[#0a0e14]/70 px-3 py-2 text-xs"
                   >
-                    <span className="text-gray-500 dark:text-gray-400">{item.label}</span>
-                    <span className="font-semibold text-gray-900 dark:text-gray-100">{item.value}</span>
+                    <span className="text-[#849495]">{item.label}</span>
+                    <span className="font-bold text-[#dfe2eb]">{item.value}</span>
                   </div>
                 ))}
               </div>
@@ -999,16 +1024,16 @@ function LaboratoryPage() {
             <button
               type="button"
               onClick={() => setShowAdvancedPolicy((current) => !current)}
-              className="mb-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-emerald-400 hover:text-emerald-700 dark:border-gray-700 dark:text-gray-200 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
+              className={`${LAB_SECONDARY_BUTTON_CLASS} mb-4 w-full`}
             >
               <SlidersHorizontal className="h-4 w-4" />
               {showAdvancedPolicy ? '전문가 설정 닫기' : '전문가 설정 열기'}
             </button>
 
             {showAdvancedPolicy && (
-              <div className="space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950">
+              <div className="space-y-4 rounded-lg bg-[#0a0e14]/70 p-4">
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
                     신호 판단
                   </h3>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1048,7 +1073,7 @@ function LaboratoryPage() {
                 </div>
 
                 <div>
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
                     진입과 청산
                   </h3>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1111,7 +1136,7 @@ function LaboratoryPage() {
             )}
 
             {error && (
-              <div className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+              <div className="mt-4 rounded-lg bg-[#ffb4ab]/10 px-3 py-2 text-sm font-semibold text-[#ffb4ab]">
                 {error}
               </div>
             )}
@@ -1120,7 +1145,7 @@ function LaboratoryPage() {
               type="button"
               onClick={() => void handleRun()}
               disabled={isRunning || isBootstrapping}
-              className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-70"
+              className={`${LAB_PRIMARY_BUTTON_CLASS} mt-5 w-full`}
             >
               {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
               {isRunning ? '검증 중...' : '정책 백테스트 실행'}
@@ -1128,32 +1153,32 @@ function LaboratoryPage() {
           </section>
         </aside>
 
-        <main className="min-w-0 space-y-6">
+        <main className="min-w-0 space-y-5">
           {result ? (
             <>
-              <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+              <section className={LAB_CARD_CLASS}>
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
-                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                    <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.24em] text-[#00dbe9]">
                       <Bot className="h-4 w-4" />
                       AI 분석
                     </p>
-                    <h2 className="mt-2 text-2xl font-bold">검증 결과 해석</h2>
+                    <h2 className="mt-2 text-2xl font-bold text-[#dfe2eb]">검증 결과 해석</h2>
                     {resultVerdict && (
-                      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                      <p className="mt-2 text-sm text-[#b9cacb]">
                         {resultVerdict.title}
                       </p>
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {result.ai_briefing.fallback && (
-                      <span className="inline-flex w-fit rounded-md border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                      <span className="inline-flex w-fit rounded-lg bg-[#eac324]/12 px-3 py-1 text-xs font-bold text-[#ffe179]">
                         로컬 요약
                       </span>
                     )}
                     {resultVerdict && (
                       <span
-                        className={`inline-flex w-fit rounded-md border px-3 py-1 text-xs font-semibold ${resolveVerdictClassName(
+                        className={`inline-flex w-fit rounded-lg px-3 py-1 text-xs font-bold ${resolveVerdictClassName(
                           resultVerdict.tone,
                         )}`}
                       >
@@ -1164,12 +1189,12 @@ function LaboratoryPage() {
                 </div>
 
                 {resultVerdict && (
-                  <p className="mt-4 rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
+                  <p className="mt-4 rounded-lg bg-[#0a0e14]/70 px-4 py-3 text-sm leading-6 text-[#b9cacb]">
                     {resultVerdict.description}
                   </p>
                 )}
 
-                <div className="mt-4 rounded-md border border-gray-200 bg-white p-4 text-sm leading-7 text-gray-700 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-200">
+                <div className="mt-4 rounded-lg bg-[#0a0e14]/70 p-4 text-sm leading-7 text-[#dfe2eb]">
                   {result.ai_briefing.content}
                 </div>
 
@@ -1177,15 +1202,15 @@ function LaboratoryPage() {
                   {resultInsights.map((item) => (
                     <article
                       key={item.label}
-                      className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-950"
+                      className="rounded-lg bg-[#0a0e14]/70 p-4"
                     >
-                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
                         {item.label}
                       </p>
-                      <p className="mt-2 text-base font-bold text-gray-900 dark:text-gray-100">
+                      <p className="mt-2 text-base font-bold text-[#dfe2eb]">
                         {item.value}
                       </p>
-                      <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                      <p className="mt-2 text-xs leading-5 text-[#849495]">
                         {item.description}
                       </p>
                     </article>
@@ -1226,14 +1251,14 @@ function LaboratoryPage() {
                 />
               </section>
 
-              <section className="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-900">
-                <div className="flex flex-col gap-3 border-b border-gray-200 p-4 dark:border-gray-800 lg:flex-row lg:items-center lg:justify-between">
+              <section className="quantum-card overflow-hidden rounded-xl text-[#dfe2eb]">
+                <div className="flex flex-col gap-3 border-b border-[#3b494b]/35 p-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#849495]">
                       근거 확인
                     </p>
-                    <h2 className="mt-1 text-lg font-bold">{result.meta.market}</h2>
-                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    <h2 className="mt-1 text-lg font-bold text-[#dfe2eb]">{result.meta.market}</h2>
+                    <p className="mt-1 text-sm text-[#849495]">
                       {new Date(result.meta.start_date).toLocaleDateString('ko-KR')} -{' '}
                       {new Date(result.meta.end_date).toLocaleDateString('ko-KR')} ·{' '}
                       {result.meta.timeframe}
@@ -1267,7 +1292,7 @@ function LaboratoryPage() {
                   </div>
                 </div>
 
-                <div className="p-4">
+                <div className="bg-[#0a0e14]/35 p-4">
                   {activeTab === 'price' && <PriceChart result={result} isDarkMode={isDarkMode} />}
                   {activeTab === 'equity' && (
                     <CurveChart data={equityData} mode="equity" isDarkMode={isDarkMode} />
@@ -1280,11 +1305,11 @@ function LaboratoryPage() {
               </section>
             </>
           ) : (
-            <section className="flex min-h-[520px] items-center justify-center rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center dark:border-gray-700 dark:bg-gray-900">
+            <section className="quantum-card flex min-h-[520px] items-center justify-center rounded-xl p-8 text-center">
               <div>
-                <Brain className="mx-auto h-10 w-10 text-emerald-500" />
-                <h2 className="mt-4 text-xl font-bold">아직 해석할 결과가 없습니다</h2>
-                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                <Brain className="mx-auto h-10 w-10 text-[#7df4ff]" />
+                <h2 className="mt-4 text-xl font-bold text-[#dfe2eb]">아직 해석할 결과가 없습니다</h2>
+                <p className="mt-2 text-sm text-[#849495]">
                   좌측 조건을 고르고 실행하면 AI가 성과와 리스크를 요약합니다.
                 </p>
               </div>
@@ -1309,16 +1334,16 @@ function KpiCard({
 }) {
   const colorClass =
     tone === 'positive'
-      ? 'text-emerald-600 dark:text-emerald-300'
+      ? 'text-[#7df4ff]'
       : tone === 'negative'
-        ? 'text-rose-600 dark:text-rose-300'
-      : 'text-gray-900 dark:text-gray-100'
+        ? 'text-[#ffb4ab]'
+      : 'text-[#dfe2eb]'
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">{label}</p>
+    <div className="quantum-card rounded-xl p-4">
+      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">{label}</p>
       <p className={`mt-2 text-2xl font-bold ${colorClass}`}>{value}</p>
-      {hint && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-[#849495]">{hint}</p>}
     </div>
   )
 }
@@ -1338,10 +1363,10 @@ function ResultTabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition ${
+      className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-bold transition ${
         active
-          ? 'bg-emerald-600 text-white'
-          : 'border border-gray-200 text-gray-600 hover:border-emerald-400 hover:text-emerald-700 dark:border-gray-700 dark:text-gray-300 dark:hover:border-emerald-500 dark:hover:text-emerald-300'
+          ? 'bg-[#00dbe9]/14 text-[#7df4ff]'
+          : 'bg-[#0a0e14]/70 text-[#b9cacb] hover:bg-[#262a31]/70 hover:text-[#dfe2eb]'
       }`}
     >
       {icon}
@@ -1353,7 +1378,7 @@ function ResultTabButton({
 function TradeTable({ result }: { result: BacktestRunResponse }) {
   if (result.trades.length === 0) {
     return (
-      <div className="flex min-h-[320px] items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+      <div className="flex min-h-[320px] items-center justify-center text-sm text-[#849495]">
         체결된 거래가 없습니다.
       </div>
     )
@@ -1361,8 +1386,8 @@ function TradeTable({ result }: { result: BacktestRunResponse }) {
 
   return (
     <div className="max-h-[460px] overflow-auto">
-      <table className="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800">
-        <thead className="sticky top-0 bg-gray-50 text-xs uppercase text-gray-500 dark:bg-gray-950 dark:text-gray-400">
+      <table className="min-w-full divide-y divide-[#3b494b]/35 text-sm">
+        <thead className="sticky top-0 bg-[#0a0e14] text-xs uppercase text-[#849495]">
           <tr>
             <th className="px-3 py-3 text-left">시간</th>
             <th className="px-3 py-3 text-left">구분</th>
@@ -1372,18 +1397,18 @@ function TradeTable({ result }: { result: BacktestRunResponse }) {
             <th className="px-3 py-3 text-left">사유</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+        <tbody className="divide-y divide-[#3b494b]/24">
           {result.trades.map((trade) => (
-            <tr key={`${trade.index}-${trade.timestamp}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
-              <td className="whitespace-nowrap px-3 py-3 text-gray-600 dark:text-gray-300">
+            <tr key={`${trade.index}-${trade.timestamp}`} className="hover:bg-[#262a31]/50">
+              <td className="whitespace-nowrap px-3 py-3 text-[#b9cacb]">
                 {new Date(trade.timestamp).toLocaleString('ko-KR')}
               </td>
               <td className="px-3 py-3">
                 <span
                   className={`rounded px-2 py-1 text-xs font-semibold ${
                     trade.side === 'buy'
-                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
-                      : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300'
+                      ? 'bg-[#00dbe9]/12 text-[#7df4ff]'
+                      : 'bg-[#ffb4ab]/12 text-[#ffb4ab]'
                   }`}
                 >
                   {trade.side.toUpperCase()}
@@ -1396,7 +1421,7 @@ function TradeTable({ result }: { result: BacktestRunResponse }) {
               <td className="whitespace-nowrap px-3 py-3 text-right">
                 {trade.confidence ?? '-'}
               </td>
-              <td className="min-w-40 px-3 py-3 text-gray-600 dark:text-gray-300">
+              <td className="min-w-40 px-3 py-3 text-[#b9cacb]">
                 {trade.reason ?? '-'}
               </td>
             </tr>

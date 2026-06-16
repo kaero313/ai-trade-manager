@@ -1,57 +1,63 @@
-# AI-Trade-Manager 아키텍처 명세서 (Architecture Specification)
+﻿# AI-Trade-Manager 아키텍처 명세서 (Architecture Specification)
 
 본 설계 문서는 **AI-Trade-Manager** 프로젝트의 시스템 구조와 기술 스택 선택의 의도를 설명합니다.
 모든 개발(특히 Codex)은 이 문서를 최우선 기준으로 삼아 구조적 일관성을 유지해야 합니다.
 
-> **최종 갱신 기준:** Phase 41 (AI Portfolio Dashboard) 완료
+> **최종 갱신 기준:** Phase 48 (RAG 비용 절감 및 BUY 민감도 조정)
+>
+> 이 문서는 현재 구조 설명을 우선합니다. 하단의 버전 항목은 구현 발전 이력으로 보며, 최신 런타임 구조는 1~6장을 기준으로 판단합니다.
 
 ---
 
 ## 1. 핵심 철학 (Core Philosophy)
 1. **관심사의 완벽한 분리 (Decoupling):** 백엔드(FastAPI)는 오직 JSON 데이터만 서빙하며, 모든 UI 렌더링은 프론트엔드(React)가 전담합니다.
 2. **비동기 최우선 (Async-First):** 네트워크 병목 현상(거래소 API 호출)과 DB I/O가 잦은 트레이딩 봇의 특성을 고려하여 모든 I/O 작업은 `async/await` 구조를 따릅니다.
-3. **무중단 운영 (Fault Tolerance):** 거래소 API에 장애가 생겨도 워커나 슬랙 봇이 멈추지 않도록 마이크로서비스 관점으로 컴포넌트를 분리합니다.
+3. **장애 전파 최소화 (Fault Tolerance):** 거래소, RAG, AI provider 장애가 전체 앱 중단으로 이어지지 않도록 상태를 기록하고 fallback/skip 경로를 둡니다.
 4. **AI-First 설계:** LLM 기반 멀티에이전트 오케스트레이션을 통해 자율 매매 판단, 시장 분석, 포트폴리오 관리를 지능적으로 수행합니다.
 
 ## 2. 시스템 아키텍처 (System Architecture)
-애플리케이션은 **Docker Compose**를 기반으로 격리된 컨테이너 레이어 및 프론트엔드 클라이언트로 동작합니다.
+애플리케이션은 React/Vite 프론트엔드와 FastAPI 백엔드를 분리하고, PostgreSQL과 OpenSearch를 외부 상태 저장소로 사용합니다. 현재 개발 실행 구조에서는 FastAPI 앱 프로세스가 REST API, APScheduler, Trading Engine, Slack/Telegram bot lifecycle을 함께 초기화합니다.
 
 ```mermaid
 graph TD
-    UI["Frontend (React/Vite Dashboard)"] -->|REST API + SSE| API
-    Slack["Slack Workspace"] <-->|Socket Mode| Bot
+    UI["Frontend (React/Vite)"] -->|REST API + SSE| API
+    Slack["Slack Workspace"] <-->|Socket Mode| Messenger
+    Telegram["Telegram"] <-->|Polling| Messenger
 
-    subgraph Docker Network
-        API["FastAPI Server"]
-        Worker["Trading Worker Engine"]
-        Bot["Slack & AI Control Bot"]
-        Scheduler["APScheduler (AsyncIO)"]
-        VectorDB["OpenSearch 3.5.0 (RAG Vector DB)"]
-
-        API -->|Async Session| DB[("PostgreSQL")]
-        Worker -->|Async Session| DB
-        Bot -->|Async Session| DB
-        Scheduler -->|Async Session| DB
-        API -->|Vector Search| VectorDB
+    subgraph AppProcess["FastAPI App Process"]
+        API["REST API"]
+        Scheduler["APScheduler"]
+        Engine["Trading Engine"]
+        Messenger["Slack/Telegram Bot"]
+        Router["AI Provider Router"]
     end
 
-    API -->|HTTP Broker| Broker(("Upbit"))
-    Worker -->|HTTP Broker| Broker
-    API -->|LLM API| LLM(("Gemini / OpenAI"))
+    API -->|Async Session| DB[("PostgreSQL")]
+    Scheduler -->|Async Session| DB
+    Engine -->|Async Session| DB
+    Messenger -->|Async Session| DB
+    Router -->|LLM API| LLM(("Gemini / OpenAI"))
+    API -->|Vector Search| VectorDB["OpenSearch market_news"]
+    Engine -->|HTTP Broker| Broker(("Upbit"))
 ```
 
-### 2.1. 독립된 프로세스 레이어
-1. **API Server Container (`app/api/`)**
-   - 역할: REST 엔드포인트 제공. 프론트엔드 대시보드, 채팅, 백테스팅, 포트폴리오 관리 등 전반적인 기능 처리.
-   - 특징: 트레이딩 자체는 수행하지 않는 "명령 하달 및 데이터 제공 인터페이스" 역할.
-2. **Trading Worker Container (`app/services/trading/`)**
-   - 역할: 24시간 백그라운드에서 주기적(Tick)으로 가격을 감시하고 조건 매매를 수행. AI 포트폴리오 매니저와 연동되어 지능적으로 동작.
-   - 특징: API 서버 가동 여부와 무관하게 독자적인 DB 세션을 가지고 루프(Loop)를 돕니다.
-3. **Messenger Bot Container (`app/services/slack_socket.py`)**
-   - 역할: 사용자가 모바일에서 슬랙으로 내리는 명령어(`/잔고`, `긴급정지`, `/추천`)를 실시간으로 받아 DB/거래소에 반영하고, AI 에이전트를 통해 시장 분석 리포트를 제공.
-4. **Scheduler (`app/core/scheduler.py`)**
-   - 역할: `AsyncIOScheduler`(APScheduler)로 뉴스 수집, 시장 감성 분석, AI 자율분석, 포트폴리오 스냅샷 저장 등 주기적 잡을 관리.
-   - 주요 잡: 뉴스 수집(4h), 시장 감성 갱신(5m), AI 자율분석(관심종목 순회), 포트폴리오 스냅샷(매시 정각)
+### 2.1. 런타임 레이어
+1. **Frontend (`frontend/`)**
+   - React/Vite가 대시보드, 포트폴리오, AI 뱅커, 연구소, 설정 화면을 렌더링합니다.
+   - 백엔드는 JSON/SSE만 제공하고 UI 렌더링 책임은 프론트엔드에 둡니다.
+2. **FastAPI App (`app/main.py`)**
+   - lifespan에서 기본 설정 시드, Telegram/Slack bot, APScheduler, Trading Engine을 초기화합니다.
+   - 운영에서 백엔드를 여러 인스턴스로 복제하면 스케줄러와 매매 루프가 중복될 수 있으므로 단일 인스턴스 운영을 기본으로 봅니다.
+3. **Scheduler (`app/core/scheduler.py`)**
+   - 뉴스 수집, 시장 심리 캐시, AI 자율 분석, 판단 정확도 검증, 포트폴리오 스냅샷 저장을 주기적으로 실행합니다.
+   - 정기 뉴스 수집은 비용 절감을 위해 12시간 기본 주기를 사용하고, BUY 직전 2차 검증에서만 필요 시 최신 뉴스를 보강합니다.
+   - Slack 포트폴리오 알림은 `system_configs.slack_portfolio_alert_settings` JSON을 `preset`/`advanced` rule 목록으로 정규화한 뒤, 각 `weekdays × times` 조합을 별도 `CronTrigger` job으로 등록합니다. 가격 영향 뉴스 섹션은 OpenSearch RAG 캐시에서 fallback을 제외한 실뉴스를 휴리스틱으로 Top3만 추려 보냅니다.
+4. **Trading Engine / Executor (`app/services/trading/`)**
+   - AI 판단 로그를 주문 명령으로 즉시 취급하지 않고, confidence, Entry Gate, shadow mode, live BUY 안전락, BUY 직전 2차 검증을 통과한 경우에만 paper/live 주문 경로로 넘깁니다.
+   - BUY 후보가 주문 직전 단계까지 올라온 경우에만 RAG 최신성 확인과 2차 AI 검증을 실행합니다.
+5. **State Stores**
+   - PostgreSQL은 주문, 포지션, 설정, AI 판단 로그, 채팅 세션, 포트폴리오 스냅샷의 SSOT입니다.
+   - OpenSearch는 재수집 가능한 RAG 뉴스 캐시와 ingestion 관측 인덱스로 사용합니다.
 
 ### 2.2. 개발 운영 아키텍처 (AI Delivery Workflow)
 런타임 멀티에이전트와 별개로, 개발 과정은 **Gemini / IDE 설계 + Codex 앱 적응형 멀티 에이전트 실행** 구조를 사용합니다.
@@ -80,7 +86,7 @@ graph LR
 - **크로스스택/포트폴리오 시그널이 큰 작업:** `Main + Explorer + Backend Worker + Frontend Worker + Reviewer`
 - **문서/설명 가치가 큰 작업:** 위 조합 + `Docs Curator`
 
-## 3. AI 멀티에이전트 아키텍처 (Phase 36~40)
+## 3. AI 멀티에이전트 아키텍처
 
 ```mermaid
 graph TD
@@ -110,7 +116,7 @@ graph TD
 - **Supervisor:** 사용자 질문을 분류하여 적절한 전문 에이전트로 라우팅. 최종 답변 종합.
 - **RAG Agent:** OpenSearch 3.5.0 `market_news` 인덱스에서 Gemini 임베딩 기반 kNN 검색을 수행해 뉴스 문맥을 제공.
 - **Quant Agent:** 실시간 시세, 기술지표(RSI, MACD, BB), 호가, 체결 내역을 분석하는 도구(Tool) 보유.
-- **Reviewer Agent (Phase 40):** RAG/Quant의 답변을 검수. 할루시네이션 검출 + 투자 면책 조항 강제. 최대 2회 재작업 지시(순환형 Self-Correction Loop).
+- **Reviewer Agent:** RAG/Quant의 답변을 검수. 할루시네이션 검출 + 투자 면책 조항 강제. 최대 2회 재작업 지시(순환형 Self-Correction Loop).
 
 ### 3.2. SSE 스트리밍
 - AI 채팅은 **Server-Sent Events(SSE)** 방식으로 실시간 스트리밍.
@@ -149,142 +155,41 @@ ai-trade-manager/
 - **대시보드 (Dashboard):** 실시간 시세 캔들 차트, 포트폴리오 도넛 차트, 시장 심리/뉴스 패널, AI 인사이트 브리핑, 봇 제어 패널, 최근 체결 내역. 판단 요약의 수동 AI Cycle은 현재 선택 종목만 즉시 분석하고 기존 매매 게이트를 평가합니다.
 - **AI 뱅커 (Chat):** LangGraph 멀티에이전트와 SSE 실시간 대화. Activity Card로 에이전트 작업 상태를 시각화하고, 세션 목록에서 대화 세션을 즉시 삭제할 수 있습니다.
 - **연구소 (Laboratory):** AI 매매 정책 백테스트 엔진과 연동하여 EMA/RSI/TP/SL/비중 정책을 검증하고, 가격 차트·자산 곡선·드로다운·거래 내역·AI 결과 브리핑을 시각화.
-- **설정 (Settings):** AI 매매 대상, 리스크, 스케줄, AI provider 우선순위와 모델을 실시간 조정.
-- **포트폴리오 (완료, Phase 41):** AI 기반 자산 관리 대시보드.
+- **설정 (Settings):** AI 매매 대상, 리스크, 스케줄, RAG 비용 제어, AI provider 우선순위와 모델, Slack 포트폴리오 알림 반복 규칙을 실시간 조정.
+- **포트폴리오:** AI 기반 자산 관리 대시보드.
 
 ## 6. 거래소 추상화 (Broker Abstraction) 전략
 어댑터 패턴(Adapter Pattern)을 사용하여 모든 거래소 클라이언트는 반드시 `BaseBrokerClient` 인터페이스를 상속합니다. `BrokerFactory`를 통해 동작하여, 단일 코드베이스로 다수 거래소를 원활하게 지원합니다.
-## Phase 42 업데이트
-- AI 채팅 세션 메타데이터를 `chat_sessions` 테이블로 분리하고, 각 세션에 `surface`(`ai_banker` 또는 `portfolio`)를 부여했습니다.
-- AI 뱅커 메인 화면은 `ai_banker` 세션만 생성·조회합니다.
-- 포트폴리오 미니챗은 `portfolio` 세션을 사용하지만, AI 뱅커 세션 목록에는 노출되지 않습니다.
-- `ai_chat_messages`는 계속 메시지 본문을 저장하되, 모든 메시지는 `chat_sessions.session_id`를 부모로 참조합니다.
-## Phase 42.1 업데이트
-- AI 뱅커 화면 상단에 기존 `/api/dashboard` 요약 데이터를 재사용한 포트폴리오 스냅샷 카드와 질문 유도 칩을 추가했습니다.
-## Phase 42.2 업데이트
-- AI 뱅커 화면의 포트폴리오 정보는 별도 대형 카드가 아니라, 대화창 헤더 아래에 붙는 읽기 전용 compact bar로 축소했습니다.
-## Phase 42.3 업데이트
-- AI 뱅커 상단 소개 카드(`AI Banker Chat`, 설명 문구)는 제거하고, 그 자리를 얕은 포트폴리오 요약 bar로 대체했습니다.
-- AI 뱅커 화면 구조는 `상단 포트폴리오 bar + 좌측 세션 목록 + 우측 대화`로 정리했습니다.
-- 포트폴리오 요약은 기존 `/api/dashboard` 데이터를 재사용하며, `총 자산`, `KRW 잔고`, `상위 보유 종목 3개`만 읽기 전용으로 노출합니다.
 
-## Phase 42.4 업데이트
-- RAG 벡터 저장소는 OpenSearch 3.5.0의 `market_news` 인덱스를 유지합니다.
-- `embedding` 필드는 `knn_vector`, `dimension=1536`, `method=hnsw`, `engine=lucene`, `space_type=cosinesimil` 조합을 사용합니다.
-- 뉴스 파이프라인은 `뉴스 수집 -> Gemini 임베딩 -> OpenSearch 저장 -> kNN 검색 -> Gemini 분석` 순서로 동작하며, kNN 실패 시 텍스트 검색과 RSS 폴백으로 전환합니다.
-- 런타임 LLM provider는 `SystemConfig`의 AI provider 우선순위에 따라 Gemini/OpenAI 자동 fallback을 사용합니다.
-- AI 매수 기본 종목 비중 한도는 `max_allocation_pct=30`으로 운영합니다.
+## 7. 변경 이력
+아래 버전은 실제 릴리즈 태그가 아니라, 프로젝트가 어떤 방향으로 고도화됐는지 보여주기 위한 문서용 발전 단계입니다.
 
-## Phase 42.5 업데이트
-- AI 텍스트 생성 경로는 공통 `AIProviderRouter`를 통해 실행됩니다.
-- `ai_provider_priority`, `ai_provider_settings`, `ai_provider_status` SystemConfig JSON 값으로 provider 순서, 모델명, 쿼터 차단 상태를 관리합니다.
-- Gemini 일일 쿼터 소진은 Pacific time 자정까지 차단 상태로 저장하고, OpenAI rate limit은 응답 reset 힌트 또는 기본 쿨다운을 사용합니다.
-- 포트폴리오 브리핑, AI 채팅, `/api/ai/analyze`, 뉴스 감성 분석, 트레이딩 구조화 분석은 같은 우선순위 fallback을 공유합니다.
-- RAG 임베딩은 OpenSearch 1536차원 벡터 호환성을 유지하면서 Gemini를 primary, OpenAI를 fallback provider로 사용합니다.
+### v0.1 기반 구조
+- FastAPI, React/Vite, PostgreSQL, Alembic 기반의 웹/백엔드 분리 구조를 구성했습니다.
+- Upbit 연동은 `BaseBrokerClient` 추상화와 `BrokerFactory`를 통해 거래소 교체 가능성을 열어뒀습니다.
 
-## Phase 42.6 업데이트
-- 포트폴리오 상단 자동 브리핑은 LangGraph 채팅 세션을 생성하지 않고 `/api/portfolio/briefing` 전용 REST API를 호출합니다.
-- `/api/portfolio/briefing`은 현재 포트폴리오, 기간 손익 스냅샷, 최근 AI 판단, 캐시된 시장 심리를 하나의 compact prompt로 묶어 `AIProviderRouter`에 단일 호출합니다.
-- 포트폴리오 미니챗은 기존 LangGraph/SSE 채팅 경로를 유지해 사용자의 후속 질문만 멀티에이전트로 처리합니다.
+### v0.2 AI 분석/RAG
+- AI 판단 결과를 주문 명령이 아니라 `BUY / SELL / HOLD` 분석 로그로 저장하는 구조를 만들었습니다.
+- OpenSearch `market_news` 기반 뉴스 검색과 Gemini/OpenAI provider fallback을 붙여 판단 근거의 데이터 출처를 추적할 수 있게 했습니다.
 
-## Phase 42.7 업데이트
-- AI 자율매매 실행부는 `live_buy_enabled=false`를 기본값으로 사용해 live 모드 신규 BUY를 차단합니다. 기존 보유분의 SELL, TP/SL 청산 로직은 유지합니다.
-- AI가 `recommended_weight=100`을 반환하더라도 실행부는 `ai_max_buy_weight_pct` 상한을 적용해 신규 매수 예산을 제한합니다.
-- 자동 체결 최소 확신도 기본값은 `ai_min_confidence_trade=85`로 상향해 낮은 확신도 신호가 live 주문으로 이어지지 않게 합니다.
-- Upbit 시장가 매수(`side=bid`, `ord_type=price`) 응답의 `price`는 주문 KRW 금액이므로 체결가로 사용하지 않습니다. 주문 상세의 체결 목록 VWAP 또는 현재가 fallback으로 `order_history.price`를 기록합니다.
-- live 체결 기록 시 `positions.quantity`, `positions.avg_entry_price`, `positions.status`를 함께 갱신해 로컬 성과 집계 단위가 실제 체결 단위와 맞도록 유지합니다.
-- 2026-04-30 07:00 UTC 이전의 의심 시장가 매수 기록은 체결 단위가 혼재된 레거시 데이터로 보고 AI 실현손익/최근 AI 체결 집계에서 제외합니다.
-- AI 분석 프롬프트에는 커스텀 페르소나보다 우선하는 리스크 안전 규칙을 추가해 단일 RSI 조건이나 단편 뉴스만으로 고확신 BUY/100% 비중을 강제하지 못하게 했습니다.
+### v0.3 AI Banker/Portfolio
+- LangGraph 멀티에이전트, SSE 스트리밍, 채팅 세션 저장을 통해 AI 응답 생성 과정을 화면에 노출했습니다.
+- 포트폴리오 브리핑, 스냅샷, 미니챗을 추가해 잔고 조회를 운영 대시보드 흐름으로 확장했습니다.
 
-## Phase 43 업데이트
-- AI 자동매매의 신규 BUY 경로 앞에 `entry_policy` 게이트를 추가했습니다. AI는 단독 매수 결정권자가 아니라 최종 검토자로 동작하며, 실제 주문 전 `기술적 조건 + 변동성 + 시장심리 + 실제 뉴스/RAG + 심볼별 과거 AI BUY 적중률 보정 confidence` 점수를 통과해야 합니다.
-- 자동 분석/매매 대상은 기본적으로 `KRW-BTC`, `KRW-ETH`, `KRW-XRP`로 제한하고 `KRW-DOGE`는 제외합니다. 스케줄러 watchlist도 같은 정책으로 필터링합니다.
-- `live_buy_enabled=false`와 별개로 `ai_entry_shadow_mode=true`를 기본값으로 추가했습니다. shadow mode에서는 BUY 후보가 모든 조건을 통과해도 주문을 내지 않고 로그로만 남깁니다.
-- OpenSearch `market_news` 결과가 `dummy://` 또는 fallback 문서뿐이면 실제 뉴스 근거로 보지 않습니다. AI 분석 컨텍스트에는 뉴스 없음으로 전달되고, 진입 점수의 뉴스 항목은 0점입니다.
-- 백테스트 기본 정책은 보수형 BUY 기준에 맞춰 `min_confidence=85`, `rsi_min=45`, `take_profit_pct=5`, `stop_loss_pct=-3`, `trailing_stop_pct=0.03` 조합을 사용합니다.
+### v0.4 자동매매 안전장치
+- paper/live 모드, shadow mode, live BUY lock, Entry Gate를 도입해 AI 판단과 실제 주문 실행을 분리했습니다.
+- 신규 BUY는 기술 지표, 시장 심리, RAG 품질, 포트폴리오 상태, 과거 판단 성과를 함께 통과해야 실행 후보가 되도록 제한했습니다.
 
-## Phase 44 업데이트
-- RAG 뉴스 수집 파이프라인은 CryptoPanic/Naver API 문서와 함께 RSS 피드 문서를 정식 수집 소스로 사용합니다.
-- RSS 또는 외부 API에서 실제 문서가 1건 이상 확보되면 `dummy://` fallback 문서는 OpenSearch 인덱싱 대상에서 제외합니다.
-- `/api/news/rag/status`는 `market_news` 인덱스 존재 여부, 실문서/fallback/임베딩 누락 수, 최신 발행 시각, 소스별 문서 수를 반환합니다.
-- 1차 범위에서는 기사 본문 크롤링과 청크 오버랩을 도입하지 않고, RSS 제목/요약 단위 문서를 Gemini 임베딩으로 저장합니다.
+### v0.5 RAG 운영 품질
+- RSS 수집, 기사 본문 크롤링, parent/chunk 구조, 임베딩 fallback, backfill, warning 응답을 추가했습니다.
+- RAG 데이터가 없거나 품질이 낮은 상황을 숨기지 않고 화면과 로그에서 확인할 수 있게 했습니다.
+- 정기 수집에서는 OpenAI 번역 fallback을 기본 차단하고, BUY 직전 최신화처럼 비용을 감수할 가치가 있는 경로만 별도 허용합니다.
 
-## Phase 45 업데이트
-- RAG 뉴스 저장소 `market_news`는 문서 단위 저장에서 parent 기사 + chunk 문서 구조로 확장되었습니다.
-- ingestion 경로는 RSS/API 원문을 `parent_id` 기준으로 식별하고, 짧은 문서는 1청크, 긴 문서는 `900`자 최대 길이와 `120`자 overlap 기준으로 분할합니다.
-- 기존 `market_news` 매핑에 청크 필드가 없으면 ingestion 경로에서만 인덱스를 삭제/재생성합니다. 조회 경로는 인덱스를 임의 재생성하지 않습니다.
-- AI 분석의 뉴스 검색은 Gemini query embedding 기반 kNN 후보와 BM25 후보를 각각 조회한 뒤 `0.55 * vector + 0.35 * keyword + 0.10 * recency` 점수로 병합합니다.
-- 병합 결과는 `parent_id` 기준으로 중복 제거되어 같은 기사에서 여러 청크가 검색되어도 가장 높은 점수의 청크 1개만 AI 컨텍스트에 전달됩니다.
+### v0.6 비용 최적화 모델 라우팅
+- AI provider 설정에 목적별 모델 라우팅을 추가해 분석, 채팅, 번역, 브리핑, 백테스트 용도를 분리했습니다.
+- 1차 자율 판단은 저가 모델을 기본으로 사용하고, live BUY 직전 검증만 별도 모델로 승격해 비용과 안전성을 함께 관리합니다.
+- 기본 정책은 `trade_analysis=gpt-5-nano`, `buy_precheck=gpt-4.1-mini`, 최소 확신도 75, Entry Gate 60으로 운용합니다.
 
-## Phase 46 업데이트
-- RSS 실뉴스는 ingestion 중 `http(s)` 링크에 한해 제한 동시성으로 기사 HTML을 가져오고, `meta description`, `article`, `main`, `p` 텍스트를 경량 휴리스틱으로 추출합니다.
-- 추출 본문이 RSS 요약보다 충분히 길고 최소 길이를 넘을 때만 `content_source=crawled_body`로 저장하며, 실패하면 `content_source=rss_summary`와 실패 상태를 남깁니다.
-- API 문서와 dummy/fallback 문서는 본문 크롤링 대상에서 제외하고, 크롤링 실패는 매매 게이트 하드 차단이 아니라 RAG 품질 관측 지표로만 사용합니다.
-- `/api/news/rag/status`는 크롤 성공/실패/스킵 parent 수, 평균 본문 길이, 평균 청크 길이, content source/crawl status 분포를 추가로 반환합니다.
-
-## Phase 46.1 업데이트
-- Google News RSS 문서는 원문 기사가 아닌 집계 페이지이므로 본문 크롤링을 스킵하고 `crawl_error=google_news_aggregator`로 기록합니다.
-- TokenPost처럼 `article_content`/`itemprop=articleBody` 컨테이너가 있는 HTML은 해당 영역을 본문 후보로 우선 추출합니다.
-- `/api/news/rag/status`는 `crawl_error_breakdown`과 source별 crawl error 분포를 반환해 크롤 실패 원인을 소스 단위로 관측합니다.
-
-## Phase 46.2 업데이트
-- ingestion은 bulk upsert 성공 후 현재 run에서 parent 문서를 만든 source만 대상으로 오래된 `market_news` 청크를 삭제합니다.
-- 실패/비활성/문서 0건 source의 기존 문서는 삭제하지 않고 TTL 만료 정책에 맡기며, 실뉴스가 있으면 dummy/fallback 문서는 즉시 삭제합니다.
-- `market_news_ingestion_runs` OpenSearch 캐시 인덱스에 run 통계와 RSS/API source별 health를 저장하고 `/api/news/rag/status.latest_ingestion`으로 노출합니다.
-- Gemini 임베딩 생성에 사용한 client는 RAG ingestion 경로에서 명시적으로 close해 세션 누수를 방지합니다.
-
-## Phase 46.3 업데이트
-- 죽은 Coindesk Korea RSS와 Naver 뉴스 RSS를 제거하고 CoinDesk 글로벌 RSS와 Cointelegraph RSS로 대체합니다.
-- RAG ingestion은 4개 정상 RSS에서 feed당 최대 8건, 전체 최대 32건을 수집해 source 다양성을 유지합니다.
-- Google News RSS는 계속 aggregator로 스킵하고 RSS 요약 컨텍스트로만 사용합니다.
-- 운영 검증은 `latest_ingestion.source_health`, stale/fallback 삭제 통계, AI 뉴스 검색 parent 중복 여부를 기준으로 수행합니다.
-
-## Phase 46.4 업데이트
-- RAG ingestion은 Gemini cooldown, 키 없음, 임베딩 생성 실패가 발생해도 문서/청크 upsert를 계속 수행합니다.
-- 임베딩 결과는 청크별 `embedding_status`와 `embedding_error`로 저장하며, 성공 청크만 `embedding` 벡터와 생성 메타데이터를 포함합니다.
-- 임베딩 누락 청크가 있어도 BM25 검색 경로는 계속 동작하고, kNN 검색은 임베딩이 확보된 청크만 후보로 사용합니다.
-- run health는 임베딩 요청/성공/누락/실패 수와 대표 오류를 저장하고, 누락이 있는 run은 `partial`로 관측합니다.
-
-## Phase 46.5 업데이트
-- RAG ingestion은 정상 upsert 이후 임베딩 누락 청크를 최대 50개 조회해 자동 backfill을 시도합니다.
-- backfill 후보는 실뉴스 청크 중 `embedding_status`가 `missing/rate_limited/failed`이거나 legacy `embedding` 필드가 없는 문서입니다.
-- backfill 성공 시 기존 문서 전체를 재색인하지 않고 `embedding`, `embedding_status`, `embedding_error`, `embedding_model`, `embedding_generated_at`만 partial update합니다.
-- 현재 run에서 `rate_limited` 또는 `credentials_missing`이 감지되면 backfill을 스킵해 즉시 재시도에 따른 Gemini 쿼터 낭비를 피합니다.
-
-## Phase 46.6 업데이트
-- RAG document/query embedding은 Gemini를 먼저 사용하고, 쿨다운/키 없음/생성 실패 시 OpenAI `text-embedding-3-small`로 fallback합니다.
-- OpenAI fallback도 1536차원 embedding을 사용하므로 `market_news.embedding` vector mapping은 유지합니다.
-- 신규 ingestion 임베딩 시도는 run당 최대 100개로 제한하며, 초과 청크는 저장 후 `run_limit_exceeded` 상태로 backfill 대상에 남깁니다.
-- `/api/news/rag/status`는 `embedding_provider_breakdown`을 반환하고, `latest_ingestion`은 provider fallback 사용 여부와 provider별 오류 분포를 노출합니다.
-- 두 embedding provider가 모두 실패하면 AI 뉴스 검색은 기존 BM25 후보 병합 경로로 계속 동작합니다.
-
-## Phase 46.7 업데이트
-- RAG ingestion은 provider/model별 embedding 시도 chunk 수, 성공/누락/실패 수, batch 수, fallback 사용 여부, 오류 분포, 추정 token 수를 run health에 저장합니다.
-- 비용 관측은 OpenAI `text-embedding-3-small` 성공 token에만 `$0.02 / 1M tokens` 기준 추정치를 적용하고, Gemini는 token 추정만 기록합니다.
-- token 추정은 `ceil(len(text) / 4)` 방식의 운영 추정값이며 실제 청구 금액이나 hard budget 차단 로직으로 사용하지 않습니다.
-- `/api/news/rag/status.latest_ingestion`은 `embedding_provider_stats`와 `embedding_cost_summary`를 그대로 반환합니다.
-- AI 뉴스 검색 query embedding은 Gemini/OpenAI provider 선택, 실패 사유, BM25-only fallback 전환을 로그로 남기고 별도 query event 저장소는 만들지 않습니다.
-
-## Phase 46.8 업데이트
-- `/api/news/rag/status`는 기존 상태 판정과 별도로 운영 warning 리스트를 계산해 반환합니다.
-- warning은 실뉴스 부재, 전체 임베딩 누락, 높은 임베딩 누락률, Gemini rate limit, OpenAI 키 없음, backfill skip, source HTTP 429, fallback 문서 잔존, OpenAI 비용 관측을 표현합니다.
-- warning은 OpenSearch의 기존 집계와 최신 ingestion run 문서에서 계산하며 별도 저장소나 query event 인덱스를 만들지 않습니다.
-- warning은 운영 가시성 신호이며 AI 매매 게이트나 hard budget 차단 정책으로 연결하지 않습니다.
-
-## Phase 46.9 업데이트
-- RAG ingestion은 실제 뉴스 문서를 청크/임베딩하기 전에 `title`과 `content`를 한국어로 번역합니다.
-- 번역은 Gemini 텍스트 모델을 primary로 사용하고, 키 없음/쿼터/생성 실패 시 OpenAI 텍스트 모델로 fallback합니다.
-- dummy/fallback 문서는 fallback 판별 의미를 유지하기 위해 번역하지 않고 `translation_status=skipped_fallback`로 저장합니다.
-- 두 번역 provider가 모두 실패하면 원문을 보존한 채 `translation_status=failed`와 실패 사유를 기록하고, 문서 upsert와 임베딩 생성은 계속 진행합니다.
-- 번역 성공 문서는 한국어 `title/content` 기준으로 OpenSearch `market_news`에 저장되며, 임베딩도 번역본 텍스트로 생성됩니다.
-- `market_news_ingestion_runs`에는 번역 요청/성공/실패/스킵 수와 provider별 실패 분포를 저장해 RAG 품질을 관측합니다.
-
-## Slack 포트폴리오 알림 업데이트
-- `app/core/scheduler.py`는 `system_configs.slack_portfolio_alert_settings` JSON의 `preset`/`advanced` rule을 `CronTrigger` job으로 정규화합니다.
-- 알림 섹션은 포트폴리오, 공포지수, 관심종목 AI 신호, OpenSearch RAG 캐시 기반 가격 영향 후보 뉴스 Top3로 구성됩니다.
-- 스키마 변경은 없고 PostgreSQL `system_configs`와 OpenSearch `market_news` 조회만 사용합니다.
-
-## RAG ?? ??? BUY ?? ?? ???
-- ?? RAG ??? `context=scheduled`? ???? OpenAI ?? fallback? ?? ??? ?? ??? ????.
-- BUY ?? 2? ??? `context=buy_precheck`? ?? ?? ???? ????, ??? ?? 1? ??? ???? OpenAI ?? fallback? ?????.
-- ingestion run health? `context`? `translation_openai_fallback_allowed`? ??? ?? ??? ?? ?? ??? ?????.
+### v0.7 수동 AI Cycle
+- `/api/ai/manual-cycle`은 선택 종목 1개의 AI 분석을 즉시 생성한 뒤 기존 `execute_ai_trade()` 경로로 매매 조건을 평가합니다.
+- 봇 running 상태, HOLD, confidence, Entry Gate, shadow mode, live BUY lock, BUY 직전 검증은 수동 실행에서도 동일하게 적용됩니다.

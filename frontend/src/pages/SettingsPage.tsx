@@ -9,10 +9,11 @@ import {
   useSystemConfigs,
   useUpdateSystemConfigs,
 } from '../hooks/useSystemConfigs'
-import type {
-  AiProviderRuntimeStatusItem,
-  SystemConfigItem,
-  SystemConfigUpdateItem,
+import {
+  clearAdminToken,
+  type AiProviderRuntimeStatusItem,
+  type SystemConfigItem,
+  type SystemConfigUpdateItem,
 } from '../services/api'
 
 interface AiRuntimeDraft {
@@ -209,7 +210,6 @@ const BUY_SAFETY_MODE_OPTIONS: Array<{
     badge: '허용',
   },
 ]
-
 const SLACK_ALERT_WEEKDAY_OPTIONS: Array<{ key: SlackAlertWeekday; label: string }> = [
   { key: 'mon', label: '월' },
   { key: 'tue', label: '화' },
@@ -289,7 +289,7 @@ const SETTINGS_FIELD_CLASS =
 const SETTINGS_PRIMARY_BUTTON_CLASS =
   'inline-flex items-center justify-center gap-2 rounded-lg bg-[#00dbe9]/16 px-4 py-2 text-sm font-bold text-[#7df4ff] transition hover:bg-[#00dbe9]/24 disabled:cursor-not-allowed disabled:opacity-60'
 const SETTINGS_SECONDARY_BUTTON_CLASS =
-  'inline-flex items-center justify-center rounded-lg border border-[#3b494b]/50 bg-[#0a0e14]/70 px-3 py-2 text-sm font-bold text-[#dfe2eb] transition hover:border-[#00dbe9]/45 hover:text-[#7df4ff]'
+  'inline-flex items-center justify-center gap-2 rounded-lg border border-[#3b494b]/50 bg-[#0a0e14]/70 px-3 py-2 text-sm font-bold text-[#dfe2eb] transition hover:border-[#00dbe9]/45 hover:text-[#7df4ff]'
 const SETTINGS_LABEL_CLASS = 'mb-2 flex items-center gap-2 text-sm font-bold text-[#dfe2eb]'
 const SETTINGS_HINT_CLASS = 'mt-2 text-xs text-[#849495]'
 
@@ -1252,7 +1252,6 @@ function AiRuntimeSettingsPanel() {
         config_value: stringifyJson(draft.aiProviderStatus),
       })
     }
-
     if (
       stringifyJson(draft.slackPortfolioAlertSettings) !==
       stringifyJson(serverDraft.slackPortfolioAlertSettings)
@@ -1294,7 +1293,7 @@ function AiRuntimeSettingsPanel() {
           />
         </div>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[#b9cacb]">
-          뉴스 수집 주기와 심리지수 캐싱 주기처럼 일반 사용자가 자주 만질 필요가 없는 운영값은 제외했습니다.
+          AI 호출 주기, 뉴스 갱신, BUY 안전락, 모델 라우팅을 한 화면에서 조정합니다.
         </p>
       </header>
 
@@ -1775,7 +1774,9 @@ function AiRuntimeSettingsPanel() {
                 />
                 <p className={SETTINGS_HINT_CLASS}>균형형 추천값: 60</p>
               </label>
+            </div>
 
+            <div className="grid gap-4 md:grid-cols-2">
               <label className={SETTINGS_PANEL_CLASS}>
                 <span className={SETTINGS_LABEL_CLASS}>
                   <span>AI 분석 로그 유효 기간 (분)</span>
@@ -1960,6 +1961,13 @@ function AiRuntimeSettingsPanel() {
 }
 
 function SettingsPage() {
+  const [adminTokenNotice, setAdminTokenNotice] = useState<string | null>(null)
+
+  const handleClearAdminToken = () => {
+    clearAdminToken()
+    setAdminTokenNotice('이 브라우저 세션에 저장된 운영 관리 토큰을 초기화했습니다.')
+  }
+
   return (
     <div className="dashboard-quantum flex h-full min-h-0 min-w-0 flex-col gap-5">
       <section className={SETTINGS_CARD_CLASS}>
@@ -1969,6 +1977,26 @@ function SettingsPage() {
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[#b9cacb]">
           자동매매에 필요한 종목, 배분, 운용 기준을 조정합니다.
         </p>
+        <div className="mt-4 flex flex-col gap-3 rounded-lg bg-[#0a0e14]/75 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-bold text-[#dfe2eb]">운영 관리 토큰</p>
+            <p className="mt-1 text-xs leading-5 text-[#849495]">
+              관리 토큰은 sessionStorage에만 저장되며 브라우저 세션 단위로 사용됩니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleClearAdminToken}
+            className={SETTINGS_SECONDARY_BUTTON_CLASS}
+          >
+            관리 토큰 초기화
+          </button>
+        </div>
+        {adminTokenNotice && (
+          <p className="mt-3 rounded-lg bg-[#00dbe9]/10 px-3 py-2 text-xs font-semibold text-[#7df4ff]">
+            {adminTokenNotice}
+          </p>
+        )}
       </section>
 
       <div className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto pr-1">
