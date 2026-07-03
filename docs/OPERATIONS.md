@@ -1,76 +1,41 @@
 # 로컬 Linux 상시 운영 가이드
 
-이 문서는 AI-Trade-Manager를 클라우드가 아닌 로컬 Linux PC에서 상시 운영하기 위한 절차를 정리한다. 웹 화면은 공개 인터넷에 노출하지 않고, Tailscale 사설망을 통해 본인 기기에서만 접근하는 구성을 기본값으로 둔다.
+AI-Trade-Manager는 공개 인터넷에 직접 노출하지 않고, 로컬 Linux PC와 Tailscale 사설망을 기준으로 운영합니다.
 
-## 운영 구조
+## 1. 운영 구조
 
-로컬 운영은 `docker-compose.local.yml` 하나로 관리한다.
+| 구성 | 역할 |
+|---|---|
+| 웹 | 정적 웹 UI 제공, API 요청을 백엔드로 전달 |
+| 백엔드 | FastAPI, 스케줄러, 매매 엔진, Slack/Telegram 실행 관리 |
+| PostgreSQL | 운영 상태의 기준 저장소 |
+| OpenSearch | RAG 뉴스 검색 캐시 |
+| Tailscale | 외부 공개 없이 개인 기기 접근 |
 
-- `backend`: FastAPI, Scheduler, Trading Engine, Slack/Telegram lifecycle을 함께 실행한다.
-- `web`: Vite build 결과물을 Caddy가 정적 서빙하고 `/api`를 backend로 프록시한다.
-- `db`: PostgreSQL 16. 모든 운영 상태의 SSOT다.
-- `opensearch`: RAG 뉴스 검색과 임베딩 캐시를 담당한다.
+backend는 단일 인스턴스로 운영합니다. 여러 개를 동시에 띄우면 스케줄러와 매매 루프가 중복 실행될 수 있습니다.
 
-backend는 반드시 단일 인스턴스로만 운영한다. FastAPI lifespan에서 스케줄러, 트레이딩 엔진, 메신저 봇이 함께 기동되므로 복수 인스턴스는 중복 주문과 중복 스케줄 실행 위험을 만든다.
+## 2. 최초 구성 체크리스트
 
-## 최초 구성
+1. Docker, Docker Compose, Tailscale, 방화벽 도구를 설치합니다.
+2. 예제 환경 파일을 복사하고 실제 비밀값을 채웁니다.
+3. 웹 UI용 기본 인증 계정과 관리 API 토큰을 설정합니다.
+4. 컨테이너를 시작하고 데이터베이스 마이그레이션을 적용합니다.
+5. 헬스체크로 web, backend, PostgreSQL, OpenSearch 상태를 확인합니다.
 
-```bash
-sudo apt update
-sudo apt install -y docker.io docker-compose-plugin tailscale ufw
-sudo usermod -aG docker "$USER"
-newgrp docker
-```
+## 3. 접근 방식
 
-```bash
-cp .env.local.example .env.local
-chmod +x ops/scripts/*.sh
-```
+- 웹 UI는 로컬 PC에서는 localhost 경로로 확인합니다.
+- 원격 접속은 Tailscale 경로만 사용합니다.
+- 일반 인터넷에 웹 UI, API, DB, OpenSearch 포트를 직접 열지 않습니다.
 
-`.env.local`에는 API key와 Slack/Telegram 토큰만 실제 값으로 채운다. Upbit 키는 paper/shadow 검증 전에는 비워두는 편이 안전하다.
-운영 UI와 관리 API 보호를 위해 아래 값도 반드시 채운다.
+## 4. 인증 계층
 
-```bash
-docker run --rm caddy:2-alpine caddy hash-password --plaintext '원하는-비밀번호'
-```
+| 계층 | 목적 |
+|---|---|
+| Caddy 기본 인증 | 웹 UI와 API 진입점 보호 |
+| 관리자 API 토큰 | 설정 변경, 봇 제어, 수동 AI Cycle 같은 상태 변경 API 보호 |
 
-- `ADMIN_BASIC_AUTH_USER`: 웹 UI 접속용 Basic Auth 사용자명
-- `ADMIN_BASIC_AUTH_HASH`: 위 명령으로 생성한 Caddy용 비밀번호 hash
-- `ADMIN_API_TOKEN`: 설정 변경, 봇 제어, 수동 AI Cycle 같은 관리 API 호출용 긴 랜덤 토큰
-
-```bash
-./ops/scripts/start.sh
-docker compose --env-file .env.local -f docker-compose.local.yml exec backend alembic upgrade head
-./ops/scripts/healthcheck.sh
-```
-
-웹 UI는 로컬 PC에서 `http://127.0.0.1:8080`으로 확인한다.
-
-## Tailscale 접근
-
-공인 IP 포트포워딩은 사용하지 않는다. Linux PC와 핸드폰을 같은 tailnet에 등록한 뒤 Tailscale 경로로만 접근한다.
-
-```bash
-sudo tailscale up
-tailscale serve --bg http://127.0.0.1:8080
-tailscale serve status
-```
-
-핸드폰에서는 Tailscale 앱을 켠 뒤 `tailscale serve status`에 표시되는 HTTPS 주소로 접속한다. Basic Auth와 관리 API 토큰이 있어도 공개 인터넷용 로그인 시스템은 아니므로, 웹 UI를 일반 인터넷에 직접 공개하면 안 된다.
-
-## 운영 인증 계층
-
-로컬 운영 인증은 두 겹으로 둔다.
-
-1. **Caddy Basic Auth**
-   - 웹 UI와 `/api` reverse proxy 진입점 전체를 잠근다.
-   - Tailscale 내부망이라도 브라우저 접속 시 사용자명/비밀번호를 먼저 요구한다.
-2. **FastAPI `ADMIN_API_TOKEN`**
-   - 설정 변경, 봇 시작/정지, 전량 매도, 수동 AI Cycle, paper reset 같은 상태 변경 API를 한 번 더 잠근다.
-   - 프론트엔드는 최초 관리 작업 시 입력한 토큰을 `sessionStorage`에만 보관한다.
-
-읽기 API는 관측 편의성을 위해 별도 토큰 없이 유지하지만, 웹 진입점은 Basic Auth 뒤에 있어야 한다.
-`ADMIN_API_TOKEN`이 서버에 설정되지 않으면 보호 API는 `503`으로 차단된다.
+관리자 API 토큰이 서버에 없으면 보호 API는 차단되어야 합니다.
 
 ## 방화벽 기준
 
