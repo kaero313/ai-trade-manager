@@ -142,27 +142,26 @@ async def run_manual_ai_cycle(
         raise HTTPException(status_code=400, detail="manual AI cycle requires trade execution confirmation")
 
     started_at = datetime.now(UTC)
-    previous_analysis = await _load_latest_analysis_log(db, normalized_symbol)
-    previous_analysis_id = previous_analysis.id if previous_analysis is not None else None
     try:
-        await execute_ai_analysis(db, normalized_symbol)
+        analysis_log = await execute_ai_analysis(db, normalized_symbol)
     except AIProviderRateLimitError as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    latest_analysis = await _load_latest_analysis_log(db, normalized_symbol)
-    if latest_analysis is None or (
-        previous_analysis_id is not None and latest_analysis.id <= previous_analysis_id
-    ):
+    if analysis_log.id is None or _normalize_symbol(analysis_log.symbol) != normalized_symbol:
         raise HTTPException(status_code=500, detail="AI analysis log was not created")
 
     try:
-        await execute_ai_trade(db, normalized_symbol)
+        await execute_ai_trade(
+            db,
+            normalized_symbol,
+            analysis_id=analysis_log.id,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    latest_order = await _load_latest_order_for_analysis(db, latest_analysis.id)
+    latest_order = await _load_latest_order_for_analysis(db, analysis_log.id)
     normalized_order_side = (
         _normalize_order_side(latest_order.side) if latest_order is not None else None
     )
@@ -171,7 +170,7 @@ async def run_manual_ai_cycle(
 
     return AIManualCycleResponse(
         symbol=normalized_symbol,
-        analysis=AIAnalysisLogItem.model_validate(latest_analysis),
+        analysis=AIAnalysisLogItem.model_validate(analysis_log),
         trade_evaluated=True,
         order_created=order_created,
         order_id=latest_order.id if latest_order is not None else None,

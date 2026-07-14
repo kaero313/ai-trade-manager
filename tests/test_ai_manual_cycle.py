@@ -35,20 +35,13 @@ def test_manual_cycle_requires_trade_confirmation() -> None:
 
 def test_manual_cycle_runs_analysis_before_trade(monkeypatch) -> None:
     events: list[str] = []
-    latest_analysis_calls = 0
 
     async def fake_execute_ai_analysis(_db, symbol: str):
         events.append(f"analysis:{symbol}")
-
-    async def fake_execute_ai_trade(_db, symbol: str):
-        events.append(f"trade:{symbol}")
-
-    async def fake_load_latest_analysis_log(_db, symbol: str):
-        nonlocal latest_analysis_calls
-        latest_analysis_calls += 1
-        if latest_analysis_calls == 1:
-            return None
         return _analysis(symbol)
+
+    async def fake_execute_ai_trade(_db, symbol: str, *, analysis_id: int | None = None):
+        events.append(f"trade:{symbol}:{analysis_id}")
 
     async def fake_load_latest_order_for_analysis(_db, analysis_id: int):
         assert analysis_id == 42
@@ -56,13 +49,12 @@ def test_manual_cycle_runs_analysis_before_trade(monkeypatch) -> None:
 
     monkeypatch.setattr(ai_route, "execute_ai_analysis", fake_execute_ai_analysis)
     monkeypatch.setattr(ai_route, "execute_ai_trade", fake_execute_ai_trade)
-    monkeypatch.setattr(ai_route, "_load_latest_analysis_log", fake_load_latest_analysis_log)
     monkeypatch.setattr(ai_route, "_load_latest_order_for_analysis", fake_load_latest_order_for_analysis)
 
     request = AIManualCycleRequest(symbol="krw-btc", confirm_trade_execution=True)
     response = asyncio.run(ai_route.run_manual_ai_cycle(request, db=object()))
 
-    assert events == ["analysis:KRW-BTC", "trade:KRW-BTC"]
+    assert events == ["analysis:KRW-BTC", "trade:KRW-BTC:42"]
     assert response.symbol == "KRW-BTC"
     assert response.order_created is True
     assert response.order_id == 7
@@ -71,27 +63,23 @@ def test_manual_cycle_runs_analysis_before_trade(monkeypatch) -> None:
 
 
 def test_manual_cycle_returns_no_order_when_trade_gate_skips(monkeypatch) -> None:
-    latest_analysis_calls = 0
-
-    async def fake_execute_ai_analysis(_db, _symbol: str):
-        return None
-
-    async def fake_execute_ai_trade(_db, _symbol: str):
-        return None
-
-    async def fake_load_latest_analysis_log(_db, symbol: str):
-        nonlocal latest_analysis_calls
-        latest_analysis_calls += 1
-        if latest_analysis_calls == 1:
-            return None
+    async def fake_execute_ai_analysis(_db, symbol: str):
         return _analysis(symbol)
+
+    async def fake_execute_ai_trade(
+        _db,
+        _symbol: str,
+        *,
+        analysis_id: int | None = None,
+    ):
+        assert analysis_id == 42
+        return None
 
     async def fake_load_latest_order_for_analysis(_db, _analysis_id: int):
         return None
 
     monkeypatch.setattr(ai_route, "execute_ai_analysis", fake_execute_ai_analysis)
     monkeypatch.setattr(ai_route, "execute_ai_trade", fake_execute_ai_trade)
-    monkeypatch.setattr(ai_route, "_load_latest_analysis_log", fake_load_latest_analysis_log)
     monkeypatch.setattr(ai_route, "_load_latest_order_for_analysis", fake_load_latest_order_for_analysis)
 
     request = AIManualCycleRequest(symbol="KRW-ETH", confirm_trade_execution=True)
@@ -108,19 +96,20 @@ def test_manual_cycle_returns_no_order_when_trade_gate_skips(monkeypatch) -> Non
 def test_manual_cycle_rate_limit_does_not_run_trade(monkeypatch) -> None:
     trade_called = False
 
-    async def fake_load_latest_analysis_log(_db, _symbol: str):
-        return None
-
     async def fake_execute_ai_analysis(_db, _symbol: str):
         raise AIProviderRateLimitError("provider cooldown", provider="gemini")
 
-    async def fake_execute_ai_trade(_db, _symbol: str):
+    async def fake_execute_ai_trade(
+        _db,
+        _symbol: str,
+        *,
+        analysis_id: int | None = None,
+    ):
         nonlocal trade_called
         trade_called = True
 
     monkeypatch.setattr(ai_route, "execute_ai_analysis", fake_execute_ai_analysis)
     monkeypatch.setattr(ai_route, "execute_ai_trade", fake_execute_ai_trade)
-    monkeypatch.setattr(ai_route, "_load_latest_analysis_log", fake_load_latest_analysis_log)
 
     request = AIManualCycleRequest(symbol="KRW-XRP", confirm_trade_execution=True)
     with pytest.raises(HTTPException) as exc_info:
@@ -133,19 +122,22 @@ def test_manual_cycle_rate_limit_does_not_run_trade(monkeypatch) -> None:
 def test_manual_cycle_does_not_trade_without_new_analysis_log(monkeypatch) -> None:
     trade_called = False
 
-    async def fake_execute_ai_analysis(_db, _symbol: str):
-        return None
+    async def fake_execute_ai_analysis(_db, symbol: str):
+        analysis = _analysis(symbol)
+        analysis.id = None
+        return analysis
 
-    async def fake_execute_ai_trade(_db, _symbol: str):
+    async def fake_execute_ai_trade(
+        _db,
+        _symbol: str,
+        *,
+        analysis_id: int | None = None,
+    ):
         nonlocal trade_called
         trade_called = True
 
-    async def fake_load_latest_analysis_log(_db, symbol: str):
-        return _analysis(symbol)
-
     monkeypatch.setattr(ai_route, "execute_ai_analysis", fake_execute_ai_analysis)
     monkeypatch.setattr(ai_route, "execute_ai_trade", fake_execute_ai_trade)
-    monkeypatch.setattr(ai_route, "_load_latest_analysis_log", fake_load_latest_analysis_log)
 
     request = AIManualCycleRequest(symbol="KRW-BTC", confirm_trade_execution=True)
     with pytest.raises(HTTPException) as exc_info:

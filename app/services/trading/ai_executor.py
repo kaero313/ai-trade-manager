@@ -3,7 +3,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import desc, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repository import AI_ANALYSIS_MAX_AGE_MINUTES_KEY
@@ -265,11 +265,10 @@ async def _load_hard_tp_sl_thresholds(db: AsyncSession) -> tuple[float, float]:
     return hard_take_profit_pct, hard_stop_loss_pct
 
 
-async def _load_latest_analysis(db: AsyncSession, symbol: str) -> AIAnalysisLog | None:
+async def _load_analysis_by_id(db: AsyncSession, analysis_id: int) -> AIAnalysisLog | None:
     result = await db.execute(
         select(AIAnalysisLog)
-        .where(AIAnalysisLog.symbol == _normalize_symbol(symbol))
-        .order_by(desc(AIAnalysisLog.created_at), desc(AIAnalysisLog.id))
+        .where(AIAnalysisLog.id == analysis_id)
         .limit(1)
     )
     return result.scalar_one_or_none()
@@ -1389,10 +1388,27 @@ async def _execute_sell_trade(
     )
 
 
-async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
+async def execute_ai_trade(
+    db: AsyncSession,
+    symbol: str,
+    *,
+    analysis_id: int | None = None,
+) -> None:
     normalized_symbol = _normalize_symbol(symbol)
     if not normalized_symbol:
         logger.info("AI 실행 스킵: symbol 이 비어 있습니다.")
+        return
+
+    if (
+        not isinstance(analysis_id, int)
+        or isinstance(analysis_id, bool)
+        or analysis_id <= 0
+    ):
+        logger.warning(
+            "AI 실행 스킵: 유효한 분석 로그 ID가 없습니다. symbol=%s analysis_id=%s",
+            normalized_symbol,
+            analysis_id,
+        )
         return
 
     status = await get_bot_status(db)
@@ -1400,40 +1416,60 @@ async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
         logger.info("봇 꺼짐 - 반자율 탐색 모드 유지: symbol=%s", normalized_symbol)
         return
 
-    min_confidence, max_age_minutes = await _load_executor_thresholds(db)
-
-    latest_analysis = await _load_latest_analysis(db, normalized_symbol)
-    if latest_analysis is None:
-        logger.info("AI 실행 스킵: 최신 분석 로그가 없습니다. symbol=%s", normalized_symbol)
+    analysis = await _load_analysis_by_id(db, analysis_id)
+    if analysis is None:
+        logger.warning(
+            "AI 실행 스킵: 전달된 분석 로그를 찾을 수 없습니다. symbol=%s analysis_id=%s",
+            normalized_symbol,
+            analysis_id,
+        )
         return
 
-    if _is_analysis_stale(latest_analysis, max_age_minutes):
-        logger.info(
-            "AI 실행 스킵: 분석 로그가 만료되었습니다. symbol=%s created_at=%s max_age_minutes=%s",
+    if _normalize_symbol(analysis.symbol) != normalized_symbol:
+        logger.error(
+            "AI 실행 스킵: 분석 로그의 symbol이 요청과 일치하지 않습니다. symbol=%s analysis_id=%s analysis_symbol=%s",
             normalized_symbol,
-            latest_analysis.created_at,
+            analysis_id,
+            analysis.symbol,
+        )
+        return
+
+    min_confidence, max_age_minutes = await _load_executor_thresholds(db)
+
+    if _is_analysis_stale(analysis, max_age_minutes):
+        logger.info(
+            "AI 실행 스킵: 분석 로그가 만료되었습니다. symbol=%s analysis_id=%s created_at=%s max_age_minutes=%s",
+            normalized_symbol,
+            analysis_id,
+            analysis.created_at,
             max_age_minutes,
         )
         return
 
-    if latest_analysis.decision == "HOLD":
-        logger.info("AI 실행 스킵: 관망 결정입니다. symbol=%s", normalized_symbol)
+    if analysis.decision == "HOLD":
+        logger.info(
+            "AI 실행 스킵: 관망 결정입니다. symbol=%s analysis_id=%s",
+            normalized_symbol,
+            analysis_id,
+        )
         return
 
-    if latest_analysis.confidence < min_confidence:
+    if analysis.confidence < min_confidence:
         logger.info(
-            "AI 실행 스킵: 확신도 부족. symbol=%s confidence=%s min_confidence=%s",
+            "AI 실행 스킵: 확신도 부족. symbol=%s analysis_id=%s confidence=%s min_confidence=%s",
             normalized_symbol,
-            latest_analysis.confidence,
+            analysis_id,
+            analysis.confidence,
             min_confidence,
         )
         return
 
-    if latest_analysis.recommended_weight <= 0:
+    if analysis.recommended_weight <= 0:
         logger.info(
-            "AI 실행 스킵: 추천 비중이 0 이하입니다. symbol=%s recommended_weight=%s",
+            "AI 실행 스킵: 추천 비중이 0 이하입니다. symbol=%s analysis_id=%s recommended_weight=%s",
             normalized_symbol,
-            latest_analysis.recommended_weight,
+            analysis_id,
+            analysis.recommended_weight,
         )
         return
 
@@ -1447,11 +1483,11 @@ async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
         return
 
     trading_mode = await get_trading_mode(db)
-    if latest_analysis.decision == "BUY":
+    if analysis.decision == "BUY":
         entry_gate = await evaluate_ai_buy_entry_gate(
             db,
             symbol=normalized_symbol,
-            analysis=latest_analysis,
+            analysis=analysis,
             portfolio=portfolio,
             min_calibrated_confidence=min_confidence,
         )
@@ -1475,17 +1511,17 @@ async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
             logger.warning(
                 "AI live 신규 매수 잠금: symbol=%s confidence=%s recommended_weight=%s",
                 normalized_symbol,
-                latest_analysis.confidence,
-                latest_analysis.recommended_weight,
+                analysis.confidence,
+                analysis.recommended_weight,
             )
             return
 
-        execution_analysis = latest_analysis
+        execution_analysis = analysis
         if trading_mode == "live":
             precheck_analysis = await _run_buy_precheck(
                 db=db,
                 symbol=normalized_symbol,
-                analysis=latest_analysis,
+                analysis=analysis,
                 entry_gate=entry_gate,
                 portfolio=portfolio,
                 trading_mode=trading_mode,
@@ -1504,11 +1540,11 @@ async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
         )
         return
 
-    if latest_analysis.decision == "SELL":
+    if analysis.decision == "SELL":
         await _execute_sell_trade(
             db=db,
             symbol=normalized_symbol,
-            analysis=latest_analysis,
+            analysis=analysis,
             portfolio=portfolio,
             trading_mode=trading_mode,
         )
@@ -1517,5 +1553,5 @@ async def execute_ai_trade(db: AsyncSession, symbol: str) -> None:
     logger.info(
         "AI 실행 스킵: 지원되지 않는 decision 값입니다. symbol=%s decision=%s",
         normalized_symbol,
-        latest_analysis.decision,
+        analysis.decision,
     )

@@ -763,8 +763,12 @@ async def autonomous_ai_analyst_job() -> None:
         for index, symbol in enumerate(symbols):
             async with AsyncSessionLocal() as db:
                 try:
-                    await execute_ai_analysis(db, symbol)
-                    logger.info("Watchlist 자율주행 AI 분석 완료: symbol=%s", symbol)
+                    analysis_log = await execute_ai_analysis(db, symbol)
+                    logger.info(
+                        "Watchlist 자율주행 AI 분석 완료: symbol=%s analysis_id=%s",
+                        symbol,
+                        analysis_log.id,
+                    )
                 except AIProviderRateLimitError as exc:
                     logger.warning(
                         "Watchlist 자율주행 AI 분석 조기 중단: symbol=%s reason=%s",
@@ -788,8 +792,12 @@ async def autonomous_ai_analyst_job() -> None:
                     continue
 
                 try:
-                    await execute_ai_trade(db, symbol)
-                    logger.info("Watchlist 자율주행 AI 집행 완료: symbol=%s", symbol)
+                    await execute_ai_trade(db, symbol, analysis_id=analysis_log.id)
+                    logger.info(
+                        "Watchlist 자율주행 AI 집행 완료: symbol=%s analysis_id=%s",
+                        symbol,
+                        analysis_log.id,
+                    )
                 except Exception:
                     logger.error(
                         "Watchlist 자율주행 AI 집행 실패: symbol=%s",

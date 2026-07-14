@@ -964,21 +964,26 @@ async def _persist_ai_analysis_log(
     db: AsyncSession,
     symbol: str,
     analysis: AIAnalysisResponse,
-) -> None:
+) -> AIAnalysisLog:
+    analysis_log = AIAnalysisLog(
+        symbol=_normalize_symbol(symbol),
+        decision=analysis.decision,
+        confidence=analysis.confidence,
+        recommended_weight=analysis.recommended_weight,
+        reasoning=analysis.reasoning,
+    )
     try:
-        db.add(
-            AIAnalysisLog(
-                symbol=_normalize_symbol(symbol),
-                decision=analysis.decision,
-                confidence=analysis.confidence,
-                recommended_weight=analysis.recommended_weight,
-                reasoning=analysis.reasoning,
-            )
-        )
+        db.add(analysis_log)
         await db.commit()
+        await db.refresh(analysis_log)
+        if analysis_log.id is None:
+            raise RuntimeError("저장된 AI 분석 로그 ID를 확인할 수 없습니다.")
     except Exception as exc:
         await db.rollback()
         logger.error("AI 분석 로그 저장 실패: %s", exc, exc_info=True)
+        raise
+
+    return analysis_log
 
 
 async def _load_recent_failure_feedback(db: AsyncSession, symbol: str) -> str:
@@ -1009,7 +1014,7 @@ async def _load_recent_failure_feedback(db: AsyncSession, symbol: str) -> str:
     return "\n".join(feedback_lines)
 
 
-async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisResponse:
+async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisLog:
     normalized_symbol = _normalize_symbol(symbol)
     context = await gather_market_context(db, normalized_symbol)
     context_text = format_market_context_for_llm(context)
@@ -1058,5 +1063,4 @@ async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisRespon
         logger.error("AI 구조화 분석 실패: symbol=%s error=%s", normalized_symbol, exc, exc_info=True)
         analysis = _build_fallback_analysis()
 
-    await _persist_ai_analysis_log(db, normalized_symbol, analysis)
-    return analysis
+    return await _persist_ai_analysis_log(db, normalized_symbol, analysis)
