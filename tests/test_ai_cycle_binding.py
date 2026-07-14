@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import importlib
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,7 +12,6 @@ from typing import Any
 import pytest
 
 from app.api.routes import ai as ai_route
-from app.core import scheduler
 from app.models.schemas import AIAnalysisResponse
 from app.services.trading import ai_analyst, ai_executor
 from app.services.trading.ai_analyst import _persist_ai_analysis_log
@@ -25,8 +26,16 @@ EXPECTED_EXECUTOR_CALLERS = {
 
 
 class _AnalysisPersistenceDb:
-    def __init__(self, *, commit_error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        commit_error: Exception | None = None,
+        refresh_error: Exception | None = None,
+        persisted_id: int | None = 73,
+    ) -> None:
         self.commit_error = commit_error
+        self.refresh_error = refresh_error
+        self.persisted_id = persisted_id
         self.added: list[Any] = []
         self.rollback_count = 0
         self.refresh_count = 0
@@ -37,11 +46,13 @@ class _AnalysisPersistenceDb:
     async def commit(self) -> None:
         if self.commit_error is not None:
             raise self.commit_error
-        self.added[-1].id = 73
+        self.added[-1].id = self.persisted_id
 
     async def refresh(self, value: Any) -> None:
         assert value is self.added[-1]
         self.refresh_count += 1
+        if self.refresh_error is not None:
+            raise self.refresh_error
         value.created_at = datetime(2026, 7, 14, 1, 2, 3, tzinfo=UTC)
 
     async def rollback(self) -> None:
@@ -192,6 +203,51 @@ def test_analysis_commit_failure_rolls_back_and_propagates() -> None:
     assert exc_info.value is commit_error
     assert db.rollback_count == 1
     assert db.refresh_count == 0
+
+
+def test_analysis_refresh_failure_rolls_back_and_propagates() -> None:
+    refresh_error = RuntimeError("analysis refresh failed")
+    db = _AnalysisPersistenceDb(refresh_error=refresh_error)
+
+    with pytest.raises(RuntimeError, match="analysis refresh failed") as exc_info:
+        asyncio.run(
+            _persist_ai_analysis_log(
+                db,
+                "KRW-BTC",
+                AIAnalysisResponse(
+                    decision="BUY",
+                    confidence=82,
+                    recommended_weight=20,
+                    reasoning="refresh 실패",
+                ),
+            )
+        )
+
+    assert exc_info.value is refresh_error
+    assert db.rollback_count == 1
+    assert db.refresh_count == 1
+
+
+def test_analysis_missing_id_rolls_back_and_propagates() -> None:
+    db = _AnalysisPersistenceDb(persisted_id=None)
+
+    with pytest.raises(RuntimeError, match="ID"):
+        asyncio.run(
+            _persist_ai_analysis_log(
+                db,
+                "KRW-BTC",
+                AIAnalysisResponse(
+                    decision="SELL",
+                    confidence=88,
+                    recommended_weight=100,
+                    reasoning="ID 미확정",
+                ),
+            )
+        )
+
+    assert db.added[0].id is None
+    assert db.rollback_count == 1
+    assert db.refresh_count == 1
 
 
 def test_execute_ai_analysis_propagates_real_persistence_failure(monkeypatch) -> None:
@@ -430,6 +486,11 @@ def test_exact_analysis_preserves_stale_and_confidence_guards(
 
 
 def test_scheduler_uses_each_cycle_analysis_id_and_continues_after_failure(monkeypatch) -> None:
+    scheduler = importlib.import_module("app.core.scheduler")
+    if not hasattr(scheduler, "autonomous_ai_analyst_job"):
+        del sys.modules["app.core.scheduler"]
+        scheduler = importlib.import_module("app.core.scheduler")
+
     db = _SchedulerDb(["KRW-BTC", "KRW-ETH"])
     analyzed: list[str] = []
     traded: list[tuple[str, int | None]] = []
