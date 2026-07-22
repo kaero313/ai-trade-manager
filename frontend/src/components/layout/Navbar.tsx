@@ -1,9 +1,10 @@
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Menu } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import ThemeToggle from '../common/ThemeToggle'
 import MarketSearchBar from '../trading/MarketSearchBar'
 
-interface NavbarProps {
+export interface NavbarProps {
   totalNetWorth: number
   totalPnl: number
   isPortfolioLoading: boolean
@@ -11,21 +12,9 @@ interface NavbarProps {
   portfolioIsStale: boolean
   portfolioUpdatedAt: string | null
   portfolioSource: 'live' | 'snapshot' | 'empty' | null
+  desktopNavigationCollapsed?: boolean
+  onOpenNavigation: () => void
 }
-
-interface NavItem {
-  to: string
-  label: string
-  end?: boolean
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { to: '/', label: '대시보드', end: true },
-  { to: '/portfolio', label: '포트폴리오' },
-  { to: '/chat', label: 'AI 뱅커' },
-  { to: '/settings', label: '설정' },
-  { to: '/laboratory', label: '연구소/백테스트' },
-]
 
 function formatKrw(value: number): string {
   return `₩${new Intl.NumberFormat('ko-KR').format(Math.round(value))}`
@@ -65,26 +54,6 @@ function resolvePortfolioUnavailableLabel(errorCode: string | null): string {
   return '조회 불가'
 }
 
-function resolveNavLinkClassName({ isActive }: { isActive: boolean }): string {
-  return `inline-flex items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-[13px] font-semibold transition-colors sm:px-3 sm:text-sm ${
-    isActive
-      ? 'bg-[#00363a]/70 text-[#7df4ff]'
-      : 'text-[#b9cacb] hover:bg-[#262a31] hover:text-[#dfe2eb]'
-  }`
-}
-
-function renderNavLinks() {
-  return NAV_ITEMS.map(({ to, label, end }) => {
-    const visibleLabel = to === '/laboratory' ? '정책 검증' : label
-
-    return (
-      <NavLink key={to} to={to} end={end} className={resolveNavLinkClassName}>
-        <span>{visibleLabel}</span>
-      </NavLink>
-    )
-  })
-}
-
 function Navbar({
   totalNetWorth,
   totalPnl,
@@ -93,92 +62,112 @@ function Navbar({
   portfolioIsStale,
   portfolioUpdatedAt,
   portfolioSource,
+  desktopNavigationCollapsed = false,
+  onOpenNavigation,
 }: NavbarProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const isPortfolioUnavailable =
-    portfolioSource === 'empty' || (portfolioError !== null && portfolioSource === null)
+    portfolioSource === 'empty' ||
+    (!isPortfolioLoading && portfolioSource === null) ||
+    (portfolioError !== null && portfolioSource === null)
   const updatedAtLabel = formatUpdatedAt(portfolioUpdatedAt)
   const pnlTextColor = isPortfolioUnavailable
-    ? 'text-[#849495]'
+    ? 'text-content-muted'
     : totalPnl >= 0
-      ? 'text-[#77e2a8]'
-      : 'text-[#ffb4ab]'
+      ? 'text-market-positive'
+      : 'text-market-negative'
   const totalNetWorthLabel = isPortfolioLoading
-    ? '...'
+    ? '불러오는 중'
     : isPortfolioUnavailable
       ? resolvePortfolioUnavailableLabel(portfolioError)
       : formatKrw(totalNetWorth)
   const totalPnlLabel = isPortfolioLoading
-    ? '...'
+    ? '-'
     : isPortfolioUnavailable
       ? '-'
       : formatSignedKrw(totalPnl)
+  const portfolioStatusLabel = isPortfolioLoading
+    ? '확인 중'
+    : isPortfolioUnavailable
+      ? 'UNAVAILABLE'
+      : portfolioSource === 'snapshot'
+        ? 'SNAPSHOT'
+        : portfolioIsStale
+          ? 'STALE'
+          : 'LIVE'
+  const portfolioStatusClassName = isPortfolioUnavailable
+    ? 'border-status-danger/25 bg-status-danger/10 text-status-danger'
+    : portfolioSource === 'snapshot' || portfolioIsStale
+      ? 'border-warning/25 bg-warning/10 text-warning'
+      : 'border-status-success/25 bg-status-success/10 text-status-success'
+
   const handleSelectSymbol = (symbol: string) => {
     const nextParams = new URLSearchParams(location.pathname === '/' ? location.search : '')
     nextParams.set('symbol', symbol)
-    navigate({
-      pathname: '/',
-      search: nextParams.toString(),
-    })
+    navigate({ pathname: '/', search: nextParams.toString() })
   }
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-[#29363a]/80 bg-[#181c22]/90 text-[#dfe2eb] backdrop-blur-xl">
-      <div className="mx-auto flex w-full max-w-full flex-col gap-3 px-4 py-3 sm:px-6 lg:grid lg:h-16 lg:grid-cols-[minmax(0,1fr)_minmax(220px,320px)_auto_auto] lg:items-center lg:gap-4 lg:px-8 lg:py-0">
-        <div className="flex min-w-0 items-center justify-between gap-3 lg:hidden">
-          <NavLink
-            to="/"
-            className="shrink-0 text-lg font-extrabold tracking-tight text-[#7df4ff] transition-colors hover:text-[#00dbe9]"
-          >
-            AI Trade Manager
-          </NavLink>
+    <header
+      className={`fixed inset-x-0 top-0 z-40 h-16 border-b border-border-subtle bg-surface-low/92 text-content backdrop-blur-xl transition-[left] duration-200 motion-reduce:transition-none ${
+        desktopNavigationCollapsed ? 'lg:left-20' : 'lg:left-60'
+      }`}
+    >
+      <div
+        className={`mx-auto grid h-full w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-3 transition-[max-width] duration-200 motion-reduce:transition-none sm:px-6 lg:px-8 ${
+          desktopNavigationCollapsed ? 'max-w-[1600px]' : 'max-w-[1440px]'
+        }`}
+      >
+        <button
+          type="button"
+          onClick={onOpenNavigation}
+          aria-label="주요 메뉴 열기"
+          className="grid min-h-11 min-w-11 place-items-center rounded-lg text-content-secondary transition-colors hover:bg-surface-high hover:text-content lg:hidden"
+        >
+          <Menu className="h-5 w-5" aria-hidden="true" />
+        </button>
 
-          <ThemeToggle />
-        </div>
-
-        <nav className="quantum-nav-scroll flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto text-sm font-medium lg:hidden">
-          {renderNavLinks()}
-        </nav>
-
-        <div className="hidden min-w-0 items-center gap-3 lg:flex lg:gap-4">
-          <NavLink
-            to="/"
-            className="shrink-0 text-lg font-extrabold tracking-tight text-[#7df4ff] transition-colors hover:text-[#00dbe9]"
-          >
-            AI Trade Manager
-          </NavLink>
-
-          <nav className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium lg:gap-2 xl:gap-3">
-            {renderNavLinks()}
-          </nav>
-        </div>
-
-        <div className="hidden min-w-0 justify-self-stretch lg:block">
+        <div className="hidden min-w-0 max-w-xl sm:block">
           <MarketSearchBar compact onSelectSymbol={handleSelectSymbol} />
         </div>
+        <p className="min-w-0 truncate text-sm font-extrabold tracking-tight text-content sm:hidden">
+          AI Trade Manager
+        </p>
 
-        <div className="hidden min-w-0 items-center justify-center gap-4 justify-self-center xl:flex">
-            <span className="whitespace-nowrap text-xs font-semibold text-[#b9cacb]">
-              총 자산:{' '}
-              <span className={isPortfolioUnavailable ? 'text-[#849495]' : 'text-[#dfe2eb]'}>
+        <div className="flex min-w-0 items-center justify-end gap-2 sm:gap-3">
+          <div className="hidden min-w-0 items-center gap-3 border-r border-border-subtle pr-3 md:flex xl:gap-5 xl:pr-5">
+            <div className="min-w-0 text-right">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-content-muted">
+                총 자산
+              </p>
+              <p
+                className={`truncate text-xs font-extrabold xl:text-sm ${
+                  isPortfolioUnavailable ? 'text-content-muted' : 'text-content'
+                }`}
+              >
                 {totalNetWorthLabel}
-              </span>
-            </span>
-            <span className={`whitespace-nowrap text-xs font-semibold ${pnlTextColor}`}>
-              총 수익: {totalPnlLabel}
-            </span>
-            {portfolioIsStale && !isPortfolioUnavailable && (
+              </p>
+            </div>
+            <div className="hidden min-w-0 text-right xl:block">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-content-muted">
+                총 수익
+              </p>
+              <p className={`truncate text-sm font-extrabold ${pnlTextColor}`}>{totalPnlLabel}</p>
+            </div>
+            {!isPortfolioLoading && (
               <span
-                className="whitespace-nowrap rounded-full bg-[#ffe179]/10 px-2 py-0.5 text-[11px] font-semibold text-[#ffe179]"
+                className={`whitespace-nowrap rounded-full border px-2 py-1 text-[11px] font-bold ${portfolioStatusClassName}`}
                 title={portfolioError ?? undefined}
               >
-                지연{updatedAtLabel ? ` · ${updatedAtLabel}` : ''}
+                Portfolio {portfolioStatusLabel}
+                {(portfolioSource === 'snapshot' || portfolioIsStale) && updatedAtLabel
+                  ? ` · ${updatedAtLabel}`
+                  : ''}
               </span>
             )}
-        </div>
+          </div>
 
-        <div className="hidden justify-self-end lg:block">
           <ThemeToggle />
         </div>
       </div>
