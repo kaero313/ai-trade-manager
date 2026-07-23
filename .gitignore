@@ -35,7 +35,6 @@ logs/
 *.sqlite
 *.sqlite3
 data/
-alembic.ini
 
 # Build / packaging
 build/
