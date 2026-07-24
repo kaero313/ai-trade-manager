@@ -16,6 +16,15 @@ class TradingEngine:
         self.session_factory = session_factory
         self._is_running = True
 
+    @property
+    def is_running(self) -> bool:
+        return self._is_running
+
+    def stop(self) -> None:
+        # run_loop이 다음 주기 진입 전에 스스로 빠져나오도록 정지 플래그만 내립니다.
+        # 진행 중인 주기는 중단하지 않으므로 호출부에서 run_loop 태스크 종료를 기다려야 합니다.
+        self._is_running = False
+
     async def run_loop(self) -> None:
         logger.info("TradingEngine run_loop 시작")
         try:
