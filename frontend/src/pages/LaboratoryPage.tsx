@@ -43,6 +43,7 @@ import {
   type BacktestRunResponse,
   type BacktestTimeframe,
 } from '../services/backtestService'
+import { resolveFirstTargetSymbol } from './laboratoryConfig'
 
 const TIMEFRAME_OPTIONS: Array<{ label: string; value: BacktestTimeframe }> = [
   { label: '1시간', value: '60m' },
@@ -90,15 +91,15 @@ type PolicyPresetKey = keyof typeof POLICY_PRESETS
 type ResultTab = 'price' | 'equity' | 'drawdown' | 'trades'
 type ResultVerdictTone = 'positive' | 'warning' | 'negative' | 'neutral'
 const CURVE_CHART_HEIGHT = 360
-const LAB_CARD_CLASS = 'quantum-card min-w-0 rounded-xl p-5 text-[#dfe2eb]'
+const LAB_CARD_CLASS = 'quantum-card min-w-0 rounded-2xl p-5 text-content'
 const LAB_FIELD_CLASS =
-  'min-w-0 w-full rounded-lg border border-[#3b494b]/45 bg-[#0a0e14]/70 px-3 py-2 text-sm text-[#dfe2eb] outline-none transition placeholder:text-[#849495] focus:border-[#00dbe9]/70 focus:ring-2 focus:ring-[#00dbe9]/20 disabled:cursor-not-allowed disabled:bg-[#262a31]/60 disabled:text-[#849495]'
-const LAB_LABEL_CLASS = 'mb-1 block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]'
-const LAB_HINT_CLASS = 'mt-2 block text-[11px] leading-4 text-[#849495]'
+  'min-w-0 w-full rounded-xl border border-border-subtle bg-surface-lowest px-3 py-2 text-sm text-content outline-none transition placeholder:text-content-muted focus:border-border-strong disabled:cursor-not-allowed disabled:bg-surface-high disabled:text-content-muted'
+const LAB_LABEL_CLASS = 'mb-1 block text-xs font-bold tracking-[0.08em] text-content-muted'
+const LAB_HINT_CLASS = 'mt-2 block text-[11px] leading-4 text-content-muted'
 const LAB_PRIMARY_BUTTON_CLASS =
-  'inline-flex items-center justify-center gap-2 rounded-lg bg-[#00dbe9]/16 px-4 py-3 text-sm font-bold text-[#7df4ff] transition hover:bg-[#00dbe9]/24 disabled:cursor-not-allowed disabled:opacity-60'
+  'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-surface-highest px-4 py-3 text-sm font-bold text-brand-bright transition hover:text-brand disabled:cursor-not-allowed disabled:opacity-60'
 const LAB_SECONDARY_BUTTON_CLASS =
-  'inline-flex items-center justify-center gap-2 rounded-lg border border-[#3b494b]/50 bg-[#0a0e14]/70 px-3 py-2 text-sm font-bold text-[#dfe2eb] transition hover:border-[#00dbe9]/45 hover:text-[#7df4ff]'
+  'inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border-subtle bg-surface-lowest px-3 py-2 text-sm font-bold text-content transition hover:border-border-strong hover:text-brand-bright'
 
 interface LaboratoryFormState {
   market: string
@@ -165,12 +166,28 @@ function formatDateLabel(seconds: number): string {
   })
 }
 
-function toIsoStart(dateText: string): string {
-  return new Date(`${dateText}T00:00:00`).toISOString()
-}
+function parseDateInput(dateText: string, endOfDay = false): Date | null {
+  const normalizedDateText = dateText.trim()
+  const match = normalizedDateText.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) {
+    return null
+  }
 
-function toIsoEnd(dateText: string): string {
-  return new Date(`${dateText}T23:59:59`).toISOString()
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const timeText = endOfDay ? '23:59:59' : '00:00:00'
+  const parsed = new Date(`${normalizedDateText}T${timeText}`)
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month - 1 ||
+    parsed.getDate() !== day
+  ) {
+    return null
+  }
+
+  return parsed
 }
 
 function parseNumber(raw: string): number | null {
@@ -200,6 +217,10 @@ function parseErrorMessage(error: unknown, fallback: string): string {
     return error.message
   }
   return fallback
+}
+
+function readChartColor(token: string): string {
+  return window.getComputedStyle(document.documentElement).getPropertyValue(token).trim()
 }
 
 function buildResultVerdict(result: BacktestRunResponse): ResultVerdict {
@@ -275,7 +296,7 @@ function buildResultInsights(result: BacktestRunResponse): ResultInsight[] {
     tradeCount === 0
       ? {
           value: '진입 조건 완화',
-          description: 'AI 확신 기준이나 RSI 기준을 낮춰 신호 발생 여부부터 확인하세요.',
+          description: '신뢰도 기준이나 RSI 기준을 낮춰 신호 발생 여부부터 확인하세요.',
         }
       : maxDrawdown > 10
         ? {
@@ -317,15 +338,15 @@ function buildResultInsights(result: BacktestRunResponse): ResultInsight[] {
 
 function resolveVerdictClassName(tone: ResultVerdictTone): string {
   if (tone === 'positive') {
-    return 'bg-[#00dbe9]/12 text-[#7df4ff]'
+    return 'bg-surface-high text-status-success'
   }
   if (tone === 'warning') {
-    return 'bg-[#eac324]/12 text-[#ffe179]'
+    return 'bg-surface-high text-warning'
   }
   if (tone === 'negative') {
-    return 'bg-[#ffb4ab]/12 text-[#ffb4ab]'
+    return 'bg-surface-high text-status-danger'
   }
-  return 'bg-[#262a31]/70 text-[#b9cacb]'
+  return 'bg-surface-high text-content-secondary'
 }
 
 function buildDefaultForm(): LaboratoryFormState {
@@ -379,17 +400,17 @@ function NumberInput({
       <span className={LAB_LABEL_CLASS}>
         {label}
       </span>
-      <div className="flex rounded-lg border border-[#3b494b]/45 bg-[#0a0e14]/70 focus-within:border-[#00dbe9]/70 focus-within:ring-2 focus-within:ring-[#00dbe9]/20">
+      <div className="flex rounded-xl border border-border-subtle bg-surface-lowest focus-within:border-border-strong">
         <input
           type="number"
           value={value}
           min={min}
           step={step}
           onChange={(event) => onChange(event.target.value)}
-          className="min-w-0 flex-1 rounded-lg bg-transparent px-3 py-2 text-sm text-[#dfe2eb] outline-none"
+          className="min-w-0 flex-1 rounded-xl bg-transparent px-3 py-2 text-sm text-content outline-none"
         />
         {suffix && (
-          <span className="flex items-center border-l border-[#3b494b]/35 px-3 text-xs font-bold text-[#849495]">
+          <span className="flex items-center border-l border-border-subtle px-3 text-xs font-bold text-content-muted">
             {suffix}
           </span>
         )}
@@ -414,32 +435,38 @@ function PriceChart({
       return
     }
 
+    const surfaceColor = readChartColor('--atm-surface-lowest')
+    const contentColor = readChartColor('--atm-content-secondary')
+    const borderColor = readChartColor('--atm-border-subtle')
+    const positiveColor = readChartColor('--atm-market-positive')
+    const negativeColor = readChartColor('--atm-market-negative')
+
     const chart = createChart(container, {
       height: 420,
       layout: {
-        background: { type: ColorType.Solid, color: isDarkMode ? '#0a0e14' : '#10141a' },
-        textColor: isDarkMode ? '#b9cacb' : '#dfe2eb',
+        background: { type: ColorType.Solid, color: surfaceColor },
+        textColor: contentColor,
       },
       grid: {
-        vertLines: { color: 'rgba(59, 73, 75, 0.36)' },
-        horzLines: { color: 'rgba(59, 73, 75, 0.36)' },
+        vertLines: { color: borderColor },
+        horzLines: { color: borderColor },
       },
       rightPriceScale: {
-        borderColor: '#3b494b',
+        borderColor,
       },
       timeScale: {
-        borderColor: '#3b494b',
+        borderColor,
         timeVisible: true,
       },
     })
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#00dbe9',
-      downColor: '#ffb4ab',
-      borderUpColor: '#00dbe9',
-      borderDownColor: '#ffb4ab',
-      wickUpColor: '#00dbe9',
-      wickDownColor: '#ffb4ab',
+      upColor: positiveColor,
+      downColor: negativeColor,
+      borderUpColor: positiveColor,
+      borderDownColor: negativeColor,
+      wickUpColor: positiveColor,
+      wickDownColor: negativeColor,
     })
 
     const candleData: CandlestickData<Time>[] = result.candles.map((item) => ({
@@ -515,19 +542,17 @@ function useMeasuredWidth() {
 function CurveChart({
   data,
   mode,
-  isDarkMode,
 }: {
   data: Array<{ time: number; value: number }>
   mode: 'equity' | 'drawdown'
-  isDarkMode: boolean
 }) {
-  const stroke = mode === 'equity' ? '#00dbe9' : '#ffb4ab'
-  const tickColor = isDarkMode ? '#b9cacb' : '#b9cacb'
+  const stroke = mode === 'equity' ? 'var(--atm-brand)' : 'var(--atm-market-negative)'
+  const tickColor = 'var(--atm-content-secondary)'
   const { containerRef, width } = useMeasuredWidth()
 
   if (data.length === 0) {
     return (
-      <div className="flex h-[360px] min-w-0 items-center justify-center text-sm text-[#849495]">
+      <div className="flex h-[360px] min-w-0 items-center justify-center text-sm text-content-muted">
         표시할 곡선 데이터가 없습니다.
       </div>
     )
@@ -537,7 +562,7 @@ function CurveChart({
     return (
       <div
         ref={containerRef}
-        className="flex h-[360px] min-w-0 items-center justify-center text-sm text-[#849495]"
+        className="flex h-[360px] min-w-0 items-center justify-center text-sm text-content-muted"
       >
         차트 영역을 준비 중입니다.
       </div>
@@ -548,7 +573,7 @@ function CurveChart({
     return (
       <div ref={containerRef} className="h-[360px] min-w-0 overflow-hidden">
         <AreaChart width={width} height={CURVE_CHART_HEIGHT} data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(59, 73, 75, 0.36)" />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--atm-border-subtle)" />
           <XAxis
             dataKey="time"
             tickFormatter={formatDateLabel}
@@ -562,15 +587,20 @@ function CurveChart({
             labelFormatter={(value) => formatDateLabel(Number(value))}
             formatter={(value) => [`${Number(value).toFixed(2)}%`, '드로다운']}
             contentStyle={{
-              backgroundColor: '#0a0e14',
-              border: '1px solid rgba(59, 73, 75, 0.55)',
+              backgroundColor: 'var(--atm-surface-lowest)',
+              border: '1px solid var(--atm-border-subtle)',
               borderRadius: 8,
-              color: '#dfe2eb',
+              color: 'var(--atm-content)',
             }}
-            labelStyle={{ color: '#7df4ff' }}
-            itemStyle={{ color: '#dfe2eb' }}
+            labelStyle={{ color: 'var(--atm-brand-bright)' }}
+            itemStyle={{ color: 'var(--atm-content)' }}
           />
-          <Area type="monotone" dataKey="value" stroke={stroke} fill="rgba(255, 180, 171, 0.14)" />
+          <Area
+            type="monotone"
+            dataKey="value"
+            stroke={stroke}
+            fill="var(--atm-surface-highest)"
+          />
         </AreaChart>
       </div>
     )
@@ -579,7 +609,7 @@ function CurveChart({
   return (
     <div ref={containerRef} className="h-[360px] min-w-0 overflow-hidden">
       <LineChart width={width} height={CURVE_CHART_HEIGHT} data={data}>
-        <CartesianGrid strokeDasharray="3 3" stroke="rgba(59, 73, 75, 0.36)" />
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--atm-border-subtle)" />
         <XAxis
           dataKey="time"
           tickFormatter={formatDateLabel}
@@ -593,13 +623,13 @@ function CurveChart({
           labelFormatter={(value) => formatDateLabel(Number(value))}
           formatter={(value) => [formatKrw(Number(value)), '자산']}
           contentStyle={{
-            backgroundColor: '#0a0e14',
-            border: '1px solid rgba(59, 73, 75, 0.55)',
+            backgroundColor: 'var(--atm-surface-lowest)',
+            border: '1px solid var(--atm-border-subtle)',
             borderRadius: 8,
-            color: '#dfe2eb',
+            color: 'var(--atm-content)',
           }}
-          labelStyle={{ color: '#7df4ff' }}
-          itemStyle={{ color: '#dfe2eb' }}
+          labelStyle={{ color: 'var(--atm-brand-bright)' }}
+          itemStyle={{ color: 'var(--atm-content)' }}
         />
         <Line type="monotone" dataKey="value" stroke={stroke} strokeWidth={2} dot={false} />
       </LineChart>
@@ -665,6 +695,12 @@ function LaboratoryPage() {
         const configs = new Map(
           configsResult.value.map((item) => [item.config_key, item.config_value]),
         )
+        const firstTargetSymbol = resolveFirstTargetSymbol(
+          configs.get('ai_trade_target_symbols'),
+        )
+        if (firstTargetSymbol) {
+          nextForm.market = firstTargetSymbol
+        }
         nextForm.minConfidence = configs.get('ai_min_confidence_trade') ?? nextForm.minConfidence
         nextForm.maxAllocationPct = configs.get('max_allocation_pct') ?? nextForm.maxAllocationPct
         nextForm.takeProfitPct = configs.get('hard_take_profit_pct') ?? nextForm.takeProfitPct
@@ -718,7 +754,7 @@ function LaboratoryPage() {
     () => [
       {
         label: '진입 기준',
-        value: `AI 확신 ${form.minConfidence}% 이상`,
+        value: `신뢰도 ${form.minConfidence}% 이상`,
       },
       {
         label: '한 번에 투입',
@@ -761,6 +797,17 @@ function LaboratoryPage() {
   }
 
   const buildPayload = (): BacktestRunRequest | null => {
+    const startDate = parseDateInput(form.startDate)
+    const endDate = parseDateInput(form.endDate, true)
+    if (!startDate || !endDate) {
+      setError('시작일과 종료일을 올바른 날짜로 입력해야 합니다.')
+      return null
+    }
+    if (startDate.getTime() > endDate.getTime()) {
+      setError('시작일은 종료일보다 늦을 수 없습니다.')
+      return null
+    }
+
     const initialBalance = parsePositiveNumber(form.initialBalance)
     const emaFast = parsePositiveNumber(form.emaFast)
     const emaSlow = parsePositiveNumber(form.emaSlow)
@@ -807,8 +854,8 @@ function LaboratoryPage() {
 
     return {
       market: form.market.trim().toUpperCase(),
-      start_date: toIsoStart(form.startDate),
-      end_date: toIsoEnd(form.endDate),
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString(),
       timeframe: form.timeframe,
       initial_balance: initialBalance,
       strategy: {
@@ -852,25 +899,44 @@ function LaboratoryPage() {
   const resultInsights = result ? buildResultInsights(result) : []
 
   return (
-    <div className="dashboard-quantum min-h-full min-w-0 px-4 py-5 text-[#dfe2eb] sm:px-5 lg:px-6">
-      <div className="mx-auto grid min-w-0 max-w-[1600px] gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="min-w-0 space-y-4">
-          <section className={LAB_CARD_CLASS}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.24em] text-[#00dbe9]">
-                  AI Policy Lab
-                </p>
-                <h1 className="mt-2 text-2xl font-bold text-[#dfe2eb]">AI 매매 정책 검증실</h1>
-              </div>
-              <Brain className="mt-1 h-6 w-6 text-[#7df4ff]" />
+    <div className="dashboard-quantum min-h-full min-w-0 px-4 py-5 text-content sm:px-5 lg:px-6">
+      <div className="mx-auto min-w-0 max-w-[1600px]">
+        <header className="mb-5 rounded-2xl border border-border-subtle bg-surface px-5 py-6 sm:px-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand">
+                Strategy Laboratory
+              </p>
+              <h1 className="mt-2 text-2xl font-bold text-content sm:text-3xl">
+                규칙 기반 참고 백테스트
+              </h1>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-content-secondary">
+                EMA·RSI·익절·손절·재진입 대기 조건으로 구성한 결정론적 지표 정책을 과거
+                데이터에서 검증합니다.
+              </p>
             </div>
-          </section>
+            <div
+              role="note"
+              className="flex max-w-xl gap-3 rounded-xl border border-border-strong bg-surface-high px-4 py-3"
+            >
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+              <div>
+                <p className="text-sm font-bold text-content">운영 LLM 전략 과거 재현이 아님</p>
+                <p className="mt-1 text-xs leading-5 text-content-secondary">
+                  이 결과는 현재 운영 AI의 판단을 재생하거나 미래 성과를 보장하지 않습니다.
+                  정책 비교를 위한 참고 자료로만 사용하세요.
+                </p>
+              </div>
+            </div>
+          </div>
+        </header>
 
-          <section className={LAB_CARD_CLASS}>
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className="min-w-0 space-y-4">
+            <section className={LAB_CARD_CLASS}>
             <div className="mb-4 flex items-center gap-2">
-              <SlidersHorizontal className="h-4 w-4 text-[#7df4ff]" />
-              <h2 className="text-sm font-bold text-[#dfe2eb]">실험 조건</h2>
+              <SlidersHorizontal className="h-4 w-4 text-brand-bright" />
+              <h2 className="text-sm font-bold text-content">백테스트 구성</h2>
             </div>
 
             <div className="space-y-4">
@@ -894,12 +960,12 @@ function LaboratoryPage() {
                   ))}
                 </datalist>
                 {selectedMarket && (
-                  <p className="mt-2 text-xs text-[#849495]">
+                  <p className="mt-2 text-xs text-content-muted">
                     {selectedMarket.korean_name} · {selectedMarket.english_name}
                   </p>
                 )}
                 {marketsError && (
-                  <p className="mt-2 text-xs text-[#ffe179]">{marketsError}</p>
+                  <p className="mt-2 text-xs text-warning">{marketsError}</p>
                 )}
               </label>
 
@@ -932,7 +998,7 @@ function LaboratoryPage() {
                 </label>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 rounded-lg bg-[#0a0e14]/70 p-1">
+              <div className="grid grid-cols-3 gap-2 rounded-xl bg-surface-lowest p-1">
                 {TIMEFRAME_OPTIONS.map((option) => (
                   <button
                     key={option.value}
@@ -940,10 +1006,10 @@ function LaboratoryPage() {
                     onClick={() =>
                       setForm((current) => ({ ...current, timeframe: option.value }))
                     }
-                    className={`rounded-lg px-3 py-2 text-sm font-bold transition ${
+                    className={`min-h-11 rounded-lg px-3 py-2 text-sm font-bold transition ${
                       form.timeframe === option.value
-                        ? 'bg-[#00dbe9]/14 text-[#7df4ff]'
-                        : 'text-[#849495] hover:bg-[#262a31]/70 hover:text-[#dfe2eb]'
+                        ? 'bg-surface-highest text-brand-bright'
+                        : 'text-content-muted hover:bg-surface-high hover:text-content'
                     }`}
                   >
                     {option.label}
@@ -966,14 +1032,14 @@ function LaboratoryPage() {
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-[#7df4ff]" />
-                  <h2 className="text-sm font-bold text-[#dfe2eb]">검증할 AI 정책</h2>
+                  <ShieldCheck className="h-4 w-4 text-brand-bright" />
+                  <h2 className="text-sm font-bold text-content">검증할 규칙 기반 정책</h2>
                 </div>
-                <p className="mt-1 text-xs leading-5 text-[#849495]">
+                <p className="mt-1 text-xs leading-5 text-content-muted">
                   {selectedPresetMeta?.headline ?? '직접 조정한 사용자 지정 정책'}
                 </p>
               </div>
-              <span className="shrink-0 rounded-full bg-[#00dbe9]/12 px-2.5 py-1 text-xs font-bold text-[#7df4ff]">
+              <span className="shrink-0 rounded-full bg-surface-highest px-2.5 py-1 text-xs font-bold text-brand-bright">
                 {selectedPresetMeta?.label ?? '사용자 지정'}
               </span>
             </div>
@@ -984,27 +1050,27 @@ function LaboratoryPage() {
                   key={key}
                   type="button"
                   onClick={() => handlePreset(key)}
-                  className={`rounded-lg px-3 py-3 text-left transition ${
-                    selectedPreset === key
-                      ? 'bg-[#00dbe9]/14 text-[#7df4ff]'
-                      : 'bg-[#0a0e14]/70 text-[#b9cacb] hover:bg-[#262a31]/70 hover:text-[#dfe2eb]'
+                    className={`min-h-11 rounded-xl px-3 py-3 text-left transition ${
+                      selectedPreset === key
+                      ? 'bg-surface-highest text-brand-bright'
+                      : 'bg-surface-lowest text-content-secondary hover:bg-surface-high hover:text-content'
                   }`}
                 >
                   <span className="block text-sm font-semibold">{POLICY_PRESETS[key].label}</span>
                   <span className="mt-1 block text-xs font-medium leading-5">
                     {POLICY_PRESETS[key].headline}
                   </span>
-                  <span className="mt-2 block text-[11px] leading-4 text-[#849495]">
+                  <span className="mt-2 block text-[11px] leading-4 text-content-muted">
                     {POLICY_PRESETS[key].riskLabel}
                   </span>
                 </button>
               ))}
             </div>
 
-            <div className="mb-4 rounded-lg bg-[#00dbe9]/10 p-4">
+            <div className="mb-4 rounded-xl bg-surface-high p-4">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-bold text-[#dfe2eb]">정책 요약</p>
-                <p className="text-xs font-semibold text-[#7df4ff]">
+                <p className="text-sm font-bold text-content">정책 요약</p>
+                <p className="text-xs font-semibold text-brand-bright">
                   {selectedPresetMeta?.description ?? '고급 설정값을 직접 반영합니다.'}
                 </p>
               </div>
@@ -1012,10 +1078,10 @@ function LaboratoryPage() {
                 {policySummaryItems.map((item) => (
                   <div
                     key={item.label}
-                    className="flex items-center justify-between gap-3 rounded-lg bg-[#0a0e14]/70 px-3 py-2 text-xs"
+                    className="flex items-center justify-between gap-3 rounded-lg bg-surface-lowest px-3 py-2 text-xs"
                   >
-                    <span className="text-[#849495]">{item.label}</span>
-                    <span className="font-bold text-[#dfe2eb]">{item.value}</span>
+                    <span className="text-content-muted">{item.label}</span>
+                    <span className="font-bold text-content">{item.value}</span>
                   </div>
                 ))}
               </div>
@@ -1031,10 +1097,10 @@ function LaboratoryPage() {
             </button>
 
             {showAdvancedPolicy && (
-              <div className="space-y-4 rounded-lg bg-[#0a0e14]/70 p-4">
+              <div className="space-y-4 rounded-xl bg-surface-lowest p-4">
                 <div>
-                  <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
-                    신호 판단
+                  <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-content-muted">
+                    결정론적 지표
                   </h3>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <NumberInput
@@ -1073,7 +1139,7 @@ function LaboratoryPage() {
                 </div>
 
                 <div>
-                  <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
+                  <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-content-muted">
                     진입과 청산
                   </h3>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1087,7 +1153,7 @@ function LaboratoryPage() {
                       hint="상승 후 되돌림이 커지면 매도합니다."
                     />
                     <NumberInput
-                      label="AI 확신 기준"
+                      label="신뢰도 기준"
                       value={form.minConfidence}
                       onChange={(value) => updatePolicyField('minConfidence', value)}
                       suffix="%"
@@ -1136,7 +1202,10 @@ function LaboratoryPage() {
             )}
 
             {error && (
-              <div className="mt-4 rounded-lg bg-[#ffb4ab]/10 px-3 py-2 text-sm font-semibold text-[#ffb4ab]">
+              <div
+                className="mt-4 rounded-xl bg-surface-high px-3 py-2 text-sm font-semibold text-status-danger"
+                role="alert"
+              >
                 {error}
               </div>
             )}
@@ -1148,7 +1217,7 @@ function LaboratoryPage() {
               className={`${LAB_PRIMARY_BUTTON_CLASS} mt-5 w-full`}
             >
               {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-              {isRunning ? '검증 중...' : '정책 백테스트 실행'}
+              {isRunning ? '검증 중...' : '규칙 기반 정책 실행'}
             </button>
           </section>
         </aside>
@@ -1159,20 +1228,20 @@ function LaboratoryPage() {
               <section className={LAB_CARD_CLASS}>
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
-                    <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.24em] text-[#00dbe9]">
+                    <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.24em] text-brand">
                       <Bot className="h-4 w-4" />
-                      AI 분석
+                      결과 AI 해설
                     </p>
-                    <h2 className="mt-2 text-2xl font-bold text-[#dfe2eb]">검증 결과 해석</h2>
+                    <h2 className="mt-2 text-2xl font-bold text-content">검증 결과 해석</h2>
                     {resultVerdict && (
-                      <p className="mt-2 text-sm text-[#b9cacb]">
+                      <p className="mt-2 text-sm text-content-secondary">
                         {resultVerdict.title}
                       </p>
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {result.ai_briefing.fallback && (
-                      <span className="inline-flex w-fit rounded-lg bg-[#eac324]/12 px-3 py-1 text-xs font-bold text-[#ffe179]">
+                      <span className="inline-flex w-fit rounded-lg bg-surface-high px-3 py-1 text-xs font-bold text-warning">
                         로컬 요약
                       </span>
                     )}
@@ -1189,12 +1258,12 @@ function LaboratoryPage() {
                 </div>
 
                 {resultVerdict && (
-                  <p className="mt-4 rounded-lg bg-[#0a0e14]/70 px-4 py-3 text-sm leading-6 text-[#b9cacb]">
+                  <p className="mt-4 rounded-xl bg-surface-lowest px-4 py-3 text-sm leading-6 text-content-secondary">
                     {resultVerdict.description}
                   </p>
                 )}
 
-                <div className="mt-4 rounded-lg bg-[#0a0e14]/70 p-4 text-sm leading-7 text-[#dfe2eb]">
+                <div className="mt-4 rounded-xl bg-surface-lowest p-4 text-sm leading-7 text-content">
                   {result.ai_briefing.content}
                 </div>
 
@@ -1202,15 +1271,15 @@ function LaboratoryPage() {
                   {resultInsights.map((item) => (
                     <article
                       key={item.label}
-                      className="rounded-lg bg-[#0a0e14]/70 p-4"
+                      className="rounded-xl bg-surface-lowest p-4"
                     >
-                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-content-muted">
                         {item.label}
                       </p>
-                      <p className="mt-2 text-base font-bold text-[#dfe2eb]">
+                      <p className="mt-2 text-base font-bold text-content">
                         {item.value}
                       </p>
-                      <p className="mt-2 text-xs leading-5 text-[#849495]">
+                      <p className="mt-2 text-xs leading-5 text-content-muted">
                         {item.description}
                       </p>
                     </article>
@@ -1251,40 +1320,48 @@ function LaboratoryPage() {
                 />
               </section>
 
-              <section className="quantum-card overflow-hidden rounded-xl text-[#dfe2eb]">
-                <div className="flex flex-col gap-3 border-b border-[#3b494b]/35 p-4 lg:flex-row lg:items-center lg:justify-between">
+              <section className="quantum-card overflow-hidden rounded-2xl text-content">
+                <div className="flex flex-col gap-3 border-b border-border-subtle p-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#849495]">
-                      근거 확인
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-content-muted">
+                      백테스트 결과 근거
                     </p>
-                    <h2 className="mt-1 text-lg font-bold text-[#dfe2eb]">{result.meta.market}</h2>
-                    <p className="mt-1 text-sm text-[#849495]">
+                    <h2 className="mt-1 text-lg font-bold text-content">{result.meta.market}</h2>
+                    <p className="mt-1 text-sm text-content-muted">
                       {new Date(result.meta.start_date).toLocaleDateString('ko-KR')} -{' '}
                       {new Date(result.meta.end_date).toLocaleDateString('ko-KR')} ·{' '}
                       {result.meta.timeframe}
                     </p>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 sm:flex">
+                  <div
+                    className="grid grid-cols-2 gap-2 sm:flex"
+                    role="tablist"
+                    aria-label="백테스트 결과 보기"
+                  >
                     <ResultTabButton
                       active={activeTab === 'equity'}
+                      tab="equity"
                       icon={<LineChartIcon className="h-4 w-4" />}
                       label="자산 곡선"
                       onClick={() => setActiveTab('equity')}
                     />
                     <ResultTabButton
                       active={activeTab === 'drawdown'}
+                      tab="drawdown"
                       icon={<Activity className="h-4 w-4" />}
                       label="낙폭"
                       onClick={() => setActiveTab('drawdown')}
                     />
                     <ResultTabButton
                       active={activeTab === 'price'}
+                      tab="price"
                       icon={<BarChart3 className="h-4 w-4" />}
                       label="가격/체결"
                       onClick={() => setActiveTab('price')}
                     />
                     <ResultTabButton
                       active={activeTab === 'trades'}
+                      tab="trades"
                       icon={<Table2 className="h-4 w-4" />}
                       label="거래 내역"
                       onClick={() => setActiveTab('trades')}
@@ -1292,30 +1369,37 @@ function LaboratoryPage() {
                   </div>
                 </div>
 
-                <div className="bg-[#0a0e14]/35 p-4">
+                <div
+                  id="laboratory-result-panel"
+                  role="tabpanel"
+                  aria-labelledby={`laboratory-result-tab-${activeTab}`}
+                  tabIndex={0}
+                  className="bg-surface-lowest p-4"
+                >
                   {activeTab === 'price' && <PriceChart result={result} isDarkMode={isDarkMode} />}
                   {activeTab === 'equity' && (
-                    <CurveChart data={equityData} mode="equity" isDarkMode={isDarkMode} />
+                    <CurveChart data={equityData} mode="equity" />
                   )}
                   {activeTab === 'drawdown' && (
-                    <CurveChart data={drawdownData} mode="drawdown" isDarkMode={isDarkMode} />
+                    <CurveChart data={drawdownData} mode="drawdown" />
                   )}
                   {activeTab === 'trades' && <TradeTable result={result} />}
                 </div>
               </section>
             </>
           ) : (
-            <section className="quantum-card flex min-h-[520px] items-center justify-center rounded-xl p-8 text-center">
+            <section className="quantum-card flex min-h-[520px] items-center justify-center rounded-2xl p-8 text-center">
               <div>
-                <Brain className="mx-auto h-10 w-10 text-[#7df4ff]" />
-                <h2 className="mt-4 text-xl font-bold text-[#dfe2eb]">아직 해석할 결과가 없습니다</h2>
-                <p className="mt-2 text-sm text-[#849495]">
-                  좌측 조건을 고르고 실행하면 AI가 성과와 리스크를 요약합니다.
+                <Brain className="mx-auto h-10 w-10 text-brand-bright" />
+                <h2 className="mt-4 text-xl font-bold text-content">아직 검증 결과가 없습니다</h2>
+                <p className="mt-2 text-sm text-content-muted">
+                  좌측 조건을 고르고 실행하면 결과 AI 해설과 성과 지표를 확인할 수 있습니다.
                 </p>
               </div>
             </section>
           )}
-        </main>
+          </main>
+        </div>
       </div>
     </div>
   )
@@ -1334,39 +1418,45 @@ function KpiCard({
 }) {
   const colorClass =
     tone === 'positive'
-      ? 'text-[#7df4ff]'
+      ? 'text-market-positive'
       : tone === 'negative'
-        ? 'text-[#ffb4ab]'
-      : 'text-[#dfe2eb]'
+        ? 'text-market-negative'
+      : 'text-content'
 
   return (
-    <div className="quantum-card rounded-xl p-4">
-      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">{label}</p>
+    <div className="quantum-card rounded-2xl p-4">
+      <p className="text-xs font-bold uppercase tracking-[0.16em] text-content-muted">{label}</p>
       <p className={`mt-2 text-2xl font-bold ${colorClass}`}>{value}</p>
-      {hint && <p className="mt-1 text-xs text-[#849495]">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-content-muted">{hint}</p>}
     </div>
   )
 }
 
 function ResultTabButton({
   active,
+  tab,
   icon,
   label,
   onClick,
 }: {
   active: boolean
+  tab: ResultTab
   icon: ReactNode
   label: string
   onClick: () => void
 }) {
   return (
     <button
+      id={`laboratory-result-tab-${tab}`}
       type="button"
+      role="tab"
+      aria-selected={active}
+      aria-controls="laboratory-result-panel"
       onClick={onClick}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-bold transition ${
+      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-bold transition ${
         active
-          ? 'bg-[#00dbe9]/14 text-[#7df4ff]'
-          : 'bg-[#0a0e14]/70 text-[#b9cacb] hover:bg-[#262a31]/70 hover:text-[#dfe2eb]'
+          ? 'bg-surface-highest text-brand-bright'
+          : 'bg-surface-low text-content-secondary hover:bg-surface-high hover:text-content'
       }`}
     >
       {icon}
@@ -1378,7 +1468,7 @@ function ResultTabButton({
 function TradeTable({ result }: { result: BacktestRunResponse }) {
   if (result.trades.length === 0) {
     return (
-      <div className="flex min-h-[320px] items-center justify-center text-sm text-[#849495]">
+      <div className="flex min-h-[320px] items-center justify-center text-sm text-content-muted">
         체결된 거래가 없습니다.
       </div>
     )
@@ -1386,8 +1476,8 @@ function TradeTable({ result }: { result: BacktestRunResponse }) {
 
   return (
     <div className="max-h-[460px] overflow-auto">
-      <table className="min-w-full divide-y divide-[#3b494b]/35 text-sm">
-        <thead className="sticky top-0 bg-[#0a0e14] text-xs uppercase text-[#849495]">
+      <table className="min-w-full divide-y divide-border-subtle text-sm">
+        <thead className="sticky top-0 bg-surface-lowest text-xs uppercase text-content-muted">
           <tr>
             <th className="px-3 py-3 text-left">시간</th>
             <th className="px-3 py-3 text-left">구분</th>
@@ -1397,18 +1487,18 @@ function TradeTable({ result }: { result: BacktestRunResponse }) {
             <th className="px-3 py-3 text-left">사유</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#3b494b]/24">
+        <tbody className="divide-y divide-border-subtle">
           {result.trades.map((trade) => (
-            <tr key={`${trade.index}-${trade.timestamp}`} className="hover:bg-[#262a31]/50">
-              <td className="whitespace-nowrap px-3 py-3 text-[#b9cacb]">
+            <tr key={`${trade.index}-${trade.timestamp}`} className="hover:bg-surface-high">
+              <td className="whitespace-nowrap px-3 py-3 text-content-secondary">
                 {new Date(trade.timestamp).toLocaleString('ko-KR')}
               </td>
               <td className="px-3 py-3">
                 <span
                   className={`rounded px-2 py-1 text-xs font-semibold ${
                     trade.side === 'buy'
-                      ? 'bg-[#00dbe9]/12 text-[#7df4ff]'
-                      : 'bg-[#ffb4ab]/12 text-[#ffb4ab]'
+                      ? 'bg-surface-high text-market-positive'
+                      : 'bg-surface-high text-market-negative'
                   }`}
                 >
                   {trade.side.toUpperCase()}
@@ -1421,7 +1511,7 @@ function TradeTable({ result }: { result: BacktestRunResponse }) {
               <td className="whitespace-nowrap px-3 py-3 text-right">
                 {trade.confidence ?? '-'}
               </td>
-              <td className="min-w-40 px-3 py-3 text-[#b9cacb]">
+              <td className="min-w-40 px-3 py-3 text-content-secondary">
                 {trade.reason ?? '-'}
               </td>
             </tr>
