@@ -1,3 +1,4 @@
+import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from 'react'
 
 import {
@@ -12,8 +13,10 @@ interface AdminAuthProviderProps {
 
 function AdminAuthProvider({ children }: AdminAuthProviderProps) {
   const pendingRequestRef = useRef<AdminTokenRequestDetail | null>(null)
+  const tokenInputRef = useRef<HTMLInputElement | null>(null)
   const [reason, setReason] = useState('관리 작업')
   const [token, setToken] = useState('')
+  const [persistent, setPersistent] = useState(true)
   const [isOpen, setIsOpen] = useState(false)
 
   useEffect(() => {
@@ -30,6 +33,7 @@ function AdminAuthProvider({ children }: AdminAuthProviderProps) {
 
       pendingRequestRef.current = detail
       setReason(detail.reason || '관리 작업')
+      setPersistent(detail.persistent)
       setToken('')
       setIsOpen(true)
     }
@@ -44,6 +48,7 @@ function AdminAuthProvider({ children }: AdminAuthProviderProps) {
     setIsOpen(false)
     setToken('')
     setReason('관리 작업')
+    setPersistent(true)
     pendingRequestRef.current = null
   }
 
@@ -54,7 +59,9 @@ function AdminAuthProvider({ children }: AdminAuthProviderProps) {
       return
     }
 
-    storeAdminToken(normalizedToken)
+    if (pendingRequestRef.current.persistent) {
+      storeAdminToken(normalizedToken)
+    }
     pendingRequestRef.current.resolve(normalizedToken)
     closeModal()
   }
@@ -67,32 +74,46 @@ function AdminAuthProvider({ children }: AdminAuthProviderProps) {
   return (
     <>
       {children}
-      {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-          <form
+      <Dialog
+        open={isOpen}
+        onClose={handleCancel}
+        initialFocus={tokenInputRef}
+        className="relative z-[100]"
+      >
+        <DialogBackdrop className="fixed inset-0 bg-black/70 backdrop-blur-sm" />
+        <div className="fixed inset-0 flex items-center justify-center overflow-y-auto px-4 py-8">
+          <DialogPanel
+            as="form"
             onSubmit={handleSubmit}
-            className="w-full max-w-md rounded-xl border border-[#00dbe9]/20 bg-[#10141a] p-5 shadow-[0_0_24px_rgba(0,219,233,0.12)]"
+            className="w-full max-w-md rounded-xl border border-brand/20 bg-surface p-5 shadow-xl"
           >
             <div className="mb-4">
-              <p className="text-xs font-bold uppercase tracking-[0.22em] text-[#00dbe9]">
+              <p className="text-xs font-bold uppercase tracking-[0.22em] text-brand">
                 Admin Authorization
               </p>
-              <h2 className="mt-2 text-xl font-bold text-[#dfe2eb]">운영 관리 토큰</h2>
-              <p className="mt-2 text-sm leading-6 text-[#b9cacb]">
+              <DialogTitle className="mt-2 text-xl font-bold text-content">
+                운영 관리 토큰
+              </DialogTitle>
+              <p className="mt-2 text-sm leading-6 text-content-secondary">
                 {reason} 작업은 관리 API 보호 대상입니다. `.env.local`의 ADMIN_API_TOKEN을 입력해 주세요.
               </p>
+              {!persistent && (
+                <p className="mt-2 text-xs font-semibold leading-5 text-warning">
+                  이 토큰은 현재 고위험 작업에만 일회성으로 사용되며 브라우저에 저장하지 않습니다.
+                </p>
+              )}
             </div>
 
             <label className="block">
-              <span className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-[#849495]">
+              <span className="mb-2 block text-xs font-bold uppercase tracking-[0.16em] text-content-muted">
                 Token
               </span>
               <input
                 type="password"
+                ref={tokenInputRef}
                 value={token}
-                autoFocus
                 onChange={(event) => setToken(event.target.value)}
-                className="w-full rounded-lg border border-[#3b494b] bg-[#0a0e14] px-3 py-2.5 text-sm font-semibold text-[#dfe2eb] outline-none transition focus:border-[#00dbe9]/70 focus:ring-2 focus:ring-[#00dbe9]/20"
+                className="min-h-11 w-full rounded-lg border border-border-strong bg-surface-lowest px-3 py-2.5 text-sm font-semibold text-content outline-none transition focus:border-brand/70 focus:ring-2 focus:ring-brand/20"
                 placeholder="ADMIN_API_TOKEN"
               />
             </label>
@@ -101,21 +122,21 @@ function AdminAuthProvider({ children }: AdminAuthProviderProps) {
               <button
                 type="button"
                 onClick={handleCancel}
-                className="rounded-lg border border-[#3b494b]/70 px-4 py-2 text-sm font-bold text-[#b9cacb] transition hover:border-[#849495]"
+                className="min-h-11 rounded-lg border border-border-strong px-4 py-2 text-sm font-bold text-content-secondary transition hover:border-content-muted"
               >
                 취소
               </button>
               <button
                 type="submit"
                 disabled={!token.trim()}
-                className="rounded-lg bg-[#00dbe9] px-4 py-2 text-sm font-bold text-[#00363a] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-11 rounded-lg bg-brand px-4 py-2 text-sm font-bold text-surface-lowest transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 토큰 적용
               </button>
             </div>
-          </form>
+          </DialogPanel>
         </div>
-      )}
+      </Dialog>
     </>
   )
 }
