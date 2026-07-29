@@ -6,14 +6,20 @@ import { useState } from 'react'
 
 import { AI_PERFORMANCE_QUERY_KEY } from '../../hooks/useAIPerformance'
 import { PORTFOLIO_SUMMARY_QUERY_KEY } from '../../hooks/usePortfolioSummary'
-import { getLatestAiAnalysis, runManualAiCycle } from '../../services/api'
-import type { LatestAiAnalysis } from '../../services/api'
+import { getBotStatus, getLatestAiAnalysis, runManualAiCycle } from '../../services/api'
+import type { LatestAiAnalysis, ManualAiCycleResponse } from '../../services/api'
 
 interface AiInsightBriefingProps {
   symbol: string | null
 }
 
 type ToneName = 'positive' | 'neutral' | 'danger' | 'muted'
+type ManualCycleTone = 'positive' | 'neutral' | 'danger'
+
+type ManualCycleFeedback = {
+  message: string
+  tone: ManualCycleTone
+}
 
 type DecisionTone = {
   tone: ToneName
@@ -53,29 +59,35 @@ const TONE_STYLES: Record<
   }
 > = {
   positive: {
-    chipClassName: 'bg-[#00dbe9]/10 text-[#7df4ff]',
-    cardClassName: 'border-[#00dbe9]/40 bg-[#00dbe9]/6',
-    labelClassName: 'text-[#7df4ff]',
-    barClassName: 'bg-[#00dbe9]',
+    chipClassName: 'bg-brand/10 text-brand-bright',
+    cardClassName: 'border-brand/40 bg-brand/6',
+    labelClassName: 'text-brand-bright',
+    barClassName: 'bg-brand',
   },
   neutral: {
-    chipClassName: 'bg-[#ffe179]/10 text-[#ffe179]',
-    cardClassName: 'border-[#ffe179]/35 bg-[#ffe179]/6',
-    labelClassName: 'text-[#ffe179]',
-    barClassName: 'bg-[#ffe179]',
+    chipClassName: 'bg-warning/10 text-warning',
+    cardClassName: 'border-warning/35 bg-warning/6',
+    labelClassName: 'text-warning',
+    barClassName: 'bg-warning',
   },
   danger: {
-    chipClassName: 'bg-[#ffb4ab]/10 text-[#ffb4ab]',
-    cardClassName: 'border-[#ffb4ab]/40 bg-[#ffb4ab]/6',
-    labelClassName: 'text-[#ffb4ab]',
-    barClassName: 'bg-[#ffb4ab]',
+    chipClassName: 'bg-status-danger/10 text-status-danger',
+    cardClassName: 'border-status-danger/40 bg-status-danger/6',
+    labelClassName: 'text-status-danger',
+    barClassName: 'bg-status-danger',
   },
   muted: {
-    chipClassName: 'bg-[#3b494b]/24 text-[#849495]',
-    cardClassName: 'border-[#3b494b]/38 bg-[#0a0e14]/45',
-    labelClassName: 'text-[#849495]',
-    barClassName: 'bg-[#3b494b]',
+    chipClassName: 'bg-surface-highest/24 text-content-muted',
+    cardClassName: 'border-border-strong/38 bg-surface-lowest/45',
+    labelClassName: 'text-content-muted',
+    barClassName: 'bg-surface-highest',
   },
+}
+
+const MANUAL_CYCLE_TONE_CLASS: Record<ManualCycleTone, string> = {
+  positive: 'text-status-success',
+  neutral: 'text-warning',
+  danger: 'text-status-danger',
 }
 
 const REASONING_BUCKETS: ReasoningBucket[] = [
@@ -159,6 +171,91 @@ function resolveManualCycleError(error: unknown): string {
   }
 
   return 'AI 수동 갱신 요청이 실패했습니다.'
+}
+
+function appendManualCycleDetail(
+  label: string,
+  result: ManualAiCycleResponse,
+  includeSide = true,
+): string {
+  const sideLabel = includeSide && result.order_side ? ` · ${result.order_side}` : ''
+  const detail = result.message.trim()
+  const isLegacyExecutionMessage = /신규\s*체결\s*(?:있음|없음)/.test(detail)
+  if (!detail || isLegacyExecutionMessage || detail === label || label.includes(detail)) {
+    return `${label}${sideLabel}`
+  }
+
+  if (detail.includes(label)) {
+    return `${detail}${sideLabel}`
+  }
+
+  return `${label}${sideLabel} · ${detail}`
+}
+
+function resolveManualCycleFeedback(result: ManualAiCycleResponse): ManualCycleFeedback {
+  const submissionStatus = result.submission_status?.trim().toUpperCase() ?? ''
+  const exchangeState = result.exchange_state?.trim().toLowerCase() ?? ''
+
+  if (submissionStatus === 'REJECTED' || submissionStatus === 'FAILED') {
+    return {
+      message: appendManualCycleDetail('주문 거절', result),
+      tone: 'danger',
+    }
+  }
+
+  if (submissionStatus === 'ABANDONED') {
+    return {
+      message: appendManualCycleDetail('주문 제출 종료', result),
+      tone: 'danger',
+    }
+  }
+
+  if (['PREPARED', 'SUBMITTING', 'UNKNOWN'].includes(submissionStatus)) {
+    return {
+      message: appendManualCycleDetail('주문 확인 중', result),
+      tone: 'neutral',
+    }
+  }
+
+  if (submissionStatus === 'ACCEPTED') {
+    if (exchangeState === 'wait' || exchangeState === 'watch') {
+      return {
+        message: appendManualCycleDetail('주문 접수 완료 · 거래소 처리 중', result),
+        tone: 'neutral',
+      }
+    }
+
+    if (exchangeState === 'done') {
+      return {
+        message: appendManualCycleDetail('주문 접수 완료 · 거래소 처리 완료', result),
+        tone: 'neutral',
+      }
+    }
+
+    if (exchangeState === 'cancel') {
+      return {
+        message: appendManualCycleDetail('주문 접수 완료 · 거래소 종료 상태 확인', result),
+        tone: 'neutral',
+      }
+    }
+
+    return {
+      message: appendManualCycleDetail('주문 접수 완료', result),
+      tone: 'neutral',
+    }
+  }
+
+  if (typeof result.order_intent_id === 'number' || result.order_created) {
+    return {
+      message: appendManualCycleDetail('주문 상태 확인 중', result),
+      tone: 'neutral',
+    }
+  }
+
+  return {
+    message: appendManualCycleDetail('분석 완료, 신규 주문 없음', result, false),
+    tone: 'neutral',
+  }
 }
 
 function cleanReasoningText(value: string): string {
@@ -356,23 +453,23 @@ function InsightSkeleton() {
     <section className="quantum-card flex min-h-0 flex-col overflow-hidden rounded-xl">
       <div className="grid min-h-0 gap-5 p-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
         <div className="quantum-panel space-y-4 rounded-lg p-5 animate-pulse">
-          <div className="h-4 w-28 rounded-full bg-[#3b494b]/50" />
-          <div className="h-10 w-40 rounded-lg bg-[#3b494b]/50" />
-          <div className="h-5 w-24 rounded-full bg-[#3b494b]/50" />
+          <div className="h-4 w-28 rounded-full bg-surface-highest/50" />
+          <div className="h-10 w-40 rounded-lg bg-surface-highest/50" />
+          <div className="h-5 w-24 rounded-full bg-surface-highest/50" />
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="h-24 rounded-lg bg-[#3b494b]/50" />
-            <div className="h-24 rounded-lg bg-[#3b494b]/50" />
+            <div className="h-24 rounded-lg bg-surface-highest/50" />
+            <div className="h-24 rounded-lg bg-surface-highest/50" />
           </div>
-          <div className="h-24 rounded-lg bg-[#3b494b]/50" />
+          <div className="h-24 rounded-lg bg-surface-highest/50" />
         </div>
 
         <div className="quantum-panel rounded-lg p-5 animate-pulse">
-          <div className="h-7 w-32 rounded-full bg-[#3b494b]/50" />
+          <div className="h-7 w-32 rounded-full bg-surface-highest/50" />
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="h-32 rounded-lg bg-[#3b494b]/50" />
-            <div className="h-32 rounded-lg bg-[#3b494b]/50" />
-            <div className="h-32 rounded-lg bg-[#3b494b]/50" />
-            <div className="h-32 rounded-lg bg-[#3b494b]/50" />
+            <div className="h-32 rounded-lg bg-surface-highest/50" />
+            <div className="h-32 rounded-lg bg-surface-highest/50" />
+            <div className="h-32 rounded-lg bg-surface-highest/50" />
+            <div className="h-32 rounded-lg bg-surface-highest/50" />
           </div>
         </div>
       </div>
@@ -394,8 +491,8 @@ function EmptyInsightCard({
   return (
     <section className="quantum-card flex min-h-0 flex-col overflow-hidden rounded-xl">
       <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 px-6 py-10 text-center">
-        <h3 className="text-lg font-bold text-[#dfe2eb]">{title}</h3>
-        <p className="max-w-xl break-words text-sm leading-6 text-[#849495]">
+        <h3 className="text-lg font-bold text-content">{title}</h3>
+        <p className="max-w-xl break-words text-sm leading-6 text-content-muted">
           {description}
         </p>
         {action}
@@ -409,6 +506,7 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
   const normalizedSymbol = normalizeSymbol(symbol)
   const queryClient = useQueryClient()
   const [manualCycleMessage, setManualCycleMessage] = useState<string | null>(null)
+  const [manualCycleTone, setManualCycleTone] = useState<ManualCycleTone>('neutral')
   const [manualCycleError, setManualCycleError] = useState<string | null>(null)
 
   const analysisQuery = useQuery({
@@ -421,30 +519,55 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
     retry: false,
   })
 
+  const botStatusQuery = useQuery({
+    queryKey: ['bot-status'],
+    queryFn: getBotStatus,
+    refetchInterval: 5000,
+    placeholderData: (previousData) => previousData,
+  })
+  const tradingMode = botStatusQuery.data?.trading_mode
+  const tradingModeAvailable =
+    !botStatusQuery.isError &&
+    (tradingMode === 'paper' || tradingMode === 'live') &&
+    Number.isInteger(botStatusQuery.data?.trading_mode_version) &&
+    (botStatusQuery.data?.trading_mode_version ?? 0) >= 1 &&
+    botStatusQuery.data?.trading_mode_state_available === true &&
+    botStatusQuery.data.trading_mode_mirror_consistent === true
+  const paperTradeAllowed =
+    tradingModeAvailable && tradingMode === 'paper' && botStatusQuery.data?.running === true
+  const liveTradeAllowed =
+    tradingModeAvailable &&
+    tradingMode === 'live' &&
+    botStatusQuery.data?.running === true &&
+    botStatusQuery.data.live_order_state_available &&
+    botStatusQuery.data.live_order_rollout_enabled &&
+    botStatusQuery.data.live_order_mode === 'ARMED'
+  const manualTradeAllowed = paperTradeAllowed || liveTradeAllowed
+
   const manualCycleMutation = useMutation({
     mutationFn: () => {
       if (!normalizedSymbol) {
         throw new Error('수동 갱신할 종목을 먼저 선택해 주세요.')
       }
-      return runManualAiCycle(normalizedSymbol)
+      return runManualAiCycle(normalizedSymbol, manualTradeAllowed)
     },
     onSuccess: async (result) => {
+      const resultFeedback = resolveManualCycleFeedback(result)
       setManualCycleError(null)
-      setManualCycleMessage(
-        result.order_created
-          ? `신규 체결 있음${result.order_side ? ` · ${result.order_side}` : ''}`
-          : '분석 완료, 신규 체결 없음',
-      )
+      setManualCycleMessage(resultFeedback.message)
+      setManualCycleTone(resultFeedback.tone)
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['latest-ai-analysis', result.symbol] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard-orders'] }),
         queryClient.invalidateQueries({ queryKey: PORTFOLIO_SUMMARY_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: AI_PERFORMANCE_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: ['bot-status'] }),
+        queryClient.invalidateQueries({ queryKey: ['live-order-gate'] }),
       ])
     },
     onError: (error) => {
       setManualCycleMessage(null)
+      setManualCycleTone('danger')
       setManualCycleError(resolveManualCycleError(error))
     },
   })
@@ -455,13 +578,22 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
     }
 
     const shouldProceed = window.confirm(
-      '현재 종목 AI 분석을 즉시 실행하고, 조건 충족 시 AI 매매 게이트까지 평가합니다.',
+      paperTradeAllowed
+        ? '현재 종목 AI 분석을 즉시 실행하고, 조건 충족 시 PAPER 모의매매까지 평가합니다.'
+        : liveTradeAllowed
+          ? '현재 종목 AI 분석을 즉시 실행하고, 조건 충족 시 LIVE 매매 게이트까지 평가합니다.'
+          : tradingModeAvailable && tradingMode === 'live'
+            ? `현재 LIVE 실주문 Gate는 ${botStatusQuery.data?.live_order_mode ?? '확인 불가'}입니다. Gemini/AI 분석만 실행하고 주문은 생성하지 않습니다.`
+            : tradingModeAvailable && tradingMode === 'paper'
+              ? '현재 PAPER 런타임이 정지되어 있습니다. Gemini/AI 분석만 실행하고 모의주문은 생성하지 않습니다.'
+            : '거래 모드를 안전하게 확인할 수 없습니다. Gemini/AI 분석만 실행하고 주문은 생성하지 않습니다.',
     )
     if (!shouldProceed) {
       return
     }
 
     setManualCycleMessage(null)
+    setManualCycleTone('neutral')
     setManualCycleError(null)
     manualCycleMutation.mutate()
   }
@@ -471,22 +603,31 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
       type="button"
       onClick={handleManualCycle}
       disabled={!normalizedSymbol || manualCycleMutation.isPending}
-      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-[#00dbe9]/35 bg-[#00dbe9]/10 px-3 py-2 text-xs font-semibold text-[#7df4ff] transition-colors hover:bg-[#00dbe9]/18 disabled:cursor-not-allowed disabled:opacity-55"
+      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-brand/35 bg-brand/10 px-3 py-2 text-xs font-semibold text-brand-bright transition-colors hover:bg-brand/18 disabled:cursor-not-allowed disabled:opacity-55"
     >
       {manualCycleMutation.isPending ? (
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
       ) : (
         <RefreshCw className="h-4 w-4" aria-hidden="true" />
       )}
-      {manualCycleMutation.isPending ? '실행 중' : 'AI 수동 갱신'}
+      {manualCycleMutation.isPending
+        ? '실행 중'
+        : paperTradeAllowed
+          ? 'AI 분석 + 모의매매'
+          : liveTradeAllowed
+            ? 'AI 분석 + 실거래 평가'
+            : 'AI 분석만 실행'}
     </button>
   )
 
   const manualCycleFeedback =
     manualCycleMessage || manualCycleError ? (
       <p
-        className={`break-words rounded-lg bg-[#0a0e14]/75 px-3 py-2 text-xs font-semibold ${
-          manualCycleError ? 'text-[#ffb4ab]' : 'text-[#77e2a8]'
+        role={manualCycleError ? 'alert' : 'status'}
+        aria-live={manualCycleError ? 'assertive' : 'polite'}
+        aria-atomic="true"
+        className={`break-words rounded-lg bg-surface-lowest/75 px-3 py-2 text-xs font-semibold ${
+          manualCycleError ? 'text-status-danger' : MANUAL_CYCLE_TONE_CLASS[manualCycleTone]
         }`}
       >
         {manualCycleError ?? manualCycleMessage}
@@ -557,12 +698,12 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
   return (
     <section className="quantum-card flex min-h-0 flex-col overflow-hidden rounded-xl">
       <div className="grid min-h-0 gap-5 p-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.25fr)]">
-        <div className="quantum-panel relative overflow-hidden rounded-lg p-5 text-[#dfe2eb]">
+        <div className="quantum-panel relative overflow-hidden rounded-lg p-5 text-content">
           <div className="relative flex h-full min-h-0 flex-col gap-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="break-words text-2xl font-semibold">판단 요약</h3>
-                <p className="mt-2 break-words text-sm leading-6 text-[#b9cacb]">
+                <p className="mt-2 break-words text-sm leading-6 text-content-secondary">
                   {normalizedSymbol} · {tone.caption}
                 </p>
               </div>
@@ -580,7 +721,7 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className={`rounded-lg border-l-2 p-4 ${TONE_STYLES[tone.tone].cardClassName}`}>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#849495]">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-content-muted">
                   스탠스
                 </p>
                 <p className="mt-2 text-3xl font-semibold">{analysis.decision}</p>
@@ -589,19 +730,19 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
                 </p>
               </div>
 
-              <div className="rounded-lg border-l-2 border-[#cdbdff]/40 bg-[#0a0e14]/45 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#849495]">
+              <div className="rounded-lg border-l-2 border-brand-secondary/40 bg-surface-lowest/45 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-content-muted">
                   추천 비중
                 </p>
                 <p className="mt-2 text-3xl font-semibold">{recommendedWeight}%</p>
-                <p className="mt-2 text-sm text-[#b9cacb]">리스크 조절 반영</p>
+                <p className="mt-2 text-sm text-content-secondary">리스크 조절 반영</p>
               </div>
             </div>
 
-            <div className="rounded-lg bg-[#0a0e14]/45 p-4">
+            <div className="rounded-lg bg-surface-lowest/45 p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#849495]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-content-muted">
                     확신도
                   </p>
                   <p className="mt-2 text-2xl font-semibold">{confidence}%</p>
@@ -614,13 +755,13 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
               </div>
 
               <div className="mt-4">
-                <div className="h-2 w-full overflow-hidden rounded-full bg-[#29363a]/70">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-surface-highest/70">
                   <div
                     className={`h-full rounded-full transition-[width] duration-500 ${tone.progressClassName}`}
                     style={{ width: `${confidence}%` }}
                   />
                 </div>
-                <p className="mt-2 break-words text-xs leading-5 text-[#849495]">{syncStatus}</p>
+                <p className="mt-2 break-words text-xs leading-5 text-content-muted">{syncStatus}</p>
               </div>
             </div>
           </div>
@@ -629,12 +770,12 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
         <div className="quantum-panel flex min-h-0 flex-col overflow-hidden rounded-lg p-5">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="text-xl font-bold text-[#dfe2eb]">판단 근거</h3>
-              <p className="mt-2 break-words text-sm leading-6 text-[#849495]">
+              <h3 className="text-xl font-bold text-content">판단 근거</h3>
+              <p className="mt-2 break-words text-sm leading-6 text-content-muted">
                 긴 원문 대신 항목별 핵심 근거를 먼저 보여줍니다.
               </p>
             </div>
-            <span className="shrink-0 rounded bg-[#00dbe9]/10 px-2.5 py-1 font-mono text-[10px] font-bold text-[#7df4ff]">
+            <span className="shrink-0 rounded bg-brand/10 px-2.5 py-1 font-mono text-[10px] font-bold text-brand-bright">
               XAI MAP
             </span>
           </div>
@@ -650,8 +791,8 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
                 >
                   <div className="flex min-w-0 items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-[#dfe2eb]">{card.title}</p>
-                      <p className="mt-1 font-mono text-[10px] font-bold tracking-[0.12em] text-[#849495]">
+                      <p className="truncate text-sm font-bold text-content">{card.title}</p>
+                      <p className="mt-1 font-mono text-[10px] font-bold tracking-[0.12em] text-content-muted">
                         {card.label}
                       </p>
                     </div>
@@ -661,7 +802,7 @@ function AiInsightBriefing({ symbol }: AiInsightBriefingProps) {
                       {card.status}
                     </span>
                   </div>
-                  <p className="mt-3 break-words text-sm leading-6 text-[#b9cacb]">{card.body}</p>
+                  <p className="mt-3 break-words text-sm leading-6 text-content-secondary">{card.body}</p>
                 </article>
               )
             })}

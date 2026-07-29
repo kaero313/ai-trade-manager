@@ -26,7 +26,14 @@ interface PortfolioStatusView {
   notice: string | null
 }
 
-const COLORS = ['#00dbe9', '#cdbdff', '#ffe179', '#ffb4ab', '#77e2a8', '#849495']
+const COLORS = [
+  'var(--atm-brand)',
+  'var(--atm-brand-secondary)',
+  'var(--atm-warning)',
+  'var(--atm-market-negative)',
+  'var(--atm-market-positive)',
+  'var(--atm-content-muted)',
+]
 const RING_RADIUS = 64
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS
 
@@ -83,15 +90,15 @@ function resolveErrorMessage(errorCode?: string | null): string {
 
 function resolveStatusStyle(tone: StatusTone): { bg: string; text: string } {
   if (tone === 'success') {
-    return { bg: 'bg-[#77e2a8]/10', text: 'text-[#77e2a8]' }
+    return { bg: 'bg-status-success/10', text: 'text-status-success' }
   }
   if (tone === 'warning') {
-    return { bg: 'bg-[#ffe179]/10', text: 'text-[#ffe179]' }
+    return { bg: 'bg-warning/10', text: 'text-warning' }
   }
   if (tone === 'danger') {
-    return { bg: 'bg-[#ffb4ab]/10', text: 'text-[#ffb4ab]' }
+    return { bg: 'bg-status-danger/10', text: 'text-status-danger' }
   }
-  return { bg: 'bg-[#262a31]/80', text: 'text-[#b9cacb]' }
+  return { bg: 'bg-surface-high/80', text: 'text-content-secondary' }
 }
 
 function resolvePortfolioStatus({
@@ -122,7 +129,7 @@ function resolvePortfolioStatus({
 
   if (source === 'empty') {
     return {
-      label: 'DEGRADED',
+      label: 'UNAVAILABLE',
       tone: 'danger',
       notice: resolveErrorMessage(errorCode),
     }
@@ -213,7 +220,7 @@ function resolveRiskScore(data: AllocationDatum[]): number {
   return Math.max(0, Math.min(99, Math.round(score)))
 }
 
-function AllocationRing({ data, riskScore }: { data: AllocationDatum[]; riskScore: number }) {
+function AllocationRing({ data, riskScore }: { data: AllocationDatum[]; riskScore: number | null }) {
   const visibleData = data.slice(0, 4)
   const segments = visibleData.map((item, index) => {
     const offset = visibleData
@@ -231,7 +238,14 @@ function AllocationRing({ data, riskScore }: { data: AllocationDatum[]; riskScor
   return (
     <div className="relative mx-auto h-40 w-40">
       <svg className="h-full w-full -rotate-90" viewBox="0 0 160 160" aria-hidden="true">
-        <circle cx="80" cy="80" fill="transparent" r={RING_RADIUS} stroke="#26323d" strokeWidth="12" />
+        <circle
+          cx="80"
+          cy="80"
+          fill="transparent"
+          r={RING_RADIUS}
+          stroke="var(--atm-surface-high)"
+          strokeWidth="12"
+        />
         {segments.map(({ dashLength, item, offset }) => (
           <circle
             key={item.name}
@@ -248,8 +262,8 @@ function AllocationRing({ data, riskScore }: { data: AllocationDatum[]; riskScor
         ))}
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="text-xs text-[#849495]">Risk Score</span>
-        <span className="font-mono text-3xl font-semibold text-[#00dbe9]">{riskScore}</span>
+        <span className="text-xs text-content-muted">Risk Score</span>
+        <span className="font-mono text-3xl font-semibold text-brand">{riskScore ?? '—'}</span>
       </div>
     </div>
   )
@@ -266,19 +280,29 @@ function PortfolioChart({
   totalPnl = 0,
 }: PortfolioChartProps) {
   const allocationData = buildAllocationData(items)
-  const hasData = allocationData.length > 0
+  const amountsAvailable =
+    (source === 'live' || source === 'snapshot') &&
+    Number.isFinite(totalNetWorth) &&
+    Number.isFinite(totalPnl)
+  const hasData = amountsAvailable && allocationData.length > 0
   const status = resolvePortfolioStatus({ source, isStale, updatedAt, errorCode })
   const statusStyle = resolveStatusStyle(status.tone)
-  const briefing = resolvePortfolioBriefing(allocationData, status)
-  const riskScore = resolveRiskScore(allocationData)
-  const summaryNetWorth =
-    totalNetWorth > 0 ? totalNetWorth : allocationData.reduce((acc, item) => acc + item.value, 0)
+  const briefing = amountsAvailable
+    ? resolvePortfolioBriefing(allocationData, status)
+    : `AI 브리핑 비활성화: ${status.notice ?? '확인 가능한 계좌 데이터가 없습니다.'}`
+  const riskScore =
+    amountsAvailable && allocationData.length > 0 ? resolveRiskScore(allocationData) : null
+  const summaryNetWorth = amountsAvailable
+    ? totalNetWorth > 0
+      ? totalNetWorth
+      : allocationData.reduce((acc, item) => acc + item.value, 0)
+    : null
   const topAllocations = allocationData.slice(0, 3)
 
   return (
     <section className="quantum-card rounded-xl p-5">
       <header className="mb-5 flex items-start justify-between gap-4">
-        <h2 className="min-w-0 text-xl font-bold text-[#dfe2eb]">AI 포트폴리오 요약</h2>
+        <h2 className="min-w-0 text-xl font-bold text-content">AI 포트폴리오 요약</h2>
         <span
           className={`shrink-0 rounded px-2 py-1 font-mono text-[10px] font-bold ${statusStyle.bg} ${statusStyle.text}`}
         >
@@ -287,32 +311,38 @@ function PortfolioChart({
       </header>
 
       {status.notice && (
-        <p className={`mb-4 rounded-lg bg-[#0a0e14]/72 p-3 text-sm font-semibold leading-6 ${statusStyle.text}`}>
+        <p className={`mb-4 rounded-lg bg-surface-lowest/75 p-3 text-sm font-semibold leading-6 ${statusStyle.text}`}>
           {status.notice}
         </p>
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg bg-[#0a0e14]/72 p-3">
-          <p className="text-xs text-[#849495]">총 순자산</p>
-          <p className="mt-2 break-words font-mono text-lg font-semibold text-[#dfe2eb]">
-            {formatKrw(summaryNetWorth)}
+        <div className="rounded-lg bg-surface-lowest/75 p-3">
+          <p className="text-xs text-content-muted">총 순자산</p>
+          <p className="mt-2 break-words font-mono text-lg font-semibold text-content">
+            {summaryNetWorth === null ? '—' : formatKrw(summaryNetWorth)}
           </p>
         </div>
-        <div className="rounded-lg bg-[#0a0e14]/72 p-3">
-          <p className="text-xs text-[#849495]">평가손익</p>
+        <div className="rounded-lg bg-surface-lowest/75 p-3">
+          <p className="text-xs text-content-muted">평가손익</p>
           <p
             className={`mt-2 break-words font-mono text-lg font-semibold ${
-              totalPnl > 0 ? 'text-[#77e2a8]' : totalPnl < 0 ? 'text-[#ffb4ab]' : 'text-[#849495]'
+              !amountsAvailable
+                ? 'text-content-muted'
+                : totalPnl > 0
+                  ? 'text-market-positive'
+                  : totalPnl < 0
+                    ? 'text-market-negative'
+                    : 'text-content-muted'
             }`}
           >
-            {formatSignedKrw(totalPnl)}
+            {amountsAvailable ? formatSignedKrw(totalPnl) : '—'}
           </p>
         </div>
       </div>
 
       {isLoading && (
-        <div className="mt-5 flex min-h-48 items-center justify-center rounded-lg bg-[#0a0e14]/72 text-sm text-[#849495]">
+        <div className="mt-5 flex min-h-48 items-center justify-center rounded-lg bg-surface-lowest/75 text-sm text-content-muted">
           자산 비중을 불러오는 중입니다.
         </div>
       )}
@@ -326,12 +356,12 @@ function PortfolioChart({
               {topAllocations.map((item) => (
                 <div key={item.name}>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="min-w-0 truncate text-[#849495]">{item.name} 비중</span>
+                    <span className="min-w-0 truncate text-content-muted">{item.name} 비중</span>
                     <span className="shrink-0 font-mono" style={{ color: item.color }}>
                       {item.percent.toFixed(1)}%
                     </span>
                   </div>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#262a31]">
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-high">
                     <div
                       className="h-full rounded-full"
                       style={{ width: `${Math.min(100, item.percent)}%`, backgroundColor: item.color }}
@@ -341,20 +371,20 @@ function PortfolioChart({
               ))}
             </div>
           ) : (
-            <div className="rounded-lg bg-[#0a0e14]/72 p-4 text-sm leading-6 text-[#849495]">
-              <p className="font-semibold text-[#dfe2eb]">비중 데이터 대기</p>
+            <div className="rounded-lg bg-surface-lowest/75 p-4 text-sm leading-6 text-content-muted">
+              <p className="font-semibold text-content">비중 데이터 대기</p>
               <p className="mt-2">
                 실시간 자산 또는 마지막 스냅샷을 확보하면 상위 보유 비중이 여기에 표시됩니다.
               </p>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#262a31]">
-                <div className="h-full w-0 rounded-full bg-[#00dbe9]" />
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-high">
+                <div className="h-full w-0 rounded-full bg-brand" />
               </div>
             </div>
           )}
         </div>
       )}
 
-      <p className="mt-5 rounded-lg bg-[#00dbe9]/10 p-3 text-sm leading-6 text-[#b9cacb]">
+      <p className="mt-5 rounded-lg bg-brand/10 p-3 text-sm leading-6 text-content-secondary">
         {briefing}
       </p>
     </section>

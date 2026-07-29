@@ -56,12 +56,29 @@ function toChartTime(raw: CandleItem['time']): Time {
   return raw
 }
 
+function resolveThemeColor(variableName: string, fallback: string): string {
+  if (typeof document === 'undefined') {
+    return fallback
+  }
+
+  return getComputedStyle(document.documentElement).getPropertyValue(variableName).trim() || fallback
+}
+
+function withAlpha(color: string, alpha: number): string {
+  const hex = color.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i)
+  if (!hex) {
+    return color
+  }
+
+  const [, red, green, blue] = hex
+  return `rgba(${Number.parseInt(red, 16)}, ${Number.parseInt(green, 16)}, ${Number.parseInt(blue, 16)}, ${alpha})`
+}
+
 function MarketChart({ symbol }: MarketChartProps) {
   const { theme } = useTheme()
   const isDarkMode = theme === 'dark'
   const normalizedSymbol = useMemo(() => (symbol ? symbol.trim().toUpperCase() : ''), [symbol])
   const [timeframe, setTimeframe] = useState<MarketTimeframe>('60m')
-  const [isAiOverlayEnabled, setIsAiOverlayEnabled] = useState(false)
 
   const chartsWrapperRef = useRef<HTMLDivElement | null>(null)
   const mainChartContainerRef = useRef<HTMLDivElement | null>(null)
@@ -106,11 +123,16 @@ function MarketChart({ symbol }: MarketChartProps) {
     const rsiHeight = getRsiChartHeight()
     const priceScaleWidth = 72
 
-    const chartBgColor = isDarkMode ? '#0a0e14' : '#10141a'
-    const chartTextColor = isDarkMode ? '#b9cacb' : '#dfe2eb'
-    const gridColor = 'rgba(59, 73, 75, 0.42)'
-    const crosshairColor = 'rgba(0, 219, 233, 0.42)'
-    const borderColor = 'rgba(0, 219, 233, 0.12)'
+    const chartBgColor = resolveThemeColor('--atm-surface-lowest', '#060e20')
+    const chartTextColor = resolveThemeColor('--atm-content-secondary', '#b9cacb')
+    const borderColor = resolveThemeColor('--atm-border-subtle', '#29364d')
+    const brandColor = resolveThemeColor('--atm-brand', '#00dbe9')
+    const positiveColor = resolveThemeColor('--atm-market-positive', '#4edea3')
+    const negativeColor = resolveThemeColor('--atm-market-negative', '#ffb4ab')
+    const warningColor = resolveThemeColor('--atm-warning', '#ffe179')
+    const secondaryColor = resolveThemeColor('--atm-brand-secondary', '#d0bcff')
+    const gridColor = withAlpha(borderColor, 0.55)
+    const crosshairColor = withAlpha(brandColor, 0.45)
 
     const chart = createChart(mainContainer, {
       width,
@@ -140,10 +162,10 @@ function MarketChart({ symbol }: MarketChartProps) {
     })
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#00dbe9',
-      downColor: '#ffb4ab',
-      wickUpColor: '#00dbe9',
-      wickDownColor: '#ffb4ab',
+      upColor: positiveColor,
+      downColor: negativeColor,
+      wickUpColor: positiveColor,
+      wickDownColor: negativeColor,
       borderVisible: false,
       priceLineVisible: true,
       lastValueVisible: true,
@@ -161,28 +183,28 @@ function MarketChart({ symbol }: MarketChartProps) {
     })
 
     const sma20Series = chart.addSeries(LineSeries, {
-      color: '#ffe179',
+      color: warningColor,
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
     })
 
     const sma60Series = chart.addSeries(LineSeries, {
-      color: '#cdbdff',
+      color: secondaryColor,
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
     })
 
     const bbUpperSeries = chart.addSeries(LineSeries, {
-      color: 'rgba(255, 180, 171, 0.9)',
+      color: withAlpha(negativeColor, 0.9),
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
     })
 
     const bbLowerSeries = chart.addSeries(LineSeries, {
-      color: 'rgba(0, 219, 233, 0.9)',
+      color: withAlpha(brandColor, 0.9),
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -216,7 +238,7 @@ function MarketChart({ symbol }: MarketChartProps) {
     })
 
     const rsiSeries = rsiChart.addSeries(LineSeries, {
-      color: '#cdbdff',
+      color: secondaryColor,
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
@@ -230,7 +252,7 @@ function MarketChart({ symbol }: MarketChartProps) {
 
     rsiSeries.createPriceLine({
       price: 70,
-      color: 'rgba(255, 180, 171, 0.75)',
+      color: withAlpha(negativeColor, 0.75),
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       axisLabelVisible: false,
@@ -238,7 +260,7 @@ function MarketChart({ symbol }: MarketChartProps) {
     })
     rsiSeries.createPriceLine({
       price: 30,
-      color: 'rgba(0, 219, 233, 0.75)',
+      color: withAlpha(brandColor, 0.75),
       lineWidth: 1,
       lineStyle: LineStyle.Dashed,
       axisLabelVisible: false,
@@ -371,10 +393,13 @@ function MarketChart({ symbol }: MarketChartProps) {
       close: item.close,
     }))
 
+    const positiveColor = resolveThemeColor('--atm-market-positive', '#4edea3')
+    const negativeColor = resolveThemeColor('--atm-market-negative', '#ffb4ab')
     const volumeData: HistogramData<Time>[] = candlesQuery.data.map((item) => ({
       time: toChartTime(item.time),
       value: item.volume,
-      color: item.close >= item.open ? 'rgba(0, 219, 233, 0.35)' : 'rgba(255, 180, 171, 0.35)',
+      color:
+        item.close >= item.open ? withAlpha(positiveColor, 0.35) : withAlpha(negativeColor, 0.35),
     }))
 
     const sma20Data: LineData<Time>[] = []
@@ -430,7 +455,7 @@ function MarketChart({ symbol }: MarketChartProps) {
     bbLowerSeries.setData(bbLowerData)
     rsiSeries.setData(rsiData)
     chart.timeScale().fitContent()
-  }, [normalizedSymbol, candlesQuery.data])
+  }, [normalizedSymbol, candlesQuery.data, isDarkMode])
 
   const isEmpty = !candlesQuery.isLoading && !candlesQuery.isError && (candlesQuery.data?.length ?? 0) === 0
 
@@ -438,14 +463,14 @@ function MarketChart({ symbol }: MarketChartProps) {
     <section className="quantum-card flex h-full min-h-0 flex-col overflow-hidden rounded-xl p-4">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-[#dfe2eb]">트레이딩 차트</h2>
-          <p className="mt-1 text-xs text-[#849495]">
+          <h2 className="text-lg font-semibold text-content">트레이딩 차트</h2>
+          <p className="mt-1 text-xs text-content-muted">
             {normalizedSymbol ? normalizedSymbol : '종목을 선택하면 차트가 표시됩니다.'}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center justify-end">
-          <div className="inline-flex w-fit shrink-0 rounded-xl bg-[#0a0e14] p-1">
+          <div className="inline-flex w-fit shrink-0 rounded-xl bg-surface-lowest p-1">
             {TIMEFRAME_OPTIONS.map((option) => (
               <button
                 key={option.value}
@@ -457,15 +482,6 @@ function MarketChart({ symbol }: MarketChartProps) {
                 {option.label}
               </button>
             ))}
-            <button
-              type="button"
-              aria-pressed={isAiOverlayEnabled}
-              title={isAiOverlayEnabled ? 'AI 오버레이 켜짐' : 'AI 오버레이 꺼짐'}
-              onClick={() => setIsAiOverlayEnabled((previousValue) => !previousValue)}
-              className={resolveChartControlClassName(isAiOverlayEnabled)}
-            >
-              AI 예측선
-            </button>
           </div>
         </div>
       </header>
@@ -477,22 +493,22 @@ function MarketChart({ symbol }: MarketChartProps) {
         </div>
 
         {!normalizedSymbol && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-[#0a0e14]/80 text-sm text-[#849495] backdrop-blur-sm">
+          <div role="status" className="absolute inset-0 flex items-center justify-center rounded-xl bg-surface-lowest/80 text-sm text-content-muted backdrop-blur-sm">
             검색창 또는 Watchlist에서 종목을 선택해 주세요.
           </div>
         )}
         {normalizedSymbol && candlesQuery.isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-[#0a0e14]/70 text-sm text-[#dfe2eb] backdrop-blur-sm">
+          <div role="status" aria-live="polite" className="absolute inset-0 flex items-center justify-center rounded-xl bg-surface-lowest/70 text-sm text-content backdrop-blur-sm">
             캔들 데이터를 불러오는 중입니다...
           </div>
         )}
         {normalizedSymbol && candlesQuery.isError && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-[#0a0e14]/70 px-4 text-center text-sm text-[#ffb4ab] backdrop-blur-sm">
+          <div role="alert" className="absolute inset-0 flex items-center justify-center rounded-xl bg-surface-lowest/70 px-4 text-center text-sm text-status-danger backdrop-blur-sm">
             {resolveErrorMessage(candlesQuery.error, '캔들 데이터를 불러오지 못했습니다.')}
           </div>
         )}
         {normalizedSymbol && isEmpty && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-[#0a0e14]/70 text-sm text-[#849495] backdrop-blur-sm">
+          <div role="status" className="absolute inset-0 flex items-center justify-center rounded-xl bg-surface-lowest/70 text-sm text-content-muted backdrop-blur-sm">
             표시할 캔들 데이터가 없습니다.
           </div>
         )}
@@ -503,7 +519,7 @@ function MarketChart({ symbol }: MarketChartProps) {
           href="https://www.tradingview.com/"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs text-[#849495] transition hover:text-[#b9cacb]"
+          className="text-xs text-content-muted transition hover:text-content-secondary"
         >
           Charts by TradingView
         </a>
