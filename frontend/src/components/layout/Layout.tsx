@@ -1,19 +1,31 @@
-import { AlertTriangle } from 'lucide-react'
-import { useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useEffect, useRef, type ReactNode } from 'react'
 
-import { useSystemConfigs } from '../../hooks/useSystemConfigs'
 import { usePortfolioSummary } from '../../hooks/usePortfolioSummary'
-import Navbar from './Navbar'
+import { resolvePortfolioDataState } from '../../pages/portfolioDataState'
+import {
+  getBotStatus,
+  type LiveOrderMode,
+  type TradingMode,
+} from '../../services/api'
+import AppShell from './AppShell'
+import type { RuntimeStatus } from './ModeBanner'
 
 interface LayoutProps {
   children: ReactNode
 }
 
-const TRADING_MODE_KEY = 'trading_mode'
+const LIVE_ORDER_MODES = new Set<LiveOrderMode>(['ARMED', 'EXIT_ONLY', 'BLOCK_ALL'])
 
 function Layout({ children }: LayoutProps) {
-  const systemConfigsQuery = useSystemConfigs()
   const portfolioSummaryQuery = usePortfolioSummary()
+  const botStatusQuery = useQuery({
+    queryKey: ['bot-status'],
+    queryFn: getBotStatus,
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+    placeholderData: (previousData) => previousData,
+  })
   const lastPortfolioWarningRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -41,52 +53,65 @@ function Layout({ children }: LayoutProps) {
     portfolioSummaryQuery.isError,
   ])
 
-  const portfolioSummary = portfolioSummaryQuery.data ?? null
+  const portfolioState = resolvePortfolioDataState({
+    data: portfolioSummaryQuery.data,
+    error: portfolioSummaryQuery.error,
+    isError: portfolioSummaryQuery.isError,
+    isLoading: portfolioSummaryQuery.isLoading,
+    isRefetchError: portfolioSummaryQuery.isRefetchError,
+  })
+  const portfolioSummary = portfolioState.portfolio
   const totalNetWorth = portfolioSummary?.total_net_worth ?? 0
   const totalPnl = portfolioSummary?.total_pnl ?? 0
-  const isPortfolioLoading = portfolioSummaryQuery.isLoading
-  const portfolioErrorCode =
-    portfolioSummaryQuery.isError && portfolioSummary === null
-      ? 'PORTFOLIO_FETCH_FAILED'
-      : portfolioSummary?.error ?? null
-  const isPortfolioStale =
-    Boolean(portfolioSummary?.is_stale) ||
-    (portfolioSummaryQuery.isError && portfolioSummary !== null)
-  const portfolioUpdatedAt = portfolioSummary?.updated_at ?? null
-  const portfolioSource = portfolioSummary?.source ?? null
-  const isPaperTradingMode = useMemo(() => {
-    const tradingModeValue =
-      systemConfigsQuery.data?.find((item) => item.config_key === TRADING_MODE_KEY)?.config_value ?? 'live'
+  const isPortfolioLoading = portfolioState.kind === 'loading'
+  const portfolioErrorCode = portfolioState.errorCode
+  const isPortfolioStale = portfolioState.isStale
+  const portfolioUpdatedAt = portfolioState.updatedAt
+  const portfolioSource = portfolioState.source
 
-    return tradingModeValue.trim().toLowerCase() === 'paper'
-  }, [systemConfigsQuery.data])
+  const botStatus = botStatusQuery.data
+  const botStatusAvailable = !botStatusQuery.isError && botStatus !== undefined
+  const rawTradingMode = botStatus?.trading_mode
+  const tradingModeAvailable =
+    botStatusAvailable &&
+    (rawTradingMode === 'paper' || rawTradingMode === 'live') &&
+    Number.isInteger(botStatus.trading_mode_version) &&
+    botStatus.trading_mode_version >= 1 &&
+    botStatus.trading_mode_state_available === true &&
+    botStatus.trading_mode_mirror_consistent === true
+  const tradingMode: TradingMode | null = tradingModeAvailable ? rawTradingMode : null
+  const runtimeStatus: RuntimeStatus =
+    !botStatusAvailable || typeof botStatus.running !== 'boolean'
+    ? 'UNAVAILABLE'
+    : botStatus.running
+      ? 'RUNNING'
+      : 'STOPPED'
+  const orderGate: LiveOrderMode | null =
+    botStatusAvailable &&
+    botStatus.live_order_state_available === true &&
+    LIVE_ORDER_MODES.has(botStatus.live_order_mode)
+      ? botStatus.live_order_mode
+      : null
+  const rolloutEnabled =
+    botStatusAvailable && typeof botStatus.live_order_rollout_enabled === 'boolean'
+      ? botStatus.live_order_rollout_enabled
+      : null
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#10141a] text-[#dfe2eb] transition-colors">
-      <Navbar
-        totalNetWorth={totalNetWorth}
-        totalPnl={totalPnl}
-        isPortfolioLoading={isPortfolioLoading}
-        portfolioError={portfolioErrorCode}
-        portfolioIsStale={isPortfolioStale}
-        portfolioUpdatedAt={portfolioUpdatedAt}
-        portfolioSource={portfolioSource}
-      />
-      <main className="mx-auto flex-1 min-h-0 w-full max-w-full overflow-y-auto px-4 pb-10 pt-48 sm:px-6 lg:px-8 lg:pt-24">
-        {isPaperTradingMode && (
-          <div className="sticky top-24 z-40 -mx-4 mb-6 border-b border-[#ffe179]/20 bg-[#181c22]/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:top-16 lg:-mx-8 lg:px-8">
-            <div className="mx-auto flex w-full max-w-full items-start gap-3 text-sm font-semibold leading-6 text-[#ffe179]">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-              <p>
-                현재 가짜 머니를 사용하는 <span className="font-extrabold">[가상 모의투자 모드]</span>로
-                봇이 작동 중입니다. 매매가 체결되어도 실제 자산에 영향을 주지 않습니다.
-              </p>
-            </div>
-          </div>
-        )}
-        {children}
-      </main>
-    </div>
+    <AppShell
+      navbarProps={{
+        totalNetWorth,
+        totalPnl,
+        isPortfolioLoading,
+        portfolioError: portfolioErrorCode,
+        portfolioIsStale: isPortfolioStale,
+        portfolioUpdatedAt,
+        portfolioSource,
+      }}
+      modeBannerProps={{ runtimeStatus, tradingMode, orderGate, rolloutEnabled }}
+    >
+      {children}
+    </AppShell>
   )
 }
 
