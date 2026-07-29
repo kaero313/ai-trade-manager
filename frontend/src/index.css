@@ -3,23 +3,124 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: light;
+  --atm-canvas: #f4f7fb;
+  --atm-surface-lowest: #ffffff;
+  --atm-surface-low: #edf3f7;
+  --atm-surface: #ffffff;
+  --atm-surface-high: #e3edf2;
+  --atm-surface-highest: #d7e4ea;
+  --atm-content: #17232c;
+  --atm-content-secondary: #50656b;
+  --atm-content-muted: #687d83;
+  --atm-brand: #007f89;
+  --atm-brand-bright: #00666f;
+  --atm-brand-secondary: #6d45b5;
+  --atm-market-positive: #087f5b;
+  --atm-market-negative: #b42318;
+  --atm-status-success: #067647;
+  --atm-status-danger: #b42318;
+  --atm-action-destructive: #c4320a;
+  --atm-warning: #7a5b00;
+  --atm-border-subtle: #cbd9de;
+  --atm-border-strong: #9fb3ba;
+  --atm-focus-ring: #007f89;
+  --atm-font-sans: Inter, "Noto Sans KR", Pretendard, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --atm-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    monospace;
+  /* 차트 등 inline SVG에서도 Tailwind semantic token과 같은 값을 사용합니다. */
+  --color-canvas: var(--atm-canvas);
+  --color-surface-lowest: var(--atm-surface-lowest);
+  --color-surface-low: var(--atm-surface-low);
+  --color-surface: var(--atm-surface);
+  --color-surface-high: var(--atm-surface-high);
+  --color-surface-highest: var(--atm-surface-highest);
+  --color-content: var(--atm-content);
+  --color-content-secondary: var(--atm-content-secondary);
+  --color-content-muted: var(--atm-content-muted);
+  --color-brand: var(--atm-brand);
+  --color-brand-bright: var(--atm-brand-bright);
+  --color-brand-secondary: var(--atm-brand-secondary);
+  --color-market-positive: var(--atm-market-positive);
+  --color-market-negative: var(--atm-market-negative);
+  --color-status-success: var(--atm-status-success);
+  --color-status-danger: var(--atm-status-danger);
+  --color-action-destructive: var(--atm-action-destructive);
+  --color-warning: var(--atm-warning);
+  --color-border-subtle: var(--atm-border-subtle);
+  --color-border-strong: var(--atm-border-strong);
+  --color-focus-ring: var(--atm-focus-ring);
+  background: var(--atm-canvas);
+  color: var(--atm-content);
+  font-family: var(--atm-font-sans);
+}
+
+:root.dark {
   color-scheme: dark;
-  background: #10141a;
-  color: #dfe2eb;
-  font-family: "Noto Sans KR", sans-serif;
+  --atm-canvas: #0b1326;
+  --atm-surface-lowest: #060e20;
+  --atm-surface-low: #131b2e;
+  --atm-surface: #171f33;
+  --atm-surface-high: #222a3d;
+  --atm-surface-highest: #2d3449;
+  --atm-content: #dae2fd;
+  --atm-content-secondary: #b9cacb;
+  --atm-content-muted: #8fa1a6;
+  --atm-brand: #00dbe9;
+  --atm-brand-bright: #7df4ff;
+  --atm-brand-secondary: #d0bcff;
+  --atm-market-positive: #4edea3;
+  --atm-market-negative: #ffb4ab;
+  --atm-status-success: #16a67a;
+  --atm-status-danger: #ffb4ab;
+  --atm-action-destructive: #ef4444;
+  --atm-warning: #ffe179;
+  --atm-border-subtle: #29364d;
+  --atm-border-strong: #47556c;
+  --atm-focus-ring: #7df4ff;
+}
+
+@theme inline {
+  --color-canvas: var(--atm-canvas);
+  --color-surface-lowest: var(--atm-surface-lowest);
+  --color-surface-low: var(--atm-surface-low);
+  --color-surface: var(--atm-surface);
+  --color-surface-high: var(--atm-surface-high);
+  --color-surface-highest: var(--atm-surface-highest);
+  --color-content: var(--atm-content);
+  --color-content-secondary: var(--atm-content-secondary);
+  --color-content-muted: var(--atm-content-muted);
+  --color-brand: var(--atm-brand);
+  --color-brand-bright: var(--atm-brand-bright);
+  --color-brand-secondary: var(--atm-brand-secondary);
+  --color-market-positive: var(--atm-market-positive);
+  --color-market-negative: var(--atm-market-negative);
+  --color-status-success: var(--atm-status-success);
+  --color-status-danger: var(--atm-status-danger);
+  --color-action-destructive: var(--atm-action-destructive);
+  --color-warning: var(--atm-warning);
+  --color-border-subtle: var(--atm-border-subtle);
+  --color-border-strong: var(--atm-border-strong);
+  --color-focus-ring: var(--atm-focus-ring);
+  --font-sans: var(--atm-font-sans);
+  --font-mono: var(--atm-font-mono);
 }
 
 html,
 body,
 #root {
   min-height: 100%;
-  background: #10141a;
+  background: var(--atm-canvas);
 }
 
 body {
   margin: 0;
   overflow-x: hidden;
-  font-family: "Noto Sans KR", sans-serif;
+  color: var(--atm-content);
+  font-family: var(--atm-font-sans);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
@@ -32,27 +133,37 @@ select {
 .font-mono,
 code,
 pre {
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--atm-font-mono);
+}
+
+:focus-visible {
+  outline: 2px solid var(--atm-focus-ring);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--atm-brand) 32%, transparent);
+  color: var(--atm-content);
 }
 
 .quantum-card {
-  background: rgba(22, 27, 34, 0.7);
-  border: 1px solid rgba(59, 73, 75, 0.34);
+  background: color-mix(in srgb, var(--atm-surface) 88%, transparent);
+  border: 1px solid var(--atm-border-subtle);
   box-shadow: none;
   backdrop-filter: blur(12px);
 }
 
 .quantum-panel {
-  background: rgba(10, 14, 20, 0.78);
+  background: color-mix(in srgb, var(--atm-surface-lowest) 90%, transparent);
 }
 
 .quantum-surface {
-  background: rgba(38, 42, 49, 0.64);
+  background: color-mix(in srgb, var(--atm-surface-high) 80%, transparent);
 }
 
 .quantum-chip {
-  background: rgba(0, 219, 233, 0.1);
-  color: #00dbe9;
+  background: color-mix(in srgb, var(--atm-brand) 12%, transparent);
+  color: var(--atm-brand);
 }
 
 .quantum-tab {
@@ -64,22 +175,132 @@ pre {
 }
 
 .quantum-tab-active {
-  background: rgba(0, 219, 233, 0.14);
-  color: #7df4ff;
+  background: color-mix(in srgb, var(--atm-brand) 14%, transparent);
+  color: var(--atm-brand-bright);
   box-shadow: none;
 }
 
 .quantum-tab-inactive {
-  color: #b9cacb;
+  color: var(--atm-content-secondary);
 }
 
 .quantum-tab-inactive:hover {
-  background: rgba(38, 42, 49, 0.8);
-  color: #dfe2eb;
+  background: color-mix(in srgb, var(--atm-surface-high) 88%, transparent);
+  color: var(--atm-content);
 }
 
 .dashboard-quantum {
-  color: #dfe2eb;
+  color: var(--atm-content);
+}
+
+/*
+ * 기존 거래 화면의 임의 색상 유틸리티를 semantic token으로 이어 주는 이행 계층입니다.
+ * 상태 계산이나 컴포넌트 계약은 바꾸지 않으면서 light/dark 양쪽에서 같은 정보 위계를 유지합니다.
+ */
+.dashboard-quantum [class~="text-[#dfe2eb]"] {
+  color: var(--atm-content);
+}
+
+.dashboard-quantum [class~="text-[#b9cacb]"] {
+  color: var(--atm-content-secondary);
+}
+
+.dashboard-quantum [class~="text-[#849495]"] {
+  color: var(--atm-content-muted);
+}
+
+.dashboard-quantum [class~="text-[#00dbe9]"] {
+  color: var(--atm-brand);
+}
+
+.dashboard-quantum [class~="text-[#7df4ff]"] {
+  color: var(--atm-brand-bright);
+}
+
+.dashboard-quantum [class~="text-[#cdbdff]"] {
+  color: var(--atm-brand-secondary);
+}
+
+.dashboard-quantum [class~="text-[#77e2a8]"] {
+  color: var(--atm-market-positive);
+}
+
+.dashboard-quantum [class~="text-[#ffb4ab]"],
+.dashboard-quantum [class~="text-[#ffdad6]"] {
+  color: var(--atm-status-danger);
+}
+
+.dashboard-quantum [class~="text-[#ffe179]"] {
+  color: var(--atm-warning);
+}
+
+.dashboard-quantum [class~="text-[#00363a]"] {
+  color: var(--atm-surface-lowest);
+}
+
+.dashboard-quantum [class~="bg-[#0a0e14]"],
+.dashboard-quantum [class*="bg-[#0a0e14]/"],
+.dashboard-quantum [class~="bg-[#10141a]"],
+.dashboard-quantum [class*="bg-[#10141a]/"] {
+  background-color: var(--atm-surface-lowest);
+}
+
+.dashboard-quantum [class~="bg-[#111820]"],
+.dashboard-quantum [class*="bg-[#111820]/"],
+.dashboard-quantum [class~="bg-[#181c22]"],
+.dashboard-quantum [class*="bg-[#181c22]/"] {
+  background-color: var(--atm-surface-low);
+}
+
+.dashboard-quantum [class~="bg-[#262a31]"],
+.dashboard-quantum [class*="bg-[#262a31]/"] {
+  background-color: var(--atm-surface-high);
+}
+
+.dashboard-quantum [class*="bg-[#00dbe9]/"] {
+  background-color: color-mix(in srgb, var(--atm-brand) 12%, transparent);
+}
+
+.dashboard-quantum [class~="bg-[#00dbe9]"] {
+  background-color: var(--atm-brand);
+}
+
+.dashboard-quantum [class*="bg-[#cdbdff]/"] {
+  background-color: color-mix(in srgb, var(--atm-brand-secondary) 12%, transparent);
+}
+
+.dashboard-quantum [class*="bg-[#77e2a8]/"] {
+  background-color: color-mix(in srgb, var(--atm-market-positive) 12%, transparent);
+}
+
+.dashboard-quantum [class*="bg-[#ffb4ab]/"] {
+  background-color: color-mix(in srgb, var(--atm-status-danger) 12%, transparent);
+}
+
+.dashboard-quantum [class*="bg-[#ffe179]/"],
+.dashboard-quantum [class*="bg-[#eac324]/"] {
+  background-color: color-mix(in srgb, var(--atm-warning) 12%, transparent);
+}
+
+.dashboard-quantum [class*="border-[#29363a]"],
+.dashboard-quantum [class*="border-[#3b494b]"] {
+  border-color: var(--atm-border-subtle);
+}
+
+.dashboard-quantum [class*="border-[#00dbe9]"] {
+  border-color: color-mix(in srgb, var(--atm-brand) 45%, transparent);
+}
+
+.dashboard-quantum [class*="border-[#cdbdff]"] {
+  border-color: color-mix(in srgb, var(--atm-brand-secondary) 45%, transparent);
+}
+
+.dashboard-quantum [class*="border-[#ffb4ab]"] {
+  border-color: color-mix(in srgb, var(--atm-status-danger) 40%, transparent);
+}
+
+.dashboard-quantum [class*="border-[#ffe179]"] {
+  border-color: color-mix(in srgb, var(--atm-warning) 40%, transparent);
 }
 
 .quantum-ticker-scroll {
@@ -115,5 +336,20 @@ pre {
 
   100% {
     transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .quantum-ticker-scroll {
+    animation: none;
   }
 }
