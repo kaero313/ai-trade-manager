@@ -33,18 +33,18 @@ function formatCoinCount(value: number): string {
 
 function resolvePnlTone(totalPnl: number): string {
   if (totalPnl > 0) {
-    return 'text-[#7df4ff]'
+    return 'text-market-positive'
   }
   if (totalPnl < 0) {
-    return 'text-[#ffb4ab]'
+    return 'text-market-negative'
   }
-  return 'text-[#dfe2eb]'
+  return 'text-content'
 }
 
 function SummaryMetric({
   label,
   value,
-  valueClassName = 'text-[#dfe2eb]',
+  valueClassName = 'text-content',
 }: {
   label: string
   value: string
@@ -72,21 +72,21 @@ function PortfolioSummaryCard({
       <div>
         {isLoading ? (
           <div className="animate-pulse">
-            <div className="h-3 w-24 rounded-full bg-[#262a31]" />
-            <div className="mt-5 h-12 w-56 rounded-lg bg-[#262a31]" />
+            <div className="h-3 w-24 rounded-full bg-surface-high" />
+            <div className="mt-5 h-12 w-56 rounded-lg bg-surface-high" />
 
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               <div className={`${PORTFOLIO_PANEL_CLASS_NAME} px-4 py-4`}>
-                <div className="h-3 w-20 rounded-full bg-[#00dbe9]/15" />
-                <div className="mt-3 h-7 w-28 rounded-lg bg-[#00dbe9]/15" />
+                <div className="h-3 w-20 rounded-full bg-surface-high" />
+                <div className="mt-3 h-7 w-28 rounded-lg bg-surface-high" />
               </div>
               <div className={`${PORTFOLIO_PANEL_CLASS_NAME} px-4 py-4`}>
-                <div className="h-3 w-16 rounded-full bg-[#262a31]" />
-                <div className="mt-3 h-7 w-24 rounded-lg bg-[#262a31]" />
+                <div className="h-3 w-16 rounded-full bg-surface-high" />
+                <div className="mt-3 h-7 w-24 rounded-lg bg-surface-high" />
               </div>
               <div className={`${PORTFOLIO_PANEL_CLASS_NAME} px-4 py-4`}>
-                <div className="h-3 w-16 rounded-full bg-[#262a31]" />
-                <div className="mt-3 h-7 w-20 rounded-lg bg-[#262a31]" />
+                <div className="h-3 w-16 rounded-full bg-surface-high" />
+                <div className="mt-3 h-7 w-20 rounded-lg bg-surface-high" />
               </div>
             </div>
           </div>
@@ -96,7 +96,7 @@ function PortfolioSummaryCard({
               <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>
                 총 자산
               </p>
-              <p className="mt-4 break-words font-mono text-4xl font-bold text-[#dfe2eb] sm:text-5xl">
+              <p className="mt-4 break-words font-mono text-4xl font-bold text-content sm:text-5xl">
                 {formatKrw(totalNetWorth)}
               </p>
             </div>

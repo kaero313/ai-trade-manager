@@ -22,6 +22,8 @@ interface PortfolioAiBriefingProps {
   totalPnl: number
   aiAnalysisMap: Record<string, AIAnalysisItem | null>
   isPortfolioLoading: boolean
+  isPortfolioAvailable: boolean
+  unavailableMessage: string | null
 }
 
 interface BriefingEntry {
@@ -182,6 +184,8 @@ function PortfolioAiBriefing({
   totalPnl,
   aiAnalysisMap,
   isPortfolioLoading,
+  isPortfolioAvailable,
+  unavailableMessage,
 }: PortfolioAiBriefingProps) {
   const [briefingEntry, setBriefingEntry] = useState<BriefingEntry | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -199,6 +203,10 @@ function PortfolioAiBriefing({
   const visibleBriefingText = briefingEntry?.content || localBriefingText
 
   const runBriefingRequest = useCallback(async () => {
+    if (!isPortfolioAvailable) {
+      return
+    }
+
     const requestId = ++requestSequenceRef.current
     activeRequestIdRef.current = requestId
     setIsLoading(true)
@@ -244,7 +252,7 @@ function PortfolioAiBriefing({
         setIsLoading(false)
       }
     }
-  }, [])
+  }, [isPortfolioAvailable])
 
   useEffect(() => {
     return () => {
@@ -253,13 +261,24 @@ function PortfolioAiBriefing({
   }, [])
 
   useEffect(() => {
-    if (isPortfolioLoading || autoTriggeredRef.current) {
+    if (isPortfolioAvailable) {
+      return
+    }
+
+    activeRequestIdRef.current += 1
+    autoTriggeredRef.current = false
+    setBriefingEntry(null)
+    setIsLoading(false)
+  }, [isPortfolioAvailable])
+
+  useEffect(() => {
+    if (!isPortfolioAvailable || isPortfolioLoading || autoTriggeredRef.current) {
       return
     }
 
     autoTriggeredRef.current = true
     void runBriefingRequest()
-  }, [isPortfolioLoading, runBriefingRequest])
+  }, [isPortfolioAvailable, isPortfolioLoading, runBriefingRequest])
 
   const aiAnalyses = Object.values(aiAnalysisMap).filter((item): item is AIAnalysisItem => Boolean(item))
   const strongestAnalysis = [...aiAnalyses].sort((a, b) => b.confidence - a.confidence)[0]
@@ -291,35 +310,52 @@ function PortfolioAiBriefing({
               }
               void runBriefingRequest()
             }}
-            disabled={isPortfolioLoading || isLoading}
-            className="inline-flex w-fit shrink-0 items-center gap-2 rounded-lg bg-[#00dbe9]/10 px-4 py-2 text-sm font-bold text-[#7df4ff] transition-colors hover:bg-[#00dbe9]/16 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!isPortfolioAvailable || isPortfolioLoading || isLoading}
+            className="inline-flex min-h-11 w-fit shrink-0 items-center gap-2 rounded-lg border border-border-subtle bg-surface-high px-4 py-2 text-sm font-bold text-brand-bright transition-colors hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             다시 분석
           </button>
         </header>
 
-        {isPortfolioLoading ? (
+        {!isPortfolioAvailable && !isPortfolioLoading ? (
+          <div
+            role="status"
+            className={`${PORTFOLIO_PANEL_CLASS_NAME} flex min-h-[180px] items-center justify-center px-6 text-center`}
+          >
+            <div className="max-w-xl">
+              <p className="text-sm font-semibold text-content">AI 브리핑을 사용할 수 없습니다</p>
+              <p className="mt-2 text-sm leading-6 text-content-secondary">
+                {unavailableMessage ?? '계좌 정보가 복구된 뒤 다시 시도해 주세요.'}
+              </p>
+              <p className="mt-3 text-xs text-content-muted">
+                조회 불가 상태를 0원 포트폴리오로 바꾸어 AI에 전달하지 않습니다.
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {isPortfolioAvailable && isPortfolioLoading ? (
           <div className={`${PORTFOLIO_PANEL_CLASS_NAME} flex min-h-[180px] items-center justify-center px-6 text-center`}>
             <div className="flex flex-col items-center gap-4">
-              <Loader2 className="h-8 w-8 animate-spin text-[#00dbe9]" />
-              <p className="text-sm font-medium text-[#b9cacb]">
+              <Loader2 className="h-8 w-8 animate-spin text-brand" />
+              <p className="text-sm font-medium text-content-secondary">
                 포트폴리오 데이터를 불러오고 있습니다...
               </p>
             </div>
           </div>
         ) : null}
 
-        {!isPortfolioLoading ? (
+        {isPortfolioAvailable && !isPortfolioLoading ? (
           <div className="space-y-4">
             {briefingEntry?.errorMessage ? (
-              <div className="rounded-lg bg-[#eac324]/10 px-4 py-3 text-sm font-medium text-[#ffe179]">
+              <div className="rounded-lg bg-surface-high px-4 py-3 text-sm font-medium text-warning">
                 {briefingEntry.errorMessage}
               </div>
             ) : null}
 
             {isLoading ? (
-              <div className="inline-flex items-center gap-2 rounded-lg bg-[#00dbe9]/10 px-3 py-2 text-xs font-bold text-[#7df4ff]">
+              <div className="inline-flex items-center gap-2 rounded-lg bg-surface-high px-3 py-2 text-xs font-bold text-brand-bright">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 AI 브리핑 생성 중
               </div>
@@ -328,22 +364,22 @@ function PortfolioAiBriefing({
             <div className="grid gap-3 md:grid-cols-3">
               <div className={`${PORTFOLIO_PANEL_CLASS_NAME} px-4 py-4`}>
                 <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>NET WORTH</p>
-                <p className="mt-3 font-mono text-lg font-bold text-[#dfe2eb]">{formatKrw(totalNetWorth)}</p>
+                <p className="mt-3 font-mono text-lg font-bold text-content">{formatKrw(totalNetWorth)}</p>
               </div>
               <div className={`${PORTFOLIO_PANEL_CLASS_NAME} px-4 py-4`}>
                 <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>PNL FLOW</p>
-                <p className={`mt-3 font-mono text-lg font-bold ${totalPnl < 0 ? 'text-[#ffb4ab]' : 'text-[#7df4ff]'}`}>
+                <p className={`mt-3 font-mono text-lg font-bold ${totalPnl < 0 ? 'text-market-negative' : 'text-market-positive'}`}>
                   {formatSignedKrw(totalPnl)}
                 </p>
               </div>
               <div className={`${PORTFOLIO_PANEL_CLASS_NAME} px-4 py-4`}>
                 <p className={PORTFOLIO_SECTION_LABEL_CLASS_NAME}>AI SIGNAL</p>
-                <p className="mt-3 truncate font-mono text-lg font-bold text-[#ffe179]">{strongestDecisionText}</p>
+                <p className="mt-3 truncate font-mono text-lg font-bold text-warning">{strongestDecisionText}</p>
               </div>
             </div>
 
             <div className={`${PORTFOLIO_PANEL_CLASS_NAME} px-5 py-6`}>
-              <p className="whitespace-pre-wrap break-words text-sm leading-7 text-[#dfe2eb]">
+              <p className="whitespace-pre-wrap break-words text-sm leading-7 text-content">
                 {visibleBriefingText}
               </p>
             </div>
