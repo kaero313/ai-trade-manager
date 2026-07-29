@@ -1,4 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from '@headlessui/react'
+import { isAxiosError } from 'axios'
 import {
   Check,
   ChevronDown,
@@ -6,7 +8,9 @@ import {
   Loader2,
   MessageSquare,
   Plus,
+  RefreshCw,
   SendHorizontal,
+  ShieldAlert,
   Sparkles,
   Trash2,
   X,
@@ -14,6 +18,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import AIBankerPortfolioSnapshot from '../components/common/AIBankerPortfolioSnapshot'
+import { usePortfolioSummary } from '../hooks/usePortfolioSummary'
 import { SYSTEM_CONFIGS_QUERY_KEY, useSystemConfigs } from '../hooks/useSystemConfigs'
 import {
   approveChatConfigChange,
@@ -26,6 +31,16 @@ import {
   type ChatSession,
   type SystemConfigItem,
 } from '../services/api'
+import {
+  resolvePortfolioDataState,
+  resolvePortfolioUnavailableMessage,
+} from './portfolioDataState'
+import {
+  type ConfigApprovalRequest,
+  isTradingModeConfigKey,
+  parseConfigApprovalRequest,
+  TRADING_MODE_CONTROL_GUIDANCE,
+} from './chatApprovalPolicy'
 
 interface NoticeState {
   type: 'success' | 'error' | 'info'
@@ -59,20 +74,26 @@ interface ChatRenderApprovalItem {
   configKey: string
   proposedValue: string
   currentValue: string | null
-  status: 'pending' | 'applying' | 'applied' | 'rejected' | 'failed'
+  expectedVersion: number | null
+  status:
+    | 'pending'
+    | 'applying'
+    | 'applied'
+    | 'rejected'
+    | 'failed'
+    | 'conflict'
+    | 'runtime_failed'
   errorMessage: string | null
-}
-
-interface ApprovalRequestPayload {
-  action: 'config_change'
-  config_key: string
-  new_value: string
-  requires_approval: true
 }
 
 type ChatRenderItem = ChatRenderMessageItem | ChatRenderActivityItem | ChatRenderApprovalItem
 
 const CHAT_SESSIONS_QUERY_KEY = ['chat-sessions'] as const
+const QUICK_ACTIONS = [
+  '현재 포트폴리오의 핵심 위험을 요약해줘',
+  '보유 자산 비중을 점검하고 개선 방향을 설명해줘',
+  '최근 포트폴리오 상태를 이해하기 쉽게 설명해줘',
+] as const
 
 function getChatMessagesQueryKey(sessionId: string) {
   return ['chat-messages', sessionId] as const
@@ -154,8 +175,7 @@ function buildActivityCard(agentName: string, key: string): ChatRenderActivityIt
 function buildApprovalCard(
   agentName: string,
   key: string,
-  payload: ApprovalRequestPayload,
-  currentValue: string | null,
+  payload: ConfigApprovalRequest,
 ): ChatRenderApprovalItem {
   return {
     kind: 'approval',
@@ -163,44 +183,41 @@ function buildApprovalCard(
     agentName,
     configKey: payload.config_key,
     proposedValue: payload.new_value,
-    currentValue,
+    currentValue: payload.current_value,
+    expectedVersion: payload.expected_version,
     status: 'pending',
     errorMessage: null,
   }
 }
 
-function parseApprovalRequestPayload(content: string): ApprovalRequestPayload | null {
-  if (!content.trim()) {
-    return null
-  }
-
-  try {
-    const parsed = JSON.parse(content) as Partial<ApprovalRequestPayload>
-    if (
-      parsed.action !== 'config_change' ||
-      typeof parsed.config_key !== 'string' ||
-      typeof parsed.new_value !== 'string' ||
-      parsed.requires_approval !== true
-    ) {
-      return null
-    }
-
-    return {
-      action: 'config_change',
-      config_key: parsed.config_key,
-      new_value: parsed.new_value,
-      requires_approval: true,
-    }
-  } catch {
-    return null
-  }
-}
-
 function resolveErrorMessage(error: unknown, fallback: string): string {
+  if (isAxiosError(error)) {
+    const detail = error.response?.data?.detail
+    if (typeof detail === 'string' && detail.trim()) {
+      return detail
+    }
+    if (
+      detail &&
+      typeof detail === 'object' &&
+      'message' in detail &&
+      typeof detail.message === 'string' &&
+      detail.message.trim()
+    ) {
+      return detail.message
+    }
+  }
   if (error instanceof Error && error.message) {
     return error.message
   }
   return fallback
+}
+
+function isSavedButRuntimeApplyFailed(error: unknown): boolean {
+  if (!isAxiosError(error) || error.response?.status !== 503) {
+    return false
+  }
+  const detail = error.response.data?.detail
+  return Boolean(detail && typeof detail === 'object' && 'saved' in detail && detail.saved === true)
 }
 
 function mapStoredMessagesToRenderItems(messages: ChatMessage[] | undefined): ChatRenderMessageItem[] {
@@ -309,11 +326,11 @@ function finishRunningActivities(items: ChatRenderItem[], fallbackText: string):
 function resolveActivityCardClassName(status: ChatRenderActivityItem['status']): string {
   switch (status) {
     case 'completed':
-      return 'border-[#00dbe9]/24 bg-[#00dbe9]/8 text-[#dfe2eb]'
+      return 'border-brand/25 bg-brand/10 text-content'
     case 'failed':
-      return 'border-[#ffb4ab]/24 bg-[#ffb4ab]/10 text-[#ffdad6]'
+      return 'border-status-danger/25 bg-status-danger/10 text-status-danger'
     default:
-      return 'border-[#eac324]/24 bg-[#eac324]/10 text-[#ffe179]'
+      return 'border-warning/25 bg-warning/10 text-warning'
   }
 }
 
@@ -327,6 +344,10 @@ function resolveApprovalStatusLabel(status: ChatRenderApprovalItem['status']): s
       return '사용자가 거부했습니다'
     case 'failed':
       return '적용 실패'
+    case 'conflict':
+      return '최신값 충돌'
+    case 'runtime_failed':
+      return '저장됨·반영 실패'
     default:
       return '승인 대기'
   }
@@ -335,15 +356,19 @@ function resolveApprovalStatusLabel(status: ChatRenderApprovalItem['status']): s
 function resolveApprovalStatusClassName(status: ChatRenderApprovalItem['status']): string {
   switch (status) {
     case 'applying':
-      return 'bg-[#00dbe9]/10 text-[#7df4ff]'
+      return 'bg-brand/10 text-brand-bright'
     case 'applied':
-      return 'bg-[#00dbe9]/10 text-[#7df4ff]'
+      return 'bg-brand/10 text-brand-bright'
     case 'rejected':
-      return 'bg-[#eac324]/10 text-[#ffe179]'
+      return 'bg-warning/10 text-warning'
     case 'failed':
-      return 'bg-[#ffb4ab]/10 text-[#ffdad6]'
+      return 'bg-status-danger/10 text-status-danger'
+    case 'conflict':
+      return 'bg-status-danger/10 text-status-danger'
+    case 'runtime_failed':
+      return 'bg-status-danger/10 text-status-danger'
     default:
-      return 'bg-[#262a31]/80 text-[#b9cacb]'
+      return 'bg-surface-high text-content-secondary'
   }
 }
 
@@ -370,13 +395,13 @@ function MessageSkeleton() {
           <div
             className={`max-w-[78%] rounded-lg px-4 py-4 ${
               index % 2 === 0
-                ? 'border border-[#3b494b]/30 bg-[#0a0e14]/70'
-                : 'bg-[#00dbe9]/12'
+                ? 'border border-border-subtle bg-surface-lowest'
+                : 'bg-brand/10'
             }`}
           >
-            <div className="h-3 w-20 rounded bg-[#262a31]" />
-            <div className="mt-3 h-3 w-64 rounded bg-[#262a31]" />
-            <div className="mt-2 h-3 w-40 rounded bg-[#262a31]" />
+            <div className="h-3 w-20 rounded bg-surface-high" />
+            <div className="mt-3 h-3 w-64 rounded bg-surface-high" />
+            <div className="mt-2 h-3 w-40 rounded bg-surface-high" />
           </div>
         </div>
       ))}
@@ -400,6 +425,19 @@ function AIChatPage() {
   const lastScrolledSessionIdRef = useRef<string | null>(null)
 
   const systemConfigsQuery = useSystemConfigs()
+  const portfolioQuery = usePortfolioSummary()
+  const portfolioState = resolvePortfolioDataState({
+    data: portfolioQuery.data,
+    error: portfolioQuery.error,
+    isError: portfolioQuery.isError,
+    isLoading: portfolioQuery.isLoading,
+    isRefetchError: portfolioQuery.isRefetchError,
+  })
+  const canSendNewMessage = portfolioState.canUseAiContext
+  const portfolioUnavailableMessage =
+    portfolioState.kind === 'loading'
+      ? '포트폴리오를 확인하고 있습니다. 확인이 끝난 뒤 메시지를 보낼 수 있습니다.'
+      : resolvePortfolioUnavailableMessage(portfolioState)
 
   const chatSessionsQuery = useQuery({
     queryKey: CHAT_SESSIONS_QUERY_KEY,
@@ -412,11 +450,6 @@ function AIChatPage() {
     enabled: Boolean(selectedSessionId),
   })
 
-  const systemConfigMap = useMemo(
-    () => new Map((systemConfigsQuery.data ?? []).map((item) => [item.config_key, item.config_value])),
-    [systemConfigsQuery.data],
-  )
-
   useEffect(() => {
     const serverSessionIds = new Set((chatSessionsQuery.data ?? []).map((item) => item.session_id))
     setPendingSessions((current) => current.filter((item) => !serverSessionIds.has(item.session_id)))
@@ -426,6 +459,22 @@ function AIChatPage() {
     setLiveItems([])
     setNotice(null)
   }, [selectedSessionId])
+
+  useEffect(() => {
+    if (!isSidebarOpen || typeof window.matchMedia !== 'function') {
+      return
+    }
+
+    const desktopQuery = window.matchMedia('(min-width: 1024px)')
+    const closeOnDesktop = () => {
+      if (desktopQuery.matches) {
+        setIsSidebarOpen(false)
+      }
+    }
+    closeOnDesktop()
+    desktopQuery.addEventListener('change', closeOnDesktop)
+    return () => desktopQuery.removeEventListener('change', closeOnDesktop)
+  }, [isSidebarOpen])
 
   const sessions = useMemo(() => {
     const serverSessions = chatSessionsQuery.data ?? []
@@ -573,6 +622,25 @@ function AIChatPage() {
       return
     }
 
+    if (isTradingModeConfigKey(targetItem.configKey)) {
+      setNotice({ type: 'info', message: TRADING_MODE_CONTROL_GUIDANCE })
+      return
+    }
+
+    if (targetItem.expectedVersion === null) {
+      await systemConfigsQuery.refetch()
+      const errorMessage = '설정의 제안 시점 버전을 확인할 수 없어 승인하지 않았습니다. 최신 설정에서 다시 제안해 주세요.'
+      setLiveItems((current) =>
+        updateApprovalCardByKey(current, key, (item) => ({
+          ...item,
+          status: 'failed',
+          errorMessage,
+        })),
+      )
+      setNotice({ type: 'error', message: errorMessage })
+      return
+    }
+
     setLiveItems((current) =>
       updateApprovalCardByKey(current, key, (item) => ({
         ...item,
@@ -585,6 +653,7 @@ function AIChatPage() {
       const nextConfigs = await approveChatConfigChange(selectedSessionId, {
         config_key: targetItem.configKey,
         config_value: targetItem.proposedValue,
+        expected_version: targetItem.expectedVersion,
       })
 
       queryClient.setQueryData<SystemConfigItem[]>(SYSTEM_CONFIGS_QUERY_KEY, nextConfigs)
@@ -604,9 +673,35 @@ function AIChatPage() {
       )
       setNotice({
         type: 'success',
-        message: `${targetItem.configKey} 설정이 적용되었습니다.`,
+        message: `${targetItem.configKey} 설정을 저장했습니다. 실제 소비자는 다음 판단부터 새 값을 사용합니다.`,
       })
     } catch (error) {
+      if (isAxiosError(error) && error.response?.status === 409) {
+        await queryClient.invalidateQueries({ queryKey: SYSTEM_CONFIGS_QUERY_KEY })
+        const errorMessage = '제안 이후 설정이 변경되어 승인하지 않았습니다. 최신값을 확인한 뒤 새 제안을 요청해 주세요.'
+        setLiveItems((current) =>
+          updateApprovalCardByKey(current, key, (item) => ({
+            ...item,
+            status: 'conflict',
+            errorMessage,
+          })),
+        )
+        setNotice({ type: 'error', message: errorMessage })
+        return
+      }
+      if (isSavedButRuntimeApplyFailed(error)) {
+        await queryClient.invalidateQueries({ queryKey: SYSTEM_CONFIGS_QUERY_KEY })
+        const errorMessage = `${resolveErrorMessage(error, '설정은 저장됐지만 runtime 반영에 실패했습니다.')} 최신 저장값을 다시 불러왔습니다.`
+        setLiveItems((current) =>
+          updateApprovalCardByKey(current, key, (item) => ({
+            ...item,
+            status: 'runtime_failed',
+            errorMessage,
+          })),
+        )
+        setNotice({ type: 'error', message: errorMessage })
+        return
+      }
       const errorMessage = resolveErrorMessage(error, '설정 적용 요청에 실패했습니다.')
       setLiveItems((current) =>
         updateApprovalCardByKey(current, key, (item) => ({
@@ -636,11 +731,27 @@ function AIChatPage() {
     })
   }
 
+  const handleQuickAction = (message: string) => {
+    if (!canSendNewMessage || isStreaming) {
+      return
+    }
+    setDraftMessage(message)
+    setNotice(null)
+  }
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
     const normalizedMessage = draftMessage.trim()
     if (!normalizedMessage || isStreaming) {
+      return
+    }
+
+    if (!canSendNewMessage) {
+      setNotice({
+        type: 'error',
+        message: portfolioUnavailableMessage,
+      })
       return
     }
 
@@ -694,7 +805,7 @@ function AIChatPage() {
         }
 
         if (streamEvent.type === 'approval_request') {
-          const approvalPayload = parseApprovalRequestPayload(streamEvent.content)
+          const approvalPayload = parseConfigApprovalRequest(streamEvent.content)
 
           setLiveItems((current) => {
             const nextItems = updateLatestRunningActivity(current, (activity) => ({
@@ -713,7 +824,6 @@ function AIChatPage() {
                 streamEvent.agent_name,
                 `live-approval-${++liveItemSequenceRef.current}`,
                 approvalPayload,
-                systemConfigMap.get(approvalPayload.config_key) ?? null,
               ),
             ]
           })
@@ -733,6 +843,13 @@ function AIChatPage() {
               streamEvent.agent_name,
             ),
           )
+          return
+        }
+
+        if (streamEvent.type === 'error') {
+          const errorMessage = 'AI 처리 중 오류가 발생해 응답을 완료하지 못했습니다. 다시 시도해 주세요.'
+          setLiveItems((current) => finishRunningActivities(current, errorMessage))
+          setNotice({ type: 'error', message: errorMessage })
           return
         }
 
@@ -767,30 +884,30 @@ function AIChatPage() {
   }
 
   const sidebarContent = (
-    <div className="quantum-card flex h-full min-h-0 flex-col rounded-xl text-[#dfe2eb]">
-      <div className="flex items-center justify-between border-b border-[#3b494b]/35 px-4 py-4">
+    <div className="flex h-full min-h-0 flex-col rounded-2xl border border-border-subtle bg-surface text-content">
+      <div className="flex items-center justify-between border-b border-border-subtle px-4 py-4">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#00dbe9]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-brand">
             AI Banker
           </p>
-          <h2 className="mt-2 text-lg font-bold text-[#dfe2eb]">대화 세션</h2>
+          <h2 className="mt-2 text-lg font-bold text-content">대화 세션</h2>
         </div>
         <button
           type="button"
           onClick={() => setIsSidebarOpen(false)}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#3b494b] text-[#b9cacb] transition hover:border-[#00dbe9]/40 hover:bg-[#00dbe9]/10 hover:text-[#7df4ff] lg:hidden"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-border-strong text-content-secondary transition hover:bg-surface-high hover:text-content lg:hidden"
           aria-label="세션 사이드바 닫기"
         >
           <X className="h-5 w-5" />
         </button>
       </div>
 
-      <div className="border-b border-[#3b494b]/35 px-4 py-4">
+      <div className="border-b border-border-subtle px-4 py-4">
         <button
           type="button"
           onClick={() => void handleCreateSession()}
           disabled={isCreatingSession || isStreaming || deletingSessionId !== null}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#00dbe9] px-4 py-3 text-sm font-bold text-[#00363a] transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-[#262a31] disabled:text-[#849495]"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand px-4 py-3 text-sm font-bold text-surface-lowest transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-surface-high disabled:text-content-muted"
         >
           {isCreatingSession ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           <span>{isCreatingSession ? '생성 중...' : '새 대화'}</span>
@@ -799,20 +916,20 @@ function AIChatPage() {
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {chatSessionsQuery.isLoading && (
-          <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-[#b9cacb]">
+          <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-content-secondary">
             <Loader2 className="h-4 w-4 animate-spin" />
             세션 목록을 불러오는 중입니다.
           </div>
         )}
 
         {chatSessionsQuery.isError && (
-          <div className="rounded-lg bg-[#ffb4ab]/10 px-4 py-3 text-sm font-medium text-[#ffdad6]">
+          <div className="rounded-lg bg-status-danger/10 px-4 py-3 text-sm font-medium text-status-danger">
             {resolveErrorMessage(chatSessionsQuery.error, '세션 목록을 불러오지 못했습니다.')}
           </div>
         )}
 
         {!chatSessionsQuery.isLoading && !chatSessionsQuery.isError && sessions.length === 0 && (
-          <div className="rounded-lg border border-dashed border-[#3b494b]/50 bg-[#0a0e14]/70 px-4 py-8 text-center text-sm text-[#849495]">
+          <div className="rounded-lg border border-dashed border-border-strong bg-surface-lowest px-4 py-8 text-center text-sm text-content-muted">
             아직 대화 세션이 없습니다.
           </div>
         )}
@@ -827,8 +944,8 @@ function AIChatPage() {
                 key={session.session_id}
                 className={`rounded-lg border transition ${
                   isSelected
-                    ? 'border-[#00dbe9]/35 bg-[#00dbe9]/10 text-[#dfe2eb]'
-                    : 'border-transparent bg-[#0a0e14]/70 text-[#b9cacb] hover:border-[#3b494b]/60 hover:bg-[#10141a]/85 hover:text-[#dfe2eb]'
+                    ? 'border-brand/35 bg-brand/10 text-content'
+                    : 'border-transparent bg-surface-lowest text-content-secondary hover:border-border-strong hover:bg-surface-high hover:text-content'
                 }`}
               >
                 <div className="flex items-start gap-2 px-4 py-3">
@@ -852,7 +969,7 @@ function AIChatPage() {
                     type="button"
                     onClick={() => void handleDeleteSession(session.session_id)}
                     disabled={isStreaming || deletingSessionId !== null}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#ffb4ab]/10 text-[#ffb4ab] transition hover:bg-[#ffb4ab]/16 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg bg-status-danger/10 text-status-danger transition hover:bg-status-danger/15 disabled:cursor-not-allowed disabled:opacity-60"
                     aria-label={`세션 ${session.session_id} 삭제`}
                   >
                     {isDeletingThisSession ? (
@@ -884,16 +1001,16 @@ function AIChatPage() {
       <div className="grid min-h-0 min-w-0 flex-1 gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="hidden min-h-0 lg:block">{sidebarContent}</aside>
 
-        <section className="quantum-card flex min-h-0 min-w-0 flex-col rounded-xl text-[#dfe2eb]">
-          <header className="flex items-center justify-between gap-4 border-b border-[#3b494b]/35 px-5 py-4">
+        <section className="flex min-h-[680px] min-w-0 flex-col overflow-hidden rounded-2xl border border-border-subtle bg-surface text-content lg:min-h-0">
+          <header className="flex items-center justify-between gap-4 border-b border-border-subtle px-5 py-4 sm:px-6">
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-[#00dbe9]">
+              <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-brand">
                 Conversation
               </p>
-              <h2 className="mt-2 truncate text-lg font-bold text-[#dfe2eb]">
+              <h1 className="mt-2 truncate text-xl font-bold text-content">
                 {selectedSession ? '선택된 세션' : 'AI 뱅커 대기 중'}
-              </h2>
-              <p className="mt-1 truncate text-sm text-[#b9cacb]">
+              </h1>
+              <p className="mt-1 truncate text-sm text-content-secondary">
                 {selectedSession?.session_id ??
                   '세션을 선택하거나 바로 질문을 입력하면 새 대화가 자동으로 생성됩니다.'}
               </p>
@@ -901,7 +1018,7 @@ function AIChatPage() {
 
             <div className="flex items-center gap-3">
               {isStreaming && (
-                <div className="hidden items-center gap-2 rounded-lg bg-[#00dbe9]/10 px-3 py-1.5 text-xs font-bold text-[#7df4ff] sm:inline-flex">
+                <div className="hidden items-center gap-2 rounded-lg bg-brand/10 px-3 py-1.5 text-xs font-bold text-brand-bright sm:inline-flex" role="status">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   응답 생성 중
                 </div>
@@ -909,14 +1026,14 @@ function AIChatPage() {
             </div>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto bg-[#0a0e14]/35 px-5 py-5">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-surface-lowest/45 px-5 py-5 sm:px-6 sm:py-6">
             {!selectedSession && (
-              <div className="flex h-full min-h-[360px] flex-col items-center justify-center rounded-lg border border-dashed border-[#3b494b]/50 bg-[#0a0e14]/70 px-6 text-center">
-                <Sparkles className="h-10 w-10 text-[#00dbe9]" />
-                <h3 className="mt-4 text-xl font-bold text-[#dfe2eb]">
+              <div className="flex h-full min-h-[360px] flex-col items-center justify-center rounded-xl border border-dashed border-border-strong bg-surface-lowest px-6 text-center">
+                <Sparkles className="h-10 w-10 text-brand" />
+                <h2 className="mt-4 text-xl font-bold text-content">
                   새 대화를 시작하세요
-                </h3>
-                <p className="mt-2 max-w-md text-sm leading-6 text-[#b9cacb]">
+                </h2>
+                <p className="mt-2 max-w-md text-sm leading-6 text-content-secondary">
                   상단의 새 대화 버튼을 누르거나 바로 질문을 입력하면, AI 뱅커 전용 세션이 자동으로
                   생성됩니다.
                 </p>
@@ -926,18 +1043,18 @@ function AIChatPage() {
             {selectedSession && showMessagesSkeleton && <MessageSkeleton />}
 
             {selectedSession && chatMessagesQuery.isError && !showMessagesSkeleton && (
-              <div className="rounded-lg bg-[#ffb4ab]/10 px-5 py-4 text-sm font-medium text-[#ffdad6]">
+              <div className="rounded-lg bg-status-danger/10 px-5 py-4 text-sm font-medium text-status-danger">
                 {resolveErrorMessage(chatMessagesQuery.error, '대화 이력을 불러오지 못했습니다.')}
               </div>
             )}
 
             {showEmptySelectedSession && (
-              <div className="flex h-full min-h-[360px] flex-col items-center justify-center rounded-lg border border-dashed border-[#3b494b]/50 bg-[#0a0e14]/70 px-6 text-center">
-                <MessageSquare className="h-10 w-10 text-[#00dbe9]" />
-                <h3 className="mt-4 text-xl font-bold text-[#dfe2eb]">
+              <div className="flex h-full min-h-[360px] flex-col items-center justify-center rounded-xl border border-dashed border-border-strong bg-surface-lowest px-6 text-center">
+                <MessageSquare className="h-10 w-10 text-brand" />
+                <h2 className="mt-4 text-xl font-bold text-content">
                   아직 이 세션에 메시지가 없습니다
-                </h3>
-                <p className="mt-2 max-w-md text-sm leading-6 text-[#b9cacb]">
+                </h2>
+                <p className="mt-2 max-w-md text-sm leading-6 text-content-secondary">
                   아래 입력창에서 첫 질문을 보내면 대화 이력이 이 영역에 순서대로 쌓입니다.
                 </p>
               </div>
@@ -960,11 +1077,11 @@ function AIChatPage() {
                             className="flex w-full items-center justify-between gap-3 text-left"
                           >
                             <div className="flex min-w-0 items-center gap-3">
-                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0a0e14]">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-lowest">
                                 {item.status === 'running' ? (
-                                  <Loader2 className="h-4 w-4 animate-spin text-[#00dbe9]" />
+                                  <Loader2 className="h-4 w-4 animate-spin text-brand" />
                                 ) : (
-                                  <Check className="h-4 w-4 text-[#7df4ff]" />
+                                  <Check className="h-4 w-4 text-brand-bright" />
                                 )}
                               </div>
                               <div className="min-w-0">
@@ -976,7 +1093,7 @@ function AIChatPage() {
                                 </p>
                               </div>
                             </div>
-                            <div className="shrink-0 rounded-lg bg-[#0a0e14]/70 p-1">
+                            <div className="shrink-0 rounded-lg bg-surface-lowest p-1">
                               {item.isCollapsed ? (
                                 <ChevronRight className="h-4 w-4" />
                               ) : (
@@ -986,7 +1103,7 @@ function AIChatPage() {
                           </button>
 
                           {!item.isCollapsed && item.detailsText && (
-                            <div className="mt-3 border-t border-[#3b494b]/45 pt-3 text-xs leading-6 text-[#b9cacb]">
+                            <div className="mt-3 border-t border-border-subtle pt-3 text-xs leading-6 text-content-secondary">
                               <p className="font-semibold opacity-80">상세 로그</p>
                               <p className="mt-1 whitespace-pre-wrap break-words opacity-90">{item.detailsText}</p>
                             </div>
@@ -997,20 +1114,26 @@ function AIChatPage() {
                   }
 
                   if (item.kind === 'approval') {
-                    const displayedCurrentValue =
-                      item.currentValue ?? systemConfigMap.get(item.configKey) ?? null
-                    const canApprove = item.status === 'pending' || item.status === 'failed'
-                    const canReject = item.status === 'pending' || item.status === 'failed'
+                    const displayedCurrentValue = item.currentValue
+                    const isTradingModeApproval = isTradingModeConfigKey(item.configKey)
+                    const canApprove =
+                      !isTradingModeApproval &&
+                      (item.status === 'pending' || item.status === 'failed')
+                    const canReject =
+                      item.status === 'pending' ||
+                      item.status === 'failed' ||
+                      item.status === 'conflict' ||
+                      item.status === 'runtime_failed'
 
                     return (
                       <div key={item.key} className="flex justify-start">
                         <div className="flex max-w-[82%] items-start gap-3">
-                          <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#00dbe9]/12 text-[#7df4ff]">
+                          <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-brand-bright">
                             <Sparkles className="h-4 w-4" aria-hidden="true" />
                           </div>
-                          <div className="w-full rounded-lg rounded-bl-sm border border-[#eac324]/24 bg-[#eac324]/8 px-4 py-4 text-[#dfe2eb]">
+                          <div className="w-full rounded-lg rounded-bl-sm border border-warning/25 bg-warning/10 px-4 py-4 text-content">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#ffe179]">
+                              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-warning">
                                 {item.agentName}
                               </span>
                               <span
@@ -1024,33 +1147,45 @@ function AIChatPage() {
                               </span>
                             </div>
 
-                            <p className="mt-2 text-sm font-bold leading-6 text-[#dfe2eb]">
+                            <p className="mt-2 text-sm font-bold leading-6 text-content">
                               설정 변경 제안
                             </p>
-                            <p className="mt-1 text-sm leading-6 text-[#b9cacb]">
+                            <p className="mt-1 text-sm leading-6 text-content-secondary">
                               Operations 에이전트가 아래 설정 변경을 제안했습니다.
                             </p>
 
-                            <div className="mt-4 overflow-hidden rounded-lg bg-[#0a0e14]/70">
-                              <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-[#3b494b]/35 px-4 py-3 text-sm">
-                                <span className="font-semibold text-[#b9cacb]">변경 대상 키</span>
-                                <span className="break-all text-[#dfe2eb]">{item.configKey}</span>
+                            <div className="mt-4 overflow-hidden rounded-lg bg-surface-lowest">
+                              <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-border-subtle px-4 py-3 text-sm">
+                                <span className="font-semibold text-content-secondary">변경 대상 키</span>
+                                <span className="break-all text-content">{item.configKey}</span>
                               </div>
-                              <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-[#3b494b]/35 px-4 py-3 text-sm">
-                                <span className="font-semibold text-[#b9cacb]">현재값</span>
-                                <span className="break-all text-[#dfe2eb]">
+                              <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-border-subtle px-4 py-3 text-sm">
+                                <span className="font-semibold text-content-secondary">현재값</span>
+                                <span className="break-all text-content">
                                   {formatConfigValueLabel(displayedCurrentValue, systemConfigsQuery.isLoading)}
                                 </span>
                               </div>
+                              <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-border-subtle px-4 py-3 text-sm">
+                                <span className="font-semibold text-content-secondary">제안 기준 버전</span>
+                                <span className="break-all text-content">
+                                  {item.expectedVersion ?? '확인 불가'}
+                                </span>
+                              </div>
                               <div className="grid grid-cols-[120px_minmax(0,1fr)] px-4 py-3 text-sm">
-                                <span className="font-semibold text-[#b9cacb]">제안값</span>
-                                <span className="break-all text-[#dfe2eb]">{item.proposedValue}</span>
+                                <span className="font-semibold text-content-secondary">제안값</span>
+                                <span className="break-all text-content">{item.proposedValue}</span>
                               </div>
                             </div>
 
                             {item.errorMessage && (
-                              <div className="mt-3 rounded-lg bg-[#ffb4ab]/10 px-3 py-2 text-sm text-[#ffdad6]">
+                              <div className="mt-3 rounded-lg bg-status-danger/10 px-3 py-2 text-sm text-status-danger">
                                 {item.errorMessage}
+                              </div>
+                            )}
+
+                            {isTradingModeApproval && (
+                              <div className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-sm font-semibold leading-6 text-warning">
+                                {TRADING_MODE_CONTROL_GUIDANCE}
                               </div>
                             )}
 
@@ -1059,7 +1194,7 @@ function AIChatPage() {
                                 type="button"
                                 onClick={() => void handleApproveRequest(item.key)}
                                 disabled={!canApprove || item.status === 'applying'}
-                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#00dbe9] px-4 py-2.5 text-sm font-bold text-[#00363a] transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-[#262a31] disabled:text-[#849495]"
+                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2.5 text-sm font-bold text-surface-lowest transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-surface-high disabled:text-content-muted"
                               >
                                 {item.status === 'applying' ? (
                                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1072,7 +1207,7 @@ function AIChatPage() {
                                 type="button"
                                 onClick={() => handleRejectRequest(item.key)}
                                 disabled={!canReject || item.status === 'applying'}
-                                className="inline-flex items-center justify-center rounded-lg bg-[#262a31]/80 px-4 py-2.5 text-sm font-bold text-[#b9cacb] transition hover:bg-[#3b494b]/60 hover:text-[#dfe2eb] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-surface-high px-4 py-2.5 text-sm font-bold text-content-secondary transition hover:bg-surface-highest hover:text-content disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 거부
                               </button>
@@ -1086,9 +1221,9 @@ function AIChatPage() {
                   if (item.role === 'user') {
                     return (
                       <div key={item.key} className="flex justify-end">
-                        <div className="max-w-[82%] rounded-lg rounded-br-sm bg-[#00dbe9]/16 px-4 py-3 text-[#dfe2eb]">
+                        <div className="max-w-[82%] rounded-lg rounded-br-sm bg-brand/15 px-4 py-3 text-content">
                           <p className="whitespace-pre-wrap break-words text-sm leading-6">{item.content}</p>
-                          <div className="mt-2 text-right text-[11px] font-medium text-[#7df4ff]">
+                          <div className="mt-2 text-right text-[11px] font-medium text-brand-bright">
                             {formatMessageTimestamp(item.createdAt)}
                           </div>
                         </div>
@@ -1099,23 +1234,23 @@ function AIChatPage() {
                   return (
                     <div key={item.key} className="flex justify-start">
                       <div className="flex max-w-[82%] items-start gap-3">
-                        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#00dbe9]/12 text-[#7df4ff]">
+                        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-brand-bright">
                           <Sparkles className="h-4 w-4" aria-hidden="true" />
                         </div>
-                        <div className="rounded-lg rounded-bl-sm border border-[#3b494b]/30 bg-[#0a0e14]/88 px-4 py-3 text-[#dfe2eb]">
+                        <div className="rounded-lg rounded-bl-sm border border-border-subtle bg-surface-lowest px-4 py-3 text-content">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#849495]">
+                            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-content-muted">
                               {item.agentName ?? 'assistant'}
                             </span>
                             {item.isPending && (
-                              <span className="inline-flex items-center gap-1 rounded-lg bg-[#00dbe9]/10 px-2 py-1 text-[11px] font-semibold text-[#7df4ff]">
+                              <span className="inline-flex items-center gap-1 rounded-lg bg-brand/10 px-2 py-1 text-[11px] font-semibold text-brand-bright">
                                 <Loader2 className="h-3 w-3 animate-spin" />
                                 작성 중
                               </span>
                             )}
                           </div>
                           <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{item.content}</p>
-                          <div className="mt-2 text-[11px] font-medium text-[#849495]">
+                          <div className="mt-2 text-[11px] font-medium text-content-muted">
                             {formatMessageTimestamp(item.createdAt)}
                           </div>
                         </div>
@@ -1128,34 +1263,87 @@ function AIChatPage() {
             )}
           </div>
 
-          <div className="border-t border-[#3b494b]/35 px-5 py-4">
+          <div className="border-t border-border-subtle bg-surface px-5 py-4 sm:px-6">
+            <div className="mb-3 flex gap-2 overflow-x-auto pb-1" aria-label="빠른 질문">
+              {QUICK_ACTIONS.map((message) => (
+                <button
+                  key={message}
+                  type="button"
+                  onClick={() => handleQuickAction(message)}
+                  disabled={!canSendNewMessage || isStreaming}
+                  className="shrink-0 rounded-full border border-border-subtle bg-surface-lowest px-3 py-2 text-xs font-semibold text-content-secondary transition hover:border-border-strong hover:bg-surface-high hover:text-content disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {message}
+                </button>
+              ))}
+            </div>
+
+            {!canSendNewMessage ? (
+              <div
+                className="mb-4 flex flex-col gap-3 rounded-xl border border-warning/25 bg-warning/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                role="status"
+              >
+                <div className="flex min-w-0 items-start gap-3">
+                  <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+                  <div>
+                    <p className="text-sm font-bold text-content">새 메시지 전송을 잠시 차단했습니다</p>
+                    <p className="mt-1 text-xs leading-5 text-content-secondary">
+                      {portfolioUnavailableMessage}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void portfolioQuery.refetch()}
+                  disabled={portfolioQuery.isFetching}
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-border-strong bg-surface-lowest px-4 py-2 text-sm font-bold text-content transition hover:bg-surface-high disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${portfolioQuery.isFetching ? 'animate-spin' : ''}`}
+                    aria-hidden="true"
+                  />
+                  포트폴리오 다시 확인
+                </button>
+              </div>
+            ) : null}
+
             {notice && (
               <div
                 className={`mb-4 rounded-lg px-4 py-3 text-sm font-medium ${
                   notice.type === 'success'
-                    ? 'bg-[#00dbe9]/10 text-[#7df4ff]'
+                    ? 'bg-brand/10 text-brand-bright'
                     : notice.type === 'info'
-                      ? 'bg-[#262a31]/80 text-[#b9cacb]'
-                      : 'bg-[#ffb4ab]/10 text-[#ffdad6]'
+                      ? 'bg-surface-high text-content-secondary'
+                      : 'bg-status-danger/10 text-status-danger'
                 }`}
+                role="status"
               >
                 {notice.message}
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <input
-                type="text"
-                value={draftMessage}
-                onChange={(event) => setDraftMessage(event.target.value)}
-                placeholder="AI 뱅커에게 무엇이든 물어보세요..."
-                disabled={isStreaming}
-                className="w-full rounded-lg border border-[#3b494b] bg-[#0a0e14] px-4 py-3 text-sm text-[#dfe2eb] outline-none transition placeholder:text-[#849495] focus:border-[#00dbe9]/60 focus:ring-2 focus:ring-[#00dbe9]/15 disabled:cursor-not-allowed disabled:opacity-50"
-              />
+            <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className="min-w-0 flex-1">
+                <span className="sr-only">AI 뱅커에게 보낼 메시지</span>
+                <textarea
+                  value={draftMessage}
+                  onChange={(event) => setDraftMessage(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault()
+                      event.currentTarget.form?.requestSubmit()
+                    }
+                  }}
+                  placeholder="AI 뱅커에게 무엇이든 물어보세요..."
+                  rows={2}
+                  disabled={isStreaming || !canSendNewMessage}
+                  className="max-h-36 min-h-[52px] w-full resize-y rounded-xl border border-border-strong bg-surface-lowest px-4 py-3 text-sm text-content outline-none transition placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-focus-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+              </label>
               <button
                 type="submit"
-                disabled={isStreaming || draftMessage.trim().length === 0}
-                className="inline-flex min-w-[132px] items-center justify-center gap-2 rounded-lg bg-[#00dbe9] px-4 py-3 text-sm font-bold text-[#00363a] transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-[#262a31] disabled:text-[#849495]"
+                disabled={isStreaming || !canSendNewMessage || draftMessage.trim().length === 0}
+                className="inline-flex min-h-[52px] min-w-[116px] items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-bold text-surface-lowest transition hover:brightness-110 disabled:cursor-not-allowed disabled:bg-surface-high disabled:text-content-muted"
               >
                 {isStreaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
                 <span>{isStreaming ? '전송 중...' : '전송'}</span>
@@ -1165,16 +1353,19 @@ function AIChatPage() {
         </section>
       </div>
 
-      {isSidebarOpen && (
-        <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setIsSidebarOpen(false)}>
-          <div
-            className="h-full w-[min(88vw,340px)] bg-transparent p-4 pt-20"
-            onClick={(event) => event.stopPropagation()}
-          >
+      <Dialog
+        open={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        className="relative z-50"
+      >
+        <DialogBackdrop className="fixed inset-0 bg-surface-lowest/80 backdrop-blur-sm" />
+        <div className="fixed inset-0 overflow-y-auto">
+          <DialogPanel className="h-full w-[min(88vw,340px)] p-4 pt-20">
+            <DialogTitle className="sr-only">대화 세션 목록</DialogTitle>
             {sidebarContent}
-          </div>
+          </DialogPanel>
         </div>
-      )}
+      </Dialog>
     </div>
   )
 }
