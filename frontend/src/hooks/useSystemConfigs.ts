@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getAiProviderRuntimeStatus,
   getSystemConfigs,
+  resetAiProviderStatus,
   updateSystemConfigs,
   type AiProviderRuntimeStatusResponse,
   type SystemConfigItem,
@@ -39,5 +40,17 @@ export function useAiProviderRuntimeStatus() {
     refetchInterval: 30000,
     refetchIntervalInBackground: true,
     placeholderData: (previousData) => previousData,
+  })
+}
+
+export function useResetAiProviderStatus() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (expectedVersion: number) => resetAiProviderStatus(expectedVersion),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: SYSTEM_CONFIGS_QUERY_KEY })
+      void queryClient.invalidateQueries({ queryKey: AI_PROVIDER_RUNTIME_STATUS_QUERY_KEY })
+    },
   })
 }

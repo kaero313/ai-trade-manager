@@ -3,23 +3,33 @@ import { Loader2, Plus, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import InfoTooltip from '../components/common/InfoTooltip'
-import BotConfigForm from '../components/trading/BotConfigForm'
 import {
   useAiProviderRuntimeStatus,
+  useResetAiProviderStatus,
   useSystemConfigs,
   useUpdateSystemConfigs,
 } from '../hooks/useSystemConfigs'
 import {
-  clearAdminToken,
+  invalidateAdminSession,
   type AiProviderRuntimeStatusItem,
   type SystemConfigItem,
-  type SystemConfigUpdateItem,
 } from '../services/api'
+import {
+  attachEditBaseVersions,
+  type PendingSystemConfigUpdate,
+  SystemConfigEditConflictError,
+  SystemConfigEditSnapshotError,
+} from './systemConfigEditSnapshot'
 
 interface AiRuntimeDraft {
+  targetSymbols: string
+  excludedSymbols: string
   newsIntervalHours: string
   autonomousAiIntervalMinutes: string
   maxAllocationPct: string
+  aiMaxBuyWeightPct: string
+  aiMaxConcurrentPositions: string
+  aiCalibrationMinSuccessRate: string
   hardTakeProfitPct: string
   hardStopLossPct: string
   aiBriefingTime: string
@@ -105,6 +115,11 @@ interface SlackPortfolioAlertSettings {
 const AUTONOMOUS_AI_INTERVAL_MINUTES_KEY = 'autonomous_ai_interval_minutes'
 const NEWS_INTERVAL_HOURS_KEY = 'news_interval_hours'
 const MAX_ALLOCATION_PCT_KEY = 'max_allocation_pct'
+const AI_MAX_BUY_WEIGHT_PCT_KEY = 'ai_max_buy_weight_pct'
+const AI_TRADE_TARGET_SYMBOLS_KEY = 'ai_trade_target_symbols'
+const AI_TRADE_EXCLUDED_SYMBOLS_KEY = 'ai_trade_excluded_symbols'
+const AI_CALIBRATION_MIN_SUCCESS_RATE_KEY = 'ai_calibration_min_success_rate'
+const AI_MAX_CONCURRENT_POSITIONS_KEY = 'ai_max_concurrent_positions'
 const HARD_TAKE_PROFIT_PCT_KEY = 'hard_take_profit_pct'
 const HARD_STOP_LOSS_PCT_KEY = 'hard_stop_loss_pct'
 const AI_BRIEFING_TIME_KEY = 'ai_briefing_time'
@@ -122,6 +137,34 @@ const AI_PROVIDER_PRIORITY_KEY = 'ai_provider_priority'
 const AI_PROVIDER_SETTINGS_KEY = 'ai_provider_settings'
 const AI_PROVIDER_STATUS_KEY = 'ai_provider_status'
 const SLACK_PORTFOLIO_ALERT_SETTINGS_KEY = 'slack_portfolio_alert_settings'
+
+const AI_RUNTIME_DRAFT_CONFIG_KEYS: Record<keyof AiRuntimeDraft, string> = {
+  targetSymbols: AI_TRADE_TARGET_SYMBOLS_KEY,
+  excludedSymbols: AI_TRADE_EXCLUDED_SYMBOLS_KEY,
+  newsIntervalHours: NEWS_INTERVAL_HOURS_KEY,
+  autonomousAiIntervalMinutes: AUTONOMOUS_AI_INTERVAL_MINUTES_KEY,
+  maxAllocationPct: MAX_ALLOCATION_PCT_KEY,
+  aiMaxBuyWeightPct: AI_MAX_BUY_WEIGHT_PCT_KEY,
+  aiMaxConcurrentPositions: AI_MAX_CONCURRENT_POSITIONS_KEY,
+  aiCalibrationMinSuccessRate: AI_CALIBRATION_MIN_SUCCESS_RATE_KEY,
+  hardTakeProfitPct: HARD_TAKE_PROFIT_PCT_KEY,
+  hardStopLossPct: HARD_STOP_LOSS_PCT_KEY,
+  aiBriefingTime: AI_BRIEFING_TIME_KEY,
+  aiMinConfidenceTrade: AI_MIN_CONFIDENCE_TRADE_KEY,
+  aiEntryScoreThreshold: AI_ENTRY_SCORE_THRESHOLD_KEY,
+  aiAnalysisMaxAgeMinutes: AI_ANALYSIS_MAX_AGE_MINUTES_KEY,
+  liveBuyEnabled: LIVE_BUY_ENABLED_KEY,
+  aiEntryShadowMode: AI_ENTRY_SHADOW_MODE_KEY,
+  ragScheduledOpenaiTranslationFallbackEnabled:
+    RAG_SCHEDULED_OPENAI_TRANSLATION_FALLBACK_ENABLED_KEY,
+  ragBuyPrecheckNewsRefreshEnabled: RAG_BUY_PRECHECK_NEWS_REFRESH_ENABLED_KEY,
+  ragBuyPrecheckNewsMaxAgeMinutes: RAG_BUY_PRECHECK_NEWS_MAX_AGE_MINUTES_KEY,
+  aiCustomPersonaPrompt: AI_CUSTOM_PERSONA_PROMPT_KEY,
+  aiProviderPriority: AI_PROVIDER_PRIORITY_KEY,
+  aiProviderSettings: AI_PROVIDER_SETTINGS_KEY,
+  aiProviderStatus: AI_PROVIDER_STATUS_KEY,
+  slackPortfolioAlertSettings: SLACK_PORTFOLIO_ALERT_SETTINGS_KEY,
+}
 
 const AUTONOMOUS_AI_INTERVAL_OPTIONS = ['15', '30', '60', '120', '240']
 const AI_PROVIDERS: AiProviderName[] = ['gemini', 'openai']
@@ -282,16 +325,28 @@ const DEFAULT_SLACK_PORTFOLIO_ALERT_SETTINGS: SlackPortfolioAlertSettings = {
   ],
 }
 
-const SETTINGS_CARD_CLASS = 'quantum-card rounded-xl p-5 text-[#dfe2eb] sm:p-6'
-const SETTINGS_PANEL_CLASS = 'quantum-panel rounded-lg border border-[#3b494b]/30 p-4'
+const SETTINGS_CARD_CLASS = 'quantum-card rounded-2xl p-5 text-content sm:p-6'
+const SETTINGS_PANEL_CLASS =
+  'quantum-panel scroll-mt-24 rounded-xl border border-border-subtle p-4 sm:p-5'
 const SETTINGS_FIELD_CLASS =
-  'w-full rounded-lg border border-[#3b494b]/45 bg-[#0a0e14]/70 px-3 py-2 text-sm text-[#dfe2eb] outline-none transition placeholder:text-[#849495] focus:border-[#00dbe9]/70 focus:ring-2 focus:ring-[#00dbe9]/20 disabled:cursor-not-allowed disabled:bg-[#262a31]/60 disabled:text-[#849495]'
+  'w-full rounded-lg border border-border-strong bg-surface-lowest px-3 py-2 text-sm text-content outline-none transition placeholder:text-content-muted focus:border-brand focus:ring-2 focus:ring-brand/20 disabled:cursor-not-allowed disabled:bg-surface-high disabled:text-content-muted'
 const SETTINGS_PRIMARY_BUTTON_CLASS =
-  'inline-flex items-center justify-center gap-2 rounded-lg bg-[#00dbe9]/16 px-4 py-2 text-sm font-bold text-[#7df4ff] transition hover:bg-[#00dbe9]/24 disabled:cursor-not-allowed disabled:opacity-60'
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-brand/15 px-4 py-2 text-sm font-bold text-brand-bright transition hover:bg-brand/25 disabled:cursor-not-allowed disabled:opacity-60'
 const SETTINGS_SECONDARY_BUTTON_CLASS =
-  'inline-flex items-center justify-center gap-2 rounded-lg border border-[#3b494b]/50 bg-[#0a0e14]/70 px-3 py-2 text-sm font-bold text-[#dfe2eb] transition hover:border-[#00dbe9]/45 hover:text-[#7df4ff]'
-const SETTINGS_LABEL_CLASS = 'mb-2 flex items-center gap-2 text-sm font-bold text-[#dfe2eb]'
-const SETTINGS_HINT_CLASS = 'mt-2 text-xs text-[#849495]'
+  'inline-flex items-center justify-center gap-2 rounded-lg border border-border-strong bg-surface-lowest px-3 py-2 text-sm font-bold text-content transition hover:border-brand hover:text-brand-bright'
+const SETTINGS_LABEL_CLASS = 'mb-2 flex items-center gap-2 text-sm font-bold text-content'
+const SETTINGS_HINT_CLASS = 'mt-2 text-xs text-content-muted'
+
+const SETTINGS_NAVIGATION = [
+  { href: '#settings-admin-session', label: '관리자 세션' },
+  { href: '#settings-provider', label: 'AI Provider' },
+  { href: '#settings-trading', label: '매매 대상과 한도' },
+  { href: '#settings-buy-safety', label: 'BUY 안전락' },
+  { href: '#settings-news', label: '뉴스·비용' },
+  { href: '#settings-risk', label: '리스크·스케줄' },
+  { href: '#settings-notifications', label: 'Slack 알림' },
+  { href: '#settings-persona', label: 'AI 페르소나' },
+] as const
 
 const PERSONA_PRESETS = [
   {
@@ -319,6 +374,15 @@ function resolveErrorMessage(error: unknown, fallback: string): string {
     if (typeof detail === 'string' && detail.length > 0) {
       return detail
     }
+    if (
+      detail &&
+      typeof detail === 'object' &&
+      'message' in detail &&
+      typeof detail.message === 'string' &&
+      detail.message.trim()
+    ) {
+      return detail.message
+    }
     if (Array.isArray(detail) && detail.length > 0) {
       return String(detail[0]?.msg ?? fallback)
     }
@@ -332,8 +396,41 @@ function resolveErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
+function isVersionConflictError(error: unknown): boolean {
+  return isAxiosError(error) && error.response?.status === 409
+}
+
+function isSavedButRuntimeApplyFailed(error: unknown): boolean {
+  if (!isAxiosError(error) || error.response?.status !== 503) {
+    return false
+  }
+  const detail = error.response.data?.detail
+  return Boolean(detail && typeof detail === 'object' && 'saved' in detail && detail.saved === true)
+}
+
 function findConfigValue(items: SystemConfigItem[] | undefined, configKey: string, fallback: string): string {
   return items?.find((item) => item.config_key === configKey)?.config_value ?? fallback
+}
+
+function formatSymbolListConfig(rawValue: string, fallback: string[]): string {
+  const parsed = parseJsonConfig<unknown>(rawValue, fallback)
+  if (!Array.isArray(parsed)) {
+    return fallback.join(', ')
+  }
+  return parsed
+    .map((item) => String(item).trim().toUpperCase())
+    .filter(Boolean)
+    .filter((symbol, index, symbols) => symbols.indexOf(symbol) === index)
+    .join(', ')
+}
+
+function stringifySymbolListDraft(rawValue: string): string {
+  const symbols = rawValue
+    .split(',')
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean)
+    .filter((symbol, index, items) => items.indexOf(symbol) === index)
+  return JSON.stringify(symbols)
 }
 
 function parseJsonConfig<T>(rawValue: string, fallback: T): T {
@@ -581,9 +678,24 @@ function stringifyBooleanConfig(value: boolean): string {
 
 function buildAiRuntimeDraft(items: SystemConfigItem[] | undefined): AiRuntimeDraft {
   return {
+    targetSymbols: formatSymbolListConfig(
+      findConfigValue(items, AI_TRADE_TARGET_SYMBOLS_KEY, '["KRW-BTC","KRW-ETH","KRW-XRP"]'),
+      ['KRW-BTC', 'KRW-ETH', 'KRW-XRP'],
+    ),
+    excludedSymbols: formatSymbolListConfig(
+      findConfigValue(items, AI_TRADE_EXCLUDED_SYMBOLS_KEY, '["KRW-DOGE"]'),
+      ['KRW-DOGE'],
+    ),
     newsIntervalHours: findConfigValue(items, NEWS_INTERVAL_HOURS_KEY, '12'),
     autonomousAiIntervalMinutes: findConfigValue(items, AUTONOMOUS_AI_INTERVAL_MINUTES_KEY, '60'),
-    maxAllocationPct: findConfigValue(items, MAX_ALLOCATION_PCT_KEY, '10'),
+    maxAllocationPct: findConfigValue(items, MAX_ALLOCATION_PCT_KEY, '30'),
+    aiMaxBuyWeightPct: findConfigValue(items, AI_MAX_BUY_WEIGHT_PCT_KEY, '30'),
+    aiMaxConcurrentPositions: findConfigValue(items, AI_MAX_CONCURRENT_POSITIONS_KEY, '2'),
+    aiCalibrationMinSuccessRate: findConfigValue(
+      items,
+      AI_CALIBRATION_MIN_SUCCESS_RATE_KEY,
+      '45',
+    ),
     hardTakeProfitPct: findConfigValue(items, HARD_TAKE_PROFIT_PCT_KEY, '5.0'),
     hardStopLossPct: findConfigValue(items, HARD_STOP_LOSS_PCT_KEY, '-3.0'),
     aiBriefingTime: findConfigValue(items, AI_BRIEFING_TIME_KEY, '08:30'),
@@ -624,8 +736,13 @@ function buildAiRuntimeDraft(items: SystemConfigItem[] | undefined): AiRuntimeDr
 }
 
 function NoticeMessage({ notice }: { notice: NoticeState }) {
+  const isError = notice.type === 'error'
+
   return (
     <div
+      role={isError ? 'alert' : 'status'}
+      aria-live={isError ? 'assertive' : 'polite'}
+      aria-atomic="true"
       className={`rounded-xl px-4 py-3 text-sm ${
         notice.type === 'success'
           ? 'bg-[#00dbe9]/10 font-semibold text-[#7df4ff]'
@@ -998,7 +1115,9 @@ function AiRuntimeSettingsPanel() {
   const systemConfigsQuery = useSystemConfigs()
   const aiProviderRuntimeStatusQuery = useAiProviderRuntimeStatus()
   const updateSystemConfigsMutation = useUpdateSystemConfigs()
+  const resetAiProviderStatusMutation = useResetAiProviderStatus()
   const [draftPatch, setDraftPatch] = useState<Partial<AiRuntimeDraft>>({})
+  const [editBaseVersions, setEditBaseVersions] = useState<Record<string, number>>({})
   const [notice, setNotice] = useState<NoticeState | null>(null)
   const serverDraft = useMemo(() => buildAiRuntimeDraft(systemConfigsQuery.data), [systemConfigsQuery.data])
   const draft = useMemo(() => ({ ...serverDraft, ...draftPatch }), [serverDraft, draftPatch])
@@ -1017,6 +1136,34 @@ function AiRuntimeSettingsPanel() {
       .join(' → ') ?? ''
 
   const setDraftValue = <K extends keyof AiRuntimeDraft>(key: K, value: AiRuntimeDraft[K]) => {
+    const configKey = AI_RUNTIME_DRAFT_CONFIG_KEYS[key]
+    if (serverDraft[key] === value) {
+      setEditBaseVersions((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current, configKey)) {
+          return current
+        }
+        const next = { ...current }
+        delete next[configKey]
+        return next
+      })
+    } else {
+      const currentConfig = systemConfigsQuery.data?.find((item) => item.config_key === configKey)
+      setEditBaseVersions((current) => {
+        if (
+          Object.prototype.hasOwnProperty.call(current, configKey) ||
+          !currentConfig ||
+          !Number.isInteger(currentConfig.version) ||
+          currentConfig.version < 1
+        ) {
+          return current
+        }
+        return {
+          ...current,
+          [configKey]: currentConfig.version,
+        }
+      })
+    }
+
     setDraftPatch((current) => {
       if (serverDraft[key] === value) {
         const next = { ...current }
@@ -1080,9 +1227,36 @@ function AiRuntimeSettingsPanel() {
     setDraftValue('aiEntryShadowMode', mode === 'shadow')
   }
 
-  const clearProviderStatus = () => {
-    setDraftValue('aiProviderStatus', {})
-    setNotice({ type: 'info', message: '차단 상태 초기화가 대기 중입니다. 저장하면 즉시 반영됩니다.' })
+  const clearProviderStatus = async () => {
+    const statusConfig = systemConfigsQuery.data?.find(
+      (item) => item.config_key === AI_PROVIDER_STATUS_KEY,
+    )
+    if (!statusConfig || !Number.isInteger(statusConfig.version) || statusConfig.version < 1) {
+      setNotice({
+        type: 'error',
+        message: 'Provider 상태의 현재 버전을 확인할 수 없습니다. 설정을 다시 불러와 주세요.',
+      })
+      return
+    }
+
+    try {
+      await resetAiProviderStatusMutation.mutateAsync(statusConfig.version)
+      await systemConfigsQuery.refetch()
+      setNotice({ type: 'success', message: 'AI provider 차단 상태를 초기화했습니다.' })
+    } catch (error) {
+      if (isVersionConflictError(error)) {
+        await systemConfigsQuery.refetch()
+        setNotice({
+          type: 'error',
+          message: '다른 작업이 provider 상태를 먼저 변경했습니다. 최신 상태를 다시 불러왔습니다.',
+        })
+        return
+      }
+      setNotice({
+        type: 'error',
+        message: resolveErrorMessage(error, 'AI provider 차단 상태를 초기화하지 못했습니다.'),
+      })
+    }
   }
 
   const setSlackAlertSettings = (settings: SlackPortfolioAlertSettings) => {
@@ -1139,7 +1313,20 @@ function AiRuntimeSettingsPanel() {
   }
 
   const handleSave = async () => {
-    const updates: SystemConfigUpdateItem[] = []
+    const updates: PendingSystemConfigUpdate[] = []
+
+    if (draft.targetSymbols !== serverDraft.targetSymbols) {
+      updates.push({
+        config_key: AI_TRADE_TARGET_SYMBOLS_KEY,
+        config_value: stringifySymbolListDraft(draft.targetSymbols),
+      })
+    }
+    if (draft.excludedSymbols !== serverDraft.excludedSymbols) {
+      updates.push({
+        config_key: AI_TRADE_EXCLUDED_SYMBOLS_KEY,
+        config_value: stringifySymbolListDraft(draft.excludedSymbols),
+      })
+    }
 
     if (draft.newsIntervalHours !== serverDraft.newsIntervalHours) {
       updates.push({
@@ -1157,6 +1344,24 @@ function AiRuntimeSettingsPanel() {
       updates.push({
         config_key: MAX_ALLOCATION_PCT_KEY,
         config_value: draft.maxAllocationPct,
+      })
+    }
+    if (draft.aiMaxBuyWeightPct !== serverDraft.aiMaxBuyWeightPct) {
+      updates.push({
+        config_key: AI_MAX_BUY_WEIGHT_PCT_KEY,
+        config_value: draft.aiMaxBuyWeightPct,
+      })
+    }
+    if (draft.aiMaxConcurrentPositions !== serverDraft.aiMaxConcurrentPositions) {
+      updates.push({
+        config_key: AI_MAX_CONCURRENT_POSITIONS_KEY,
+        config_value: draft.aiMaxConcurrentPositions,
+      })
+    }
+    if (draft.aiCalibrationMinSuccessRate !== serverDraft.aiCalibrationMinSuccessRate) {
+      updates.push({
+        config_key: AI_CALIBRATION_MIN_SUCCESS_RATE_KEY,
+        config_value: draft.aiCalibrationMinSuccessRate,
       })
     }
     if (draft.hardTakeProfitPct !== serverDraft.hardTakeProfitPct) {
@@ -1246,12 +1451,6 @@ function AiRuntimeSettingsPanel() {
         config_value: stringifyJson(draft.aiProviderSettings),
       })
     }
-    if (stringifyJson(draft.aiProviderStatus) !== stringifyJson(serverDraft.aiProviderStatus)) {
-      updates.push({
-        config_key: AI_PROVIDER_STATUS_KEY,
-        config_value: stringifyJson(draft.aiProviderStatus),
-      })
-    }
     if (
       stringifyJson(draft.slackPortfolioAlertSettings) !==
       stringifyJson(serverDraft.slackPortfolioAlertSettings)
@@ -1263,18 +1462,67 @@ function AiRuntimeSettingsPanel() {
     }
 
     if (updates.length === 0) {
+      setDraftPatch({})
+      setEditBaseVersions({})
       setNotice({ type: 'info', message: '변경된 AI 운용 설정이 없습니다.' })
       return
     }
 
     try {
-      await updateSystemConfigsMutation.mutateAsync(updates)
+      const versionedUpdates = attachEditBaseVersions(
+        updates,
+        systemConfigsQuery.data,
+        editBaseVersions,
+      )
+      await updateSystemConfigsMutation.mutateAsync(versionedUpdates)
       setDraftPatch({})
+      setEditBaseVersions({})
       setNotice({
         type: 'success',
-        message: 'AI 운용 설정이 저장되었고 백그라운드 워커에 즉시 반영되었습니다.',
+        message: '설정을 저장했습니다. 스케줄 값은 재등록되고 Entry Gate·주문 한도는 다음 판단부터 적용됩니다.',
       })
     } catch (error) {
+      if (error instanceof SystemConfigEditConflictError) {
+        setDraftPatch({})
+        setEditBaseVersions({})
+        await systemConfigsQuery.refetch()
+        setNotice({
+          type: 'error',
+          message:
+            '편집 중 설정이 변경되어 저장하지 않았습니다. 입력값을 폐기하고 최신 설정을 다시 불러왔습니다.',
+        })
+        return
+      }
+      if (error instanceof SystemConfigEditSnapshotError) {
+        setDraftPatch({})
+        setEditBaseVersions({})
+        await systemConfigsQuery.refetch()
+        setNotice({
+          type: 'error',
+          message: `${error.message} 입력값을 폐기하고 설정을 다시 불러왔습니다.`,
+        })
+        return
+      }
+      if (isVersionConflictError(error)) {
+        setDraftPatch({})
+        setEditBaseVersions({})
+        await systemConfigsQuery.refetch()
+        setNotice({
+          type: 'error',
+          message: '다른 작업이 설정을 먼저 변경했습니다. 입력값을 폐기하고 최신 설정을 다시 불러왔습니다.',
+        })
+        return
+      }
+      if (isSavedButRuntimeApplyFailed(error)) {
+        setDraftPatch({})
+        setEditBaseVersions({})
+        await systemConfigsQuery.refetch()
+        setNotice({
+          type: 'error',
+          message: `${resolveErrorMessage(error, '설정은 저장됐지만 runtime 반영에 실패했습니다.')} 최신 저장값을 다시 불러왔습니다.`,
+        })
+        return
+      }
       setNotice({
         type: 'error',
         message: resolveErrorMessage(error, 'AI 운용 설정을 저장하지 못했습니다.'),
@@ -1283,37 +1531,47 @@ function AiRuntimeSettingsPanel() {
   }
 
   return (
-    <section className={SETTINGS_CARD_CLASS}>
-      <header className="border-b border-[#3b494b]/35 pb-5">
+    <section className={SETTINGS_CARD_CLASS} aria-labelledby="ai-runtime-settings-title">
+      <header className="border-b border-border-subtle pb-5">
         <div className="flex items-center gap-2">
-          <h2 className="text-2xl font-bold text-[#dfe2eb]">AI 운용 설정</h2>
+          <h2 id="ai-runtime-settings-title" className="text-2xl font-bold text-content">
+            AI 운용 설정
+          </h2>
           <InfoTooltip
             title="AI 운용 설정"
             content="AI 분석 주기, 체결 기준, 강제 익절·손절, 페르소나처럼 실제 AI 자동매매에 직접 쓰이는 값만 모았습니다."
           />
         </div>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#b9cacb]">
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-content-secondary">
           AI 호출 주기, 뉴스 갱신, BUY 안전락, 모델 라우팅을 한 화면에서 조정합니다.
         </p>
       </header>
 
       <div className="mt-6 space-y-6">
         {systemConfigsQuery.isLoading && (
-          <div className="flex min-h-64 items-center justify-center gap-3 text-sm text-[#b9cacb]">
-            <Loader2 className="h-5 w-5 animate-spin text-[#00dbe9]" />
+          <div
+            role="status"
+            aria-live="polite"
+            className="flex min-h-64 items-center justify-center gap-3 text-sm text-content-secondary"
+          >
+            <Loader2 className="h-5 w-5 animate-spin text-brand" />
             AI 운용 설정을 불러오는 중입니다.
           </div>
         )}
 
         {systemConfigsQuery.isError && (
-          <div className="rounded-lg bg-[#ffb4ab]/10 px-4 py-3 text-sm font-semibold text-[#ffb4ab]">
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="rounded-lg bg-status-danger/10 px-4 py-3 text-sm font-semibold text-status-danger"
+          >
             AI 운용 설정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.
           </div>
         )}
 
         {!systemConfigsQuery.isLoading && !systemConfigsQuery.isError && (
           <>
-            <div className={SETTINGS_PANEL_CLASS}>
+            <div id="settings-provider" className={SETTINGS_PANEL_CLASS}>
               <div className="flex flex-col gap-3 border-b border-[#3b494b]/35 pb-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2">
@@ -1329,10 +1587,11 @@ function AiRuntimeSettingsPanel() {
                 </div>
                 <button
                   type="button"
-                  onClick={clearProviderStatus}
+                  onClick={() => void clearProviderStatus()}
+                  disabled={resetAiProviderStatusMutation.isPending}
                   className={SETTINGS_SECONDARY_BUTTON_CLASS}
                 >
-                  차단 상태 초기화
+                  {resetAiProviderStatusMutation.isPending ? '초기화 중...' : '차단 상태 초기화'}
                 </button>
               </div>
 
@@ -1476,7 +1735,96 @@ function AiRuntimeSettingsPanel() {
               </div>
             </div>
 
-            <div className={SETTINGS_PANEL_CLASS}>
+            <div id="settings-trading" className={SETTINGS_PANEL_CLASS}>
+              <div className="flex flex-col gap-2 border-b border-[#3b494b]/35 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-[#dfe2eb]">운영 매매 대상과 Entry Gate 한도</h3>
+                    <InfoTooltip
+                      title="실제 운영 설정"
+                      content="아래 값은 SystemConfig에서 직접 읽어 자율 분석 대상, Entry Gate, BUY 주문 상한에 적용합니다."
+                    />
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-[#b9cacb]">
+                    쉼표로 구분한 KRW 마켓과 실제 운영 BUY 한도를 관리합니다.
+                  </p>
+                </div>
+                <span className="inline-flex w-fit rounded-full bg-[#00dbe9]/12 px-3 py-1 text-xs font-bold text-[#7df4ff]">
+                  SYSTEMCONFIG SSOT
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className={SETTINGS_LABEL_CLASS}>운영 대상 종목</span>
+                  <input
+                    value={draft.targetSymbols}
+                    onChange={(event) => setDraftValue('targetSymbols', event.target.value)}
+                    placeholder="KRW-BTC, KRW-ETH, KRW-XRP"
+                    className={SETTINGS_FIELD_CLASS}
+                  />
+                  <p className={SETTINGS_HINT_CLASS}>Favorite 중 이 목록에 포함된 종목만 분석·진입 후보가 됩니다.</p>
+                </label>
+
+                <label className="block">
+                  <span className={SETTINGS_LABEL_CLASS}>운영 제외 종목</span>
+                  <input
+                    value={draft.excludedSymbols}
+                    onChange={(event) => setDraftValue('excludedSymbols', event.target.value)}
+                    placeholder="KRW-DOGE"
+                    className={SETTINGS_FIELD_CLASS}
+                  />
+                  <p className={SETTINGS_HINT_CLASS}>빈 값이면 별도 제외 종목이 없습니다.</p>
+                </label>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <label className="block">
+                  <span className={SETTINGS_LABEL_CLASS}>1회 BUY 비중 상한 (%)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="30"
+                    step="0.1"
+                    value={draft.aiMaxBuyWeightPct}
+                    onChange={(event) => setDraftValue('aiMaxBuyWeightPct', event.target.value)}
+                    className={SETTINGS_FIELD_CLASS}
+                  />
+                  <p className={SETTINGS_HINT_CLASS}>1차 분석·precheck 비중보다 주문을 늘리지 않는 hard cap입니다.</p>
+                </label>
+
+                <label className="block">
+                  <span className={SETTINGS_LABEL_CLASS}>동시 보유 종목 상한</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={draft.aiMaxConcurrentPositions}
+                    onChange={(event) => setDraftValue('aiMaxConcurrentPositions', event.target.value)}
+                    className={SETTINGS_FIELD_CLASS}
+                  />
+                  <p className={SETTINGS_HINT_CLASS}>Entry Gate가 신규 BUY 전에 확인합니다.</p>
+                </label>
+
+                <label className="block">
+                  <span className={SETTINGS_LABEL_CLASS}>최소 과거 적중률 (%)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={draft.aiCalibrationMinSuccessRate}
+                    onChange={(event) =>
+                      setDraftValue('aiCalibrationMinSuccessRate', event.target.value)
+                    }
+                    className={SETTINGS_FIELD_CLASS}
+                  />
+                  <p className={SETTINGS_HINT_CLASS}>충분한 표본이 있을 때 calibration 진입 기준으로 사용합니다.</p>
+                </label>
+              </div>
+            </div>
+
+            <div id="settings-buy-safety" className={SETTINGS_PANEL_CLASS}>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2">
@@ -1565,7 +1913,7 @@ function AiRuntimeSettingsPanel() {
               </p>
             </div>
 
-            <div className={SETTINGS_PANEL_CLASS}>
+            <div id="settings-news" className={SETTINGS_PANEL_CLASS}>
               <div className="flex flex-col gap-3 border-b border-[#3b494b]/35 pb-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2">
@@ -1590,7 +1938,7 @@ function AiRuntimeSettingsPanel() {
                   <input
                     type="number"
                     min="1"
-                    max="24"
+                    max="23"
                     value={draft.newsIntervalHours}
                     onChange={(event) => setDraftValue('newsIntervalHours', event.target.value)}
                     className={SETTINGS_FIELD_CLASS}
@@ -1652,7 +2000,7 @@ function AiRuntimeSettingsPanel() {
               </label>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div id="settings-risk" className="grid scroll-mt-24 gap-4 md:grid-cols-2">
               <label className={SETTINGS_PANEL_CLASS}>
                 <span className={SETTINGS_LABEL_CLASS}>
                   <span>AI 자율 분석 주기 (분)</span>
@@ -1692,7 +2040,7 @@ function AiRuntimeSettingsPanel() {
                   onChange={(event) => setDraftValue('maxAllocationPct', event.target.value)}
                   className={SETTINGS_FIELD_CLASS}
                 />
-                <p className={SETTINGS_HINT_CLASS}>추천값: 10%</p>
+                <p className={SETTINGS_HINT_CLASS}>기본값: 30%</p>
               </label>
             </div>
 
@@ -1708,6 +2056,7 @@ function AiRuntimeSettingsPanel() {
                 <input
                   type="number"
                   min="0"
+                  max="1000"
                   step="0.1"
                   value={draft.hardTakeProfitPct}
                   onChange={(event) => setDraftValue('hardTakeProfitPct', event.target.value)}
@@ -1726,6 +2075,7 @@ function AiRuntimeSettingsPanel() {
                 </span>
                 <input
                   type="number"
+                  min="-1000"
                   max="0"
                   step="0.1"
                   value={draft.hardStopLossPct}
@@ -1788,6 +2138,7 @@ function AiRuntimeSettingsPanel() {
                 <input
                   type="number"
                   min="1"
+                  max="1440"
                   value={draft.aiAnalysisMaxAgeMinutes}
                   onChange={(event) => setDraftValue('aiAnalysisMaxAgeMinutes', event.target.value)}
                   className={SETTINGS_FIELD_CLASS}
@@ -1813,7 +2164,7 @@ function AiRuntimeSettingsPanel() {
               <p className={SETTINGS_HINT_CLASS}>예: 08:30</p>
             </label>
 
-            <div className={SETTINGS_PANEL_CLASS}>
+            <div id="settings-notifications" className={SETTINGS_PANEL_CLASS}>
               <div className="flex flex-col gap-3 border-b border-[#3b494b]/35 pb-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2">
@@ -1902,7 +2253,7 @@ function AiRuntimeSettingsPanel() {
               </div>
             </div>
 
-            <div className={SETTINGS_PANEL_CLASS}>
+            <div id="settings-persona" className={SETTINGS_PANEL_CLASS}>
               <div className="flex flex-col gap-3 border-b border-[#3b494b]/35 pb-4">
                 <div className="flex items-center gap-2">
                   <h3 className="text-lg font-bold text-[#dfe2eb]">
@@ -1931,6 +2282,7 @@ function AiRuntimeSettingsPanel() {
                 <textarea
                   value={draft.aiCustomPersonaPrompt}
                   onChange={(event) => setDraftValue('aiCustomPersonaPrompt', event.target.value)}
+                  maxLength={8000}
                   placeholder="예: 손실 회피를 최우선으로 삼고, 뉴스 리스크가 있으면 HOLD를 우선하라."
                   className={`${SETTINGS_FIELD_CLASS} min-h-[220px] resize-y leading-6`}
                 />
@@ -1939,9 +2291,12 @@ function AiRuntimeSettingsPanel() {
 
             {notice && <NoticeMessage notice={notice} />}
 
-            <div className="flex flex-col gap-3 border-t border-[#3b494b]/35 pt-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-xs text-[#849495]">
-                저장 즉시 SystemConfig에 반영되고 스케줄러 대상 값은 재등록됩니다.
+            <div
+              id="settings-save"
+              className="sticky bottom-0 z-10 flex scroll-mt-24 flex-col gap-3 rounded-xl border border-border-subtle bg-surface/95 p-4 shadow-lg backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="text-xs text-content-muted">
+                저장 시 version을 확인합니다. 스케줄 값은 재등록되고 거래 한도는 다음 판단부터 적용됩니다.
               </div>
               <button
                 type="button"
@@ -1964,44 +2319,89 @@ function SettingsPage() {
   const [adminTokenNotice, setAdminTokenNotice] = useState<string | null>(null)
 
   const handleClearAdminToken = () => {
-    clearAdminToken()
+    invalidateAdminSession()
     setAdminTokenNotice('이 브라우저 세션에 저장된 운영 관리 토큰을 초기화했습니다.')
   }
 
   return (
     <div className="dashboard-quantum flex h-full min-h-0 min-w-0 flex-col gap-5">
-      <section className={SETTINGS_CARD_CLASS}>
-        <h1 className="text-3xl font-bold tracking-tight text-[#dfe2eb]">
-          설정
-        </h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-[#b9cacb]">
-          자동매매에 필요한 종목, 배분, 운용 기준을 조정합니다.
+      <header className={SETTINGS_CARD_CLASS}>
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-brand">Control center</p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight text-content">설정</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-content-secondary">
+          PostgreSQL SystemConfig가 실제로 제어하는 AI 운용 기준과 관리자 세션을 관리합니다.
         </p>
-        <div className="mt-4 flex flex-col gap-3 rounded-lg bg-[#0a0e14]/75 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-bold text-[#dfe2eb]">운영 관리 토큰</p>
-            <p className="mt-1 text-xs leading-5 text-[#849495]">
-              관리 토큰은 sessionStorage에만 저장되며 브라우저 세션 단위로 사용됩니다.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={handleClearAdminToken}
-            className={SETTINGS_SECONDARY_BUTTON_CLASS}
-          >
-            관리 토큰 초기화
-          </button>
-        </div>
-        {adminTokenNotice && (
-          <p className="mt-3 rounded-lg bg-[#00dbe9]/10 px-3 py-2 text-xs font-semibold text-[#7df4ff]">
-            {adminTokenNotice}
-          </p>
-        )}
-      </section>
+      </header>
 
-      <div className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto pr-1">
-        <BotConfigForm />
-        <AiRuntimeSettingsPanel />
+      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto xl:grid xl:grid-cols-[220px_minmax(0,1fr)] xl:gap-5 xl:overflow-hidden">
+        <aside className="mb-5 xl:mb-0 xl:min-h-0 xl:overflow-y-auto">
+          <div className="quantum-card rounded-2xl p-3 xl:sticky xl:top-0">
+            <p className="px-3 pb-2 pt-1 text-xs font-bold uppercase tracking-[0.18em] text-content-muted">
+              설정 카테고리
+            </p>
+            <nav
+              className="grid gap-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-1"
+              aria-label="설정 카테고리"
+            >
+              {SETTINGS_NAVIGATION.map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  className="rounded-lg px-3 py-2.5 text-sm font-semibold text-content-secondary transition hover:bg-surface-high hover:text-content focus-visible:bg-surface-high"
+                >
+                  {item.label}
+                </a>
+              ))}
+            </nav>
+            <div className="mt-3 rounded-xl border border-border-subtle bg-surface-low p-3">
+              <p className="text-xs font-bold text-content">인증 정보 저장 정책</p>
+              <p className="mt-1 text-xs leading-5 text-content-muted">
+                거래소와 AI API 키는 서버 환경변수에서만 읽으며 이 화면에서 조회하거나 저장하지 않습니다.
+              </p>
+            </div>
+          </div>
+        </aside>
+
+        <main
+          className="min-w-0 scroll-smooth space-y-5 xl:min-h-0 xl:overflow-y-auto xl:pr-1"
+          aria-label="설정 편집 영역"
+        >
+          <section
+            id="settings-admin-session"
+            className={`${SETTINGS_CARD_CLASS} scroll-mt-24`}
+            aria-labelledby="admin-session-title"
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 id="admin-session-title" className="text-lg font-bold text-content">
+                  운영 관리자 세션
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-content-secondary">
+                  persistent=true로 발급된 세션 토큰만 sessionStorage에 저장됩니다.
+                  persistent=false인 1회용 토큰은 저장하지 않고 해당 요청에만 사용합니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleClearAdminToken}
+                className={SETTINGS_SECONDARY_BUTTON_CLASS}
+              >
+                관리 토큰 초기화
+              </button>
+            </div>
+            {adminTokenNotice && (
+              <p
+                role="status"
+                aria-live="polite"
+                className="mt-4 rounded-lg bg-brand/10 px-3 py-2 text-xs font-semibold text-brand-bright"
+              >
+                {adminTokenNotice}
+              </p>
+            )}
+          </section>
+
+          <AiRuntimeSettingsPanel />
+        </main>
       </div>
     </div>
   )
