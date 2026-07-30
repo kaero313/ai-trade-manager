@@ -36,6 +36,11 @@ logs/
 *.sqlite3
 data/
 
+# Backups / restore drill (DB 덤프가 리포에 실리지 않도록 제외)
+backups/
+*.dump
+*.sql.gz
+
 # Build / packaging
 build/
 dist/
