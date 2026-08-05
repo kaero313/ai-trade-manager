@@ -29,13 +29,22 @@ dependencies = [
   "apscheduler>=3.10.4",
   "pandas>=2.2.0",
   "pandas-ta-classic>=0.3.78",
-  "opensearch-py>=2.6.0"
+  "opensearch-py>=2.8.0"
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=7.4",
+  "pytest-asyncio>=0.23",
   "ruff>=0.3"
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+markers = [
+  "postgres: 실제 PostgreSQL 동작과 동시성을 검증하는 통합 테스트",
+  "architecture: 실주문 아키텍처 경계를 검증하는 정적 테스트",
+  "migration: Alembic SQL 및 실제 데이터베이스 전이를 검증하는 테스트"
 ]
 
 [tool.ruff]
