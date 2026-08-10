@@ -1,35 +1,11 @@
-# ruff: noqa: E402
-
 import asyncio
-import sys
 from datetime import datetime, timezone
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.dialects import sqlite
-
-stub_scheduler_module = ModuleType("app.core.scheduler")
-
-
-async def _stub_reload_scheduler_jobs() -> None:
-    return None
-
-
-stub_scheduler_module.reload_scheduler_jobs = _stub_reload_scheduler_jobs
-sys.modules.setdefault("app.core.scheduler", stub_scheduler_module)
-
-stub_orchestrator_module = ModuleType("app.services.chat.orchestrator")
-
-
-async def _stub_run_chat_stream(*_args: object, **_kwargs: object):
-    if False:
-        yield {}
-
-
-stub_orchestrator_module.run_chat_stream = _stub_run_chat_stream
-sys.modules.setdefault("app.services.chat.orchestrator", stub_orchestrator_module)
 
 from app.api.routes import chat as chat_routes
 from app.db import repository
