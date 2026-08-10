@@ -18,6 +18,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import AIBankerPortfolioSnapshot from '../components/common/AIBankerPortfolioSnapshot'
+import { MarkdownLite } from '../components/common/MarkdownLite'
 import { usePortfolioSummary } from '../hooks/usePortfolioSummary'
 import { SYSTEM_CONFIGS_QUERY_KEY, useSystemConfigs } from '../hooks/useSystemConfigs'
 import {
@@ -1249,7 +1250,7 @@ function AIChatPage() {
                               </span>
                             )}
                           </div>
-                          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{item.content}</p>
+                          <MarkdownLite text={item.content} className="mt-2 text-sm leading-6" />
                           <div className="mt-2 text-[11px] font-medium text-content-muted">
                             {formatMessageTimestamp(item.createdAt)}
                           </div>
