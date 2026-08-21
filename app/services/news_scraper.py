@@ -6,6 +6,7 @@ from html import unescape
 from typing import Any
 
 import feedparser
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ RSS_FEED_URLS: list[str] = [
 ]
 MAX_NEWS_ITEMS = 15
 CACHE_TTL_SECONDS = 300
+FEED_FETCH_TIMEOUT_SECONDS = 10.0
 
 _CACHE_LOCK = threading.Lock()
 _NEWS_CACHE: dict[str, Any] = {
@@ -35,7 +37,16 @@ def _sanitize_text(raw: Any) -> str:
 
 
 def _parse_feed_entries(feed_url: str) -> list[dict[str, str]]:
-    parsed = feedparser.parse(feed_url)
+    # ATM-P2-003: feedparser의 timeout 없는 URL fetch 대신 명시적 timeout을 가진
+    # HTTP 요청으로 무한 hang을 방지합니다. 이 동기 함수는 워커 스레드에서 실행됩니다.
+    response = httpx.get(
+        feed_url,
+        timeout=FEED_FETCH_TIMEOUT_SECONDS,
+        follow_redirects=True,
+        headers={"User-Agent": "ai-trade-manager/0.1"},
+    )
+    response.raise_for_status()
+    parsed = feedparser.parse(response.content)
     if getattr(parsed, "bozo", False):
         logger.warning("RSS 파싱 경고가 발생했습니다: feed=%s", feed_url)
 
