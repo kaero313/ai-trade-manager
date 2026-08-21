@@ -46,6 +46,13 @@ class BaseBrokerClient(ABC):
     ) -> Any:
         pass
 
+    async def get_order(
+        self,
+        uuid_: str | None = None,
+        identifier: str | None = None,
+    ) -> Any:
+        raise NotImplementedError("single order lookup is not supported")
+
     @abstractmethod
     async def create_order(
         self,
@@ -65,3 +72,6 @@ class BaseBrokerClient(ABC):
         identifier: str | None = None,
     ) -> Any:
         pass
+
+    async def cancel_orders_by_ids(self, uuids: list[str]) -> Any:
+        raise NotImplementedError("batch order cancellation is not supported")
