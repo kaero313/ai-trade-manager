@@ -97,17 +97,6 @@ def build_error_blocks(error_msg: str) -> list[dict]:
                     "action_id": "emergency_stop",
                     "value": "stop",
                 },
-                {
-                    "type": "button",
-                    "text": {
-                        "type": "plain_text",
-                        "text": "전량 매도 후 정지 (Liquidate)",
-                        "emoji": True,
-                    },
-                    "style": "danger",
-                    "action_id": "emergency_liquidate",
-                    "value": "liquidate",
-                },
             ],
         },
     ]
