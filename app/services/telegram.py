@@ -1,4 +1,5 @@
 ﻿import logging
+import json
 from typing import Any
 
 import httpx
@@ -23,7 +24,7 @@ class TelegramClient:
 
     @property
     def enabled(self) -> bool:
-        return bool(self.token)
+        return bool(str(self.token or "").strip() and str(self.chat_id or "").strip())
 
     async def send_message(self, text: str, chat_id: int | str | None = None) -> None:
         if not self.enabled:
@@ -46,17 +47,30 @@ class TelegramClient:
         if not self.enabled:
             return []
         url = f"{self.base_url}/bot{self.token}/getUpdates"
-        params: dict[str, Any] = {"timeout": timeout}
+        params: dict[str, Any] = {
+            "timeout": timeout,
+            "allowed_updates": json.dumps(["message"], separators=(",", ":")),
+        }
         if offset is not None:
             params["offset"] = offset
         async with httpx.AsyncClient(timeout=self.timeout + timeout) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
-            if not isinstance(data, dict) or not data.get("ok"):
-                logger.error("Telegram getUpdates error: %s", data)
+            if not isinstance(data, dict) or data.get("ok") is not True:
+                logger.error(
+                    "Telegram getUpdates returned an unsuccessful response.",
+                    extra={"event": "telegram_get_updates_failed"},
+                )
                 return []
-            return data.get("result", [])
+            result = data.get("result")
+            if not isinstance(result, list):
+                logger.error(
+                    "Telegram getUpdates returned an invalid result.",
+                    extra={"event": "telegram_get_updates_invalid_result"},
+                )
+                return []
+            return [update for update in result if isinstance(update, dict)]
 
 
 telegram = TelegramClient(settings.telegram_bot_token, settings.telegram_chat_id)
