@@ -27,6 +27,7 @@ from app.db.repository import RAG_SCHEDULED_OPENAI_TRANSLATION_FALLBACK_ENABLED_
 from app.db.repository import get_system_config_value
 from app.db.session import AsyncSessionLocal
 from app.services.ai.providers.base import AIProviderRateLimitError
+from app.services.ai.providers.base import AI_NEWS_TRANSLATION_TOTAL_TIMEOUT_SECONDS
 from app.services.news_scraper import RSS_FEED_URLS
 from app.services.rag.opensearch_client import (
     EMBEDDING_DIMENSION,
@@ -1358,53 +1359,81 @@ async def _translate_news_documents(
 
         stats["translation_requested"] += 1
         failed_attempts: list[NewsTranslationAttempt] = []
-        for provider in providers:
-            model = _translation_model_for_provider(provider, model_overrides)
-            stat = _get_translation_provider_stat(provider_stats, provider, model)
-            stat["documents_attempted"] += 1
-            attempt = await _attempt_translation_provider(
-                provider,
-                document,
-                model_overrides=model_overrides,
-            )
-            if attempt.error:
-                failed_attempts.append(attempt)
-                _record_translation_provider_error(
-                    provider_errors,
-                    provider_stats,
-                    attempt=attempt,
-                )
-                continue
+        translated = False
+        active_provider = providers[0]
+        try:
+            async with asyncio.timeout(AI_NEWS_TRANSLATION_TOTAL_TIMEOUT_SECONDS):
+                for provider in providers:
+                    active_provider = provider
+                    model = _translation_model_for_provider(provider, model_overrides)
+                    stat = _get_translation_provider_stat(provider_stats, provider, model)
+                    stat["documents_attempted"] += 1
+                    attempt = await _attempt_translation_provider(
+                        provider,
+                        document,
+                        model_overrides=model_overrides,
+                    )
+                    if attempt.error:
+                        failed_attempts.append(attempt)
+                        _record_translation_provider_error(
+                            provider_errors,
+                            provider_stats,
+                            attempt=attempt,
+                        )
+                        continue
 
-            stat["documents_succeeded"] += 1
-            stats["translation_succeeded"] += 1
-            translated_documents.append(
-                replace(
-                    document,
-                    title=attempt.title or document.title,
-                    content=attempt.content or document.content,
-                    translation_status=TRANSLATION_STATUS_TRANSLATED,
-                    translation_provider=attempt.provider,
-                    translation_model=attempt.model,
-                    translation_error=None,
-                    translated_at=datetime.now(UTC),
-                )
+                    stat["documents_succeeded"] += 1
+                    stats["translation_succeeded"] += 1
+                    translated_documents.append(
+                        replace(
+                            document,
+                            title=attempt.title or document.title,
+                            content=attempt.content or document.content,
+                            translation_status=TRANSLATION_STATUS_TRANSLATED,
+                            translation_provider=attempt.provider,
+                            translation_model=attempt.model,
+                            translation_error=None,
+                            translated_at=datetime.now(UTC),
+                        )
+                    )
+                    translated = True
+                    break
+        except TimeoutError:
+            logger.warning(
+                "news translation fallback exceeded total deadline: provider=%s seconds=%s",
+                active_provider,
+                AI_NEWS_TRANSLATION_TOTAL_TIMEOUT_SECONDS,
             )
-            break
-        else:
-            representative_error = (
-                failed_attempts[-1].error if failed_attempts else TRANSLATION_ERROR_GENERATION_FAILED
+            timed_out_attempt = NewsTranslationAttempt(
+                provider=active_provider,
+                model=_translation_model_for_provider(active_provider, model_overrides),
+                error=TRANSLATION_ERROR_GENERATION_FAILED,
             )
-            stats["translation_failed"] += 1
-            if stats["translation_error"] is None:
-                stats["translation_error"] = representative_error
-            translated_documents.append(
-                replace(
-                    document,
-                    translation_status=TRANSLATION_STATUS_FAILED,
-                    translation_error=representative_error,
-                )
+            failed_attempts.append(timed_out_attempt)
+            _record_translation_provider_error(
+                provider_errors,
+                provider_stats,
+                attempt=timed_out_attempt,
             )
+
+        if translated:
+            continue
+
+        representative_error = (
+            failed_attempts[-1].error
+            if failed_attempts
+            else TRANSLATION_ERROR_GENERATION_FAILED
+        )
+        stats["translation_failed"] += 1
+        if stats["translation_error"] is None:
+            stats["translation_error"] = representative_error
+        translated_documents.append(
+            replace(
+                document,
+                translation_status=TRANSLATION_STATUS_FAILED,
+                translation_error=representative_error,
+            )
+        )
 
     stats["translation_provider_error_breakdown"] = dict(provider_errors)
     stats["translation_provider_stats"] = provider_stats
@@ -2241,12 +2270,65 @@ def _summarize_ingestion_run(payload: dict[str, Any] | None) -> dict[str, Any] |
         "finished_at": payload.get("finished_at"),
         "status": payload.get("status"),
         "indexed": payload.get("indexed"),
+        "errors": payload.get("errors"),
         "translation_succeeded": payload.get("translation_succeeded"),
         "translation_failed": payload.get("translation_failed"),
         "translation_openai_fallback_allowed": payload.get(
             "translation_openai_fallback_allowed"
         ),
     }
+
+
+def _parse_ingestion_count(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized.isdecimal():
+            return None
+        return int(normalized)
+    return None
+
+
+def _has_usable_ingestion_result(payload: dict[str, Any] | None) -> bool:
+    if not payload or str(payload.get("status") or "").strip().lower() not in {
+        "success",
+        "partial",
+    }:
+        return False
+    indexed = _parse_ingestion_count(payload.get("indexed"))
+    return indexed is not None and indexed > 0
+
+
+def _buy_precheck_ingestion_failure_code(payload: dict[str, Any]) -> str:
+    indexed = _parse_ingestion_count(payload.get("indexed"))
+    if indexed is None:
+        return "INGESTION_INDEXED_INVALID"
+    if indexed <= 0:
+        return "INGESTION_INDEXED_NO_NEWS"
+    return "INGESTION_STATUS_UNUSABLE"
+
+
+def _normalize_buy_precheck_ingestion_result(stats: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(stats)
+    parsed_indexed = _parse_ingestion_count(normalized.get("indexed"))
+    indexed = parsed_indexed if parsed_indexed is not None else 0
+    parsed_errors = _parse_ingestion_count(normalized.get("errors"))
+    errors = parsed_errors if parsed_errors is not None else 1
+
+    status = str(normalized.get("status") or "").strip().lower()
+    if indexed <= 0:
+        status = "failed"
+    elif not status:
+        status = "partial" if errors > 0 else "success"
+    elif status == "success" and errors > 0:
+        status = "partial"
+    normalized["status"] = status
+    normalized["indexed"] = indexed
+    normalized["errors"] = errors
+    return normalized
 
 
 async def _fetch_latest_ingestion_run() -> dict[str, Any] | None:
@@ -2286,7 +2368,11 @@ async def refresh_market_news_for_buy_precheck_if_stale(
     latest_at = _parse_ingestion_datetime((latest or {}).get("finished_at"))
     latest_summary = _summarize_ingestion_run(latest)
     now = datetime.now(UTC)
-    if latest_at and latest_at >= now - timedelta(minutes=max_age_minutes):
+    if (
+        latest_at
+        and latest_at >= now - timedelta(minutes=max_age_minutes)
+        and _has_usable_ingestion_result(latest)
+    ):
         return {
             "enabled": True,
             "refreshed": False,
@@ -2311,12 +2397,27 @@ async def refresh_market_news_for_buy_precheck_if_stale(
             "latest_ingestion": latest_summary,
         }
 
+    normalized_stats = _normalize_buy_precheck_ingestion_result(stats)
+    if not _has_usable_ingestion_result(normalized_stats):
+        return {
+            "enabled": True,
+            "refreshed": False,
+            "reason": "refresh_failed",
+            "error": _buy_precheck_ingestion_failure_code(stats),
+            "max_age_minutes": max_age_minutes,
+            "latest_ingestion": _summarize_ingestion_run(normalized_stats),
+        }
+
     return {
         "enabled": True,
         "refreshed": True,
-        "reason": "stale_or_missing",
+        "reason": (
+            "stale_or_missing_partial"
+            if normalized_stats["status"] == "partial"
+            else "stale_or_missing"
+        ),
         "max_age_minutes": max_age_minutes,
-        "latest_ingestion": _summarize_ingestion_run(stats),
+        "latest_ingestion": _summarize_ingestion_run(normalized_stats),
     }
 
 
@@ -2465,6 +2566,7 @@ async def run_market_news_ingestion_job(
             except Exception:
                 logger.exception("Failed to delete expired market_news documents.")
                 stats["errors"] += 1
+        stats["status"] = _resolve_ingestion_run_status(stats, source_health)
         try:
             finished_at = datetime.now(UTC)
             stats["finished_at"] = finished_at.isoformat()
