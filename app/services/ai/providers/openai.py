@@ -7,9 +7,12 @@ from pydantic import BaseModel
 
 from app.core.config import settings
 from app.services.ai.providers.base import (
+    AI_PROVIDER_HTTP_TIMEOUT_SECONDS,
     AIProviderRateLimitError,
+    AIProviderTimeoutError,
     SYSTEM_PROMPT,
     BaseAIAnalyzer,
+    await_with_provider_deadline,
     is_provider_rate_limit_error,
     resolve_provider_block_until,
 )
@@ -62,11 +65,20 @@ class OpenAIAnalyzer(BaseAIAnalyzer):
 
     def _build_chat_model(self) -> ChatOpenAI:
         self._ensure_client_available()
-        return ChatOpenAI(model=self.model, api_key=self.api_key)
+        return ChatOpenAI(
+            model=self.model,
+            api_key=self.api_key,
+            timeout=AI_PROVIDER_HTTP_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
 
     def _build_async_client(self) -> AsyncOpenAI:
         self._ensure_client_available()
-        return AsyncOpenAI(api_key=self.api_key)
+        return AsyncOpenAI(
+            api_key=self.api_key,
+            timeout=AI_PROVIDER_HTTP_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
 
     def _build_rate_limit_error(self, error: Exception) -> AIProviderRateLimitError:
         reason = "insufficient_quota" if "insufficient_quota" in str(error).lower() else "rate_limit"
@@ -79,12 +91,17 @@ class OpenAIAnalyzer(BaseAIAnalyzer):
 
     async def generate_report(self, portfolio_str: str) -> str:
         try:
-            response = await self._build_chat_model().ainvoke(
-                [
-                    SystemMessage(content=SYSTEM_PROMPT),
-                    HumanMessage(content=portfolio_str),
-                ]
+            response = await await_with_provider_deadline(
+                self._build_chat_model().ainvoke(
+                    [
+                        SystemMessage(content=SYSTEM_PROMPT),
+                        HumanMessage(content=portfolio_str),
+                    ]
+                ),
+                provider="openai",
             )
+        except AIProviderTimeoutError:
+            raise
         except Exception as error:
             if is_provider_rate_limit_error("openai", error):
                 raise self._build_rate_limit_error(error) from error
@@ -111,11 +128,16 @@ class OpenAIAnalyzer(BaseAIAnalyzer):
 
         client = self._build_async_client()
         try:
-            response = await client.embeddings.create(
-                model=OPENAI_EMBEDDING_MODEL,
-                input=texts,
-                dimensions=OPENAI_EMBEDDING_DIMENSION,
+            response = await await_with_provider_deadline(
+                client.embeddings.create(
+                    model=OPENAI_EMBEDDING_MODEL,
+                    input=texts,
+                    dimensions=OPENAI_EMBEDDING_DIMENSION,
+                ),
+                provider="openai",
             )
+        except AIProviderTimeoutError:
+            raise
         except Exception as error:
             if is_provider_rate_limit_error("openai", error):
                 raise self._build_rate_limit_error(error) from error
@@ -153,12 +175,17 @@ class OpenAIAnalyzer(BaseAIAnalyzer):
     ) -> StructuredResponseT:
         try:
             structured_model = self._build_chat_model().with_structured_output(response_model)
-            result = await structured_model.ainvoke(
-                [
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=user_prompt),
-                ]
+            result = await await_with_provider_deadline(
+                structured_model.ainvoke(
+                    [
+                        SystemMessage(content=system_prompt),
+                        HumanMessage(content=user_prompt),
+                    ]
+                ),
+                provider="openai",
             )
+        except AIProviderTimeoutError:
+            raise
         except Exception as error:
             if is_provider_rate_limit_error("openai", error):
                 raise self._build_rate_limit_error(error) from error
