@@ -1,5 +1,7 @@
+import asyncio
 import math
 import re
+from collections.abc import Awaitable
 from datetime import UTC, datetime, timedelta
 from typing import Protocol, TypeVar
 from zoneinfo import ZoneInfo
@@ -19,6 +21,9 @@ StructuredResponseT = TypeVar("StructuredResponseT", bound=BaseModel)
 DEFAULT_RATE_LIMIT_COOLDOWN_SECONDS = 300
 OPENAI_INSUFFICIENT_QUOTA_BLOCK_SECONDS = 24 * 60 * 60
 PACIFIC_TIMEZONE = ZoneInfo("America/Los_Angeles")
+AI_PROVIDER_HTTP_TIMEOUT_SECONDS = 30.0
+AI_NEWS_TRANSLATION_TOTAL_TIMEOUT_SECONDS = 60.0
+DeadlineResultT = TypeVar("DeadlineResultT")
 
 
 class AIProviderRateLimitError(RuntimeError):
@@ -36,6 +41,32 @@ class AIProviderRateLimitError(RuntimeError):
         self.provider = provider
         self.reason = reason
         self.blocked_until = blocked_until
+
+
+class AIProviderTimeoutError(RuntimeError):
+    """애플리케이션 provider deadline을 초과한 경우."""
+
+    def __init__(self, provider: str, timeout_seconds: float) -> None:
+        super().__init__(
+            f"{provider} provider 호출이 {timeout_seconds:g}초 제한을 초과했습니다."
+        )
+        self.provider = provider
+        self.timeout_seconds = timeout_seconds
+
+
+async def await_with_provider_deadline(
+    awaitable: Awaitable[DeadlineResultT],
+    *,
+    provider: str,
+    timeout_seconds: float = AI_PROVIDER_HTTP_TIMEOUT_SECONDS,
+) -> DeadlineResultT:
+    """SDK 설정과 독립적인 애플리케이션 수준 단일 호출 제한입니다."""
+
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            return await awaitable
+    except TimeoutError as exc:
+        raise AIProviderTimeoutError(provider, timeout_seconds) from exc
 
 
 def utc_now() -> datetime:
