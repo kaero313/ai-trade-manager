@@ -20,11 +20,10 @@ class SlackClient:
     async def send_message(
         self,
         text: str,
-        webhook_url: str | None = None,
         username: str | None = None,
         icon_emoji: str | None = None,
     ) -> None:
-        url = webhook_url or self.webhook_url
+        url = self.webhook_url
         if not url:
             logger.debug("Slack webhook missing; skip send")
             return
