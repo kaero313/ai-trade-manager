@@ -7,9 +7,12 @@ from pydantic import BaseModel
 
 from app.core.config import settings
 from app.services.ai.providers.base import (
+    AI_PROVIDER_HTTP_TIMEOUT_SECONDS,
     AIProviderRateLimitError,
+    AIProviderTimeoutError,
     SYSTEM_PROMPT,
     BaseAIAnalyzer,
+    await_with_provider_deadline,
     is_provider_rate_limit_error,
     resolve_provider_block_until,
 )
@@ -35,7 +38,17 @@ def _normalize_gemini_error(error: Exception) -> str:
 class GeminiAnalyzer(BaseAIAnalyzer):
     def __init__(self, model: str | None = None) -> None:
         self.model = (model or GEMINI_TEXT_MODEL).strip() or GEMINI_TEXT_MODEL
-        self.client = genai.Client(api_key=settings.GEMINI_API_KEY) if settings.GEMINI_API_KEY else None
+        self.client = (
+            genai.Client(
+                api_key=settings.GEMINI_API_KEY,
+                http_options=types.HttpOptions(
+                    timeout=int(AI_PROVIDER_HTTP_TIMEOUT_SECONDS * 1000),
+                    retry_options=types.HttpRetryOptions(attempts=1),
+                ),
+            )
+            if settings.GEMINI_API_KEY
+            else None
+        )
 
     def close(self) -> None:
         if self.client is not None:
@@ -77,12 +90,15 @@ class GeminiAnalyzer(BaseAIAnalyzer):
         self._ensure_client_available()
 
         try:
-            response = await self.client.aio.models.generate_content(
-                model=self.model,
-                contents=portfolio_str,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
+            response = await await_with_provider_deadline(
+                self.client.aio.models.generate_content(
+                    model=self.model,
+                    contents=portfolio_str,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT,
+                    ),
                 ),
+                provider="gemini",
             )
 
             response_text = getattr(response, "text", None)
@@ -90,6 +106,8 @@ class GeminiAnalyzer(BaseAIAnalyzer):
                 return response_text
 
             return "Gemini 분석 응답이 비어 있습니다."
+        except AIProviderTimeoutError:
+            raise
         except Exception as error:
             if is_provider_rate_limit_error("gemini", error):
                 raise self._build_rate_limit_error(error) from error
@@ -107,14 +125,19 @@ class GeminiAnalyzer(BaseAIAnalyzer):
         self._ensure_client_available()
 
         try:
-            response = await self.client.aio.models.embed_content(
-                model=GEMINI_EMBEDDING_MODEL,
-                contents=texts,
-                config=types.EmbedContentConfig(
-                    task_type=task_type,
-                    output_dimensionality=GEMINI_EMBEDDING_DIMENSION,
+            response = await await_with_provider_deadline(
+                self.client.aio.models.embed_content(
+                    model=GEMINI_EMBEDDING_MODEL,
+                    contents=texts,
+                    config=types.EmbedContentConfig(
+                        task_type=task_type,
+                        output_dimensionality=GEMINI_EMBEDDING_DIMENSION,
+                    ),
                 ),
+                provider="gemini",
             )
+        except AIProviderTimeoutError:
+            raise
         except Exception as error:
             if is_provider_rate_limit_error("gemini", error):
                 raise self._build_rate_limit_error(error) from error
@@ -147,15 +170,20 @@ class GeminiAnalyzer(BaseAIAnalyzer):
         self._ensure_client_available()
 
         try:
-            response = await self.client.aio.models.generate_content(
-                model=self.model,
-                contents=user_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    response_mime_type="application/json",
-                    response_schema=response_model,
+            response = await await_with_provider_deadline(
+                self.client.aio.models.generate_content(
+                    model=self.model,
+                    contents=user_prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                        response_mime_type="application/json",
+                        response_schema=response_model,
+                    ),
                 ),
+                provider="gemini",
             )
+        except AIProviderTimeoutError:
+            raise
         except Exception as error:
             if is_provider_rate_limit_error("gemini", error):
                 raise self._build_rate_limit_error(error) from error
