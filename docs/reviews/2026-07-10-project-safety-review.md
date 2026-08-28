@@ -57,7 +57,7 @@ SQLAlchemy 2.0 비동기 사용, live BUY 잠금, shadow mode, Entry Gate, 2차 
 | `python -m pytest -q` | 123 passed |
 | `python -m ruff check .` | 통과 |
 | `frontend/`에서 `npm run lint` | 통과 |
-| `frontend/`에서 `npm run build` | 통과, 단일 JS 청크 약 1.2 MB 경고 |
+| `frontend/`에서 `npm run build` | 통과, 단일 JS 청크 약 1.2 MB 경고 (2026-07-24 code-splitting으로 해소, 최대 청크 480 kB) |
 | Alembic revision graph | 단일 head `d3a9f7c1b2e4` |
 | `frontend/`에서 `npm audit --omit=dev` | 10건, high 7건 |
 | 프론트엔드 테스트 | 테스트 스크립트와 테스트 파일 없음 |
@@ -113,6 +113,56 @@ offline SQL 검증과 PostgreSQL 왕복 테스트(중복 차단→정리→성�
 Ruff를 통과했습니다. 실제 PostgreSQL 16 왕복(신규 postgres marker 1개 포함)과 원격 CI, push는
 실행하지 않았습니다. Python 산술의 Decimal 전환은 별도 후속 범위로 남습니다.
 
+2026-07-23 ATM-P2-005는 설치 경로 어디에서도 사용되지 않으면서 `pyproject.toml`과 상이한 최소
+버전을 담고 있던 `requirements.txt`를 제거해 `pyproject.toml`을 Python 의존성 단일 SSOT로
+정리했습니다(`opensearch-py`는 더 엄격한 `>=2.8.0`으로 통일, `Dockerfile.local` COPY 갱신).
+frontend는 `npm audit fix`로 production 취약점 10건(high 7건: react-router 비인증 RCE·open
+redirect, vite path traversal, rollup arbitrary file write 등)을 semver 호환 범위 안에서 모두
+해소해 전체 audit 0건이 됐습니다. ESLint, Vitest `125 passed`(26 파일), production build를
+통과했습니다. Python lock 파일 도입은 툴링 결정이 필요한 잔여 범위이며 원격 CI와 push는
+실행하지 않았습니다.
+
+2026-07-23 ATM-P2-003은 `news_scraper._parse_feed_entries()`의 timeout 없는
+`feedparser.parse(URL)` fetch를 명시적 10초 timeout HTTP 요청 + bytes 파싱으로 교체하고,
+async 경로에 남아 있던 동기 호출 6곳 — news 라우트 2곳(`fetch_crypto_news`)과 scheduler의
+Slack 발송 4곳(포트폴리오 알림·모닝 브리핑) — 을 `asyncio.to_thread`로 전환했습니다.
+AI 분석·실주문 알림 경로는 기준 시점부터 이미 worker thread를 사용하고 있었습니다.
+targeted `18 passed`, backend 비-PostgreSQL `629 passed, 80 deselected`, Ruff를 통과했습니다.
+원격 CI와 push는 실행하지 않았습니다.
+
+2026-07-24 테스트 수집 순서 결합과 lifespan 종료 경로를 정리했습니다. 저장소 루트에 남아 있던
+`test_chat_sessions.py`·`test_gemini_opensearch_rag.py`를 `tests/`로 이동했고, 앞의 파일이
+import 시점에 전역 `sys.modules`에 등록하던 `app.core.scheduler`·`app.services.chat.orchestrator`
+stub을 제거해 실제 모듈을 import하도록 바꿨습니다. 이 stub 때문에 존재하던 방어 코드 3곳
+(`test_scheduler_runtime_stop.py`·`test_slack_portfolio_alert_scheduler.py`의 stub 판별 후
+`sys.modules` 삭제, `test_ai_provider_sdk_deadline.py`의 orchestrator 격리 로더)도 함께 제거해
+수집 순서에 따라 결과가 달라지던 결합을 없앴습니다. 또한 `app/main.py` lifespan이 종료 시
+`trading_engine._is_running`을 직접 대입하던 부분을 공개 `TradingEngine.stop()`과 `is_running`
+프로퍼티로 대체하고 `tests/test_trading_engine_stop.py`를 추가했습니다. targeted `52 passed`,
+backend 비-PostgreSQL `631 passed, 80 deselected`, Ruff를 통과했습니다. schema·Alembic head·
+frontend·공개 REST 계약은 변경하지 않았고 원격 CI와 push는 실행하지 않았습니다.
+
+2026-07-24 frontend code-splitting으로 UI-001 잔여 최적화 Delta를 해소했습니다. `App.tsx`의 5개
+페이지를 `React.lazy()`+`Suspense`(신규 `RouteFallback`)로 라우트 단위 지연 로딩하고,
+`vite.config.ts` `manualChunks`로 `recharts`(+d3)·`lightweight-charts`를 leaf 청크로 격리했습니다.
+단일 1,312 kB(gzip 395 kB) 청크가 최대 480 kB(`index`, gzip 158 kB)로 분할돼 500 kB 경고가
+사라졌고, recharts 청크(389 kB / gzip 113 kB)는 초기 대시보드 경로에서 완전히 지연됩니다. ESLint,
+Vitest `125 passed`(26 파일), production build를 통과했습니다. backend·schema·Alembic head·공개 REST
+계약은 변경하지 않았고 browser viewport 증거·원격 CI·push는 실행하지 않았습니다.
+
+2026-07-29 health 엔드포인트를 liveness·readiness로 분리하고 `backups/`를 Git 추적에서
+제외했습니다. 기존 `GET /api/health`는 DB `SELECT 1`에 의존해 사실상 readiness였고
+`docker-compose.local.yml`의 backend healthcheck가 이를 그대로 사용해 프로세스 장애와 DB 장애를
+구분하지 못했습니다. 의존성이 없는 `GET /api/health/live`와, DB 실패를 처리되지 않은 500이 아니라
+`503 + {"status": "unavailable"}`로 알리는 `GET /api/health/ready`를 추가하고 compose healthcheck를
+readiness로 지정했습니다. 세 경로 모두 `HEALTH_EXEMPT` 정책과 공개 allowlist에 등록해 라우트 보안
+불변식(실제 라우트 59→61개, 정책 1:1 매핑)을 갱신했고, DB 장애 상황에서 liveness `200`과 readiness
+`503`을 고정하는 테스트를 추가했습니다. readiness 실패 로그는 기존 비노출 계약대로 예외 원문·
+traceback 없이 예외 타입만 남깁니다. `.gitignore`에는 `backups/`·`*.dump`·`*.sql.gz`를 추가했고
+기존 추적 파일과 겹치지 않음을 확인했습니다. backend 비-PostgreSQL `632 passed, 80 deselected`와
+Ruff를 통과했습니다. 기존 `GET /api/health` 응답 계약·schema·Alembic head·frontend는 변경하지
+않았고 Docker 실기동 검증과 원격 CI·push는 실행하지 않았습니다.
+
 ## 3. 발견사항 요약
 
 | ID | 우선순위 | 제목 | 상태 | 범위 결정 | 실행 담당 |
@@ -135,9 +185,9 @@ Ruff를 통과했습니다. 실제 PostgreSQL 16 왕복(신규 postgres marker 1
 | `ATM-P1-010B` | P1 | BUY 직전 뉴스 최신화 상태만 2차 prompt에 전달되고 실제 최신 뉴스 내용은 전달되지 않음 | 구현·로컬 backend 회귀 완료 / 원격 CI 미실행 | 사용자 | Codex |
 | `ATM-P2-001` | P2 | Float 기반 금융 값과 DB 무결성 제약이 부족함 | NUMERIC(38,18) 전환·포지션 유일 제약 migration 구현 (2026-07-23) / 로컬 PostgreSQL·원격 CI 미실행 | 사용자 | Codex |
 | `ATM-P2-002` | P2 | 프로세스 메모리 캐시와 단일 프로세스 스케줄러에 의존함 | 대기 | 사용자 | Codex |
-| `ATM-P2-003` | P2 | 비동기 경로 안에 동기 RSS·Slack 네트워크 호출이 있음 | 범위 확정 대기 | 사용자 | Codex |
+| `ATM-P2-003` | P2 | 비동기 경로 안에 동기 RSS·Slack 네트워크 호출이 있음 | RSS timeout fetch·worker thread 전환 구현 (2026-07-23) / 원격 CI 미실행 | 사용자 | Codex |
 | `ATM-P2-004` | P2 | CI, 프론트 테스트, fresh DB·복구 검증이 없음 | 프론트 테스트·로컬 PG·복원 리허설 부분 해소 / 원격 CI·E2E 대기 | 사용자 | Codex |
-| `ATM-P2-005` | P2 | 의존성 고정과 취약점 관리가 부족함 | 범위 확정 대기 | 사용자 | Codex |
+| `ATM-P2-005` | P2 | 의존성 고정과 취약점 관리가 부족함 | requirements.txt 중복 제거·npm 취약점 0건 (2026-07-23) / Python lock 도입·원격 CI 대기 | 사용자 | Codex |
 
 ## 4. P0 상세 판단
 
@@ -292,9 +342,9 @@ Ruff를 통과했습니다. 실제 PostgreSQL 16 왕복(신규 postgres marker 1
 | `ATM-P1-010B` | BUY 직전 수집을 수행해도 precheck prompt에는 refresh 상태만 들어가고 실제 최신 기사 내용은 2차 판단에 전달되지 않았습니다. 2026-07-14 최신화 후 별도 뉴스 조회와 제한된 canonical snapshot을 추가했습니다. | 최신화 성공·실패·비활성과 무관하게 최대 3건의 뉴스 근거를 prompt/hash에 고정하며, 뉴스 부재·조회 실패만으로 자동 veto하지 않습니다. |
 | `ATM-P2-001` | 기준 시점에는 `app/models/domain.py`가 가격·수량·손익에 `Float`를 사용하고 `Position`에 `(asset_id, is_paper)` unique 제약이 없었습니다. 2026-07-23 migration `b7e3f9a4c6d2`로 positions·order_history·portfolio_snapshots의 금융 컬럼 6개를 `NUMERIC(38, 18)`로 전환하고 `uq_positions_asset_id_is_paper` 유일 제약을 추가했습니다. 중복 포지션이 있으면 자동 병합 없이 migration이 중단됩니다(fail-closed). Python 소비 코드는 `asdecimal=False`로 float 인터페이스를 유지합니다. | DB 저장·비교·집계는 이진 부동소수점 오차 없이 수행되고 동시 생성 중복 포지션은 제약이 차단합니다. Python 산술의 Decimal 전환(paper 엔진·집계 경로)은 별도 후속 범위입니다. P0-001 주문 원장은 이미 `NUMERIC(38, 18)`+Decimal을 사용합니다. |
 | `ATM-P2-002` | `app/api/routes/markets.py`, `app/api/routes/news.py`, `app/services/news_scraper.py`에 프로세스 메모리 캐시가 있고, FastAPI lifespan마다 scheduler와 거래 loop를 시작합니다. | worker별 상태 불일치와 다중 프로세스 중복 작업이 가능합니다. |
-| `ATM-P2-003` | `news_scraper._parse_feed_entries()`는 동기 `feedparser.parse(URL)`을 async API에서 호출하며, 동기 Slack SDK 호출도 async 스케줄 경로에 존재합니다. | 외부 지연이 이벤트 루프와 주문·스케줄 처리를 막을 수 있습니다. |
+| `ATM-P2-003` | 기준 시점에는 `news_scraper._parse_feed_entries()`가 동기 `feedparser.parse(URL)`을 async API에서 호출했고, 동기 Slack SDK 호출도 async 스케줄 경로에 존재했습니다. 2026-07-23 RSS 수집을 명시적 timeout(10초)을 가진 HTTP fetch + bytes 파싱으로 교체하고, news 라우트 2곳과 scheduler의 Slack 발송 4곳을 `asyncio.to_thread` worker thread 실행으로 전환했습니다. AI 분석·실주문 알림 경로는 기준 시점부터 이미 worker thread를 사용하고 있었습니다. | RSS·Slack 외부 지연이 이벤트 루프와 주문·스케줄 처리를 막지 않으며, timeout 없는 feed fetch로 인한 worker thread 고갈도 방지됩니다. |
 | `ATM-P2-004` | 기준 시점에는 frontend test script·테스트 파일과 `.github/workflows`가 없었습니다. 2026-07-15에는 frontend 119개, 로컬 PostgreSQL 16.12 migration 왕복, 외부 snapshot 복원 리허설까지 추가됐지만 원격 workflow·Caddy·운영 restore E2E는 없습니다. | 로컬 회귀 차단 능력은 개선됐지만 원격 CI와 실제 배포 경로의 자동 증거는 여전히 부족합니다. |
-| `ATM-P2-005` | `pyproject.toml`은 대부분 하한 버전만 지정하고 Python lock이 없습니다. `requirements.txt`는 중복·상이한 최소 버전을 포함하며 npm production audit에서 high 취약점이 확인됐습니다. | 빌드 재현성과 공급망 보안이 시간에 따라 달라집니다. |
+| `ATM-P2-005` | 기준 시점에는 `pyproject.toml`이 대부분 하한 버전만 지정하고 Python lock이 없었으며, `requirements.txt`는 중복·상이한 최소 버전을 포함하고 npm production audit에서 high 취약점이 확인됐습니다. 2026-07-23 설치 경로에서 사용되지 않던 `requirements.txt`를 제거해 `pyproject.toml`을 단일 SSOT로 통합(`opensearch-py>=2.8.0`으로 상향 일치)하고, `npm audit fix`로 production 취약점 10건을 모두 해소했습니다. | Python 의존성 최소 버전의 이중 정의가 사라지고 npm 전체 audit이 0건입니다. Python lock 파일(pip-tools/uv 등 툴링 결정 필요)은 잔여 범위입니다. |
 
 ## 6. P1/P2 핵심 개선 방향
 
@@ -339,8 +389,12 @@ Ruff를 통과했습니다. 실제 PostgreSQL 16 왕복(신규 postgres marker 1
 - `alembic.ini`의 비밀 없는 표준 설정을 추적하고 clean clone Docker build를 검증합니다.
 - one-shot migration 서비스가 성공한 뒤 backend가 시작되도록 구성합니다.
 - Caddy Basic Auth와 충돌하지 않는 health endpoint를 만들고 liveness, readiness, operational health를
-  분리합니다.
-- `backups/`를 Git에서 제외하고 권한, 보존, 암호화, 정기 restore drill을 추가합니다.
+  분리합니다. 2026-07-29 의존성 없는 `GET /api/health/live`와 DB 실패를 `503`으로 알리는
+  `GET /api/health/ready`를 분리하고 compose healthcheck를 readiness로 지정했습니다. 외부 API·
+  스케줄러 상태를 포함한 operational health 분리는 잔여 범위입니다.
+- `backups/`를 Git에서 제외하고 권한, 보존, 암호화, 정기 restore drill을 추가합니다. 2026-07-29
+  `.gitignore`에 `backups/`·`*.dump`·`*.sql.gz`를 추가해 덤프가 리포에 실리지 않도록 했습니다.
+  권한·보존·암호화·정기 restore drill은 잔여 범위입니다.
 - Python lock, dependency audit, GitHub Actions 품질 게이트를 도입합니다.
 
 ### 프론트엔드 신뢰성
