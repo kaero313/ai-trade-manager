@@ -6,6 +6,7 @@ import httpx
 
 from app.api.routes import news as news_route
 from app.services.ai.provider_router import resolve_provider_candidates
+from app.services.ai.providers.base import AIProviderTimeoutError
 from app.services.rag import ingestion as rag_ingestion
 from app.services.rag.opensearch_client import (
     EMBEDDING_DIMENSION,
@@ -700,6 +701,93 @@ def test_translate_news_documents_keeps_original_when_all_providers_fail(monkeyp
     assert documents[0].translation_error == "generation_failed"
     assert stats["translation_failed"] == 1
     assert stats["translation_error"] == "generation_failed"
+
+
+def test_translation_fallback_uses_one_total_deadline_and_closes_analyzers(
+    monkeypatch,
+) -> None:
+    closed: list[str] = []
+
+    class FailingGeminiAnalyzer:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def generate_structured_analysis(self, **_kwargs: object):
+            raise RuntimeError("gemini unavailable")
+
+        async def aclose(self) -> None:
+            closed.append("gemini")
+
+    class HangingOpenAIAnalyzer:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def generate_structured_analysis(self, **_kwargs: object):
+            await asyncio.Event().wait()
+
+        async def aclose(self) -> None:
+            closed.append("openai")
+
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-gemini")
+    monkeypatch.setattr(rag_ingestion.settings, "OPENAI_API_KEY", "test-openai")
+    monkeypatch.setattr(rag_ingestion, "GeminiAnalyzer", FailingGeminiAnalyzer)
+    monkeypatch.setattr(rag_ingestion, "OpenAIAnalyzer", HangingOpenAIAnalyzer)
+    monkeypatch.setattr(rag_ingestion, "AI_NEWS_TRANSLATION_TOTAL_TIMEOUT_SECONDS", 0.05)
+    document = rag_ingestion.RawNewsDocument(
+        title="Deadline test",
+        content="Fallback must share one total deadline.",
+        published_at=datetime(2026, 7, 14, 3, 0, tzinfo=UTC),
+        source="rss:example.com",
+        link="https://example.com/news/deadline",
+    )
+
+    async def run_translation():
+        loop = asyncio.get_running_loop()
+        started_at = loop.time()
+        result = await rag_ingestion._translate_news_documents([document])
+        return result, loop.time() - started_at
+
+    (documents, stats), elapsed = asyncio.run(run_translation())
+
+    assert elapsed < 0.20
+    assert closed == ["gemini", "openai"]
+    assert documents[0].translation_status == rag_ingestion.TRANSLATION_STATUS_FAILED
+    assert stats["translation_failed"] == 1
+    assert stats["translation_provider_error_breakdown"] == {
+        "gemini:generation_failed": 1,
+        "openai:generation_failed": 1,
+    }
+
+
+def test_embedding_provider_timeout_is_failed_and_analyzer_is_closed(monkeypatch) -> None:
+    closed = 0
+
+    class TimeoutAnalyzer:
+        async def generate_embeddings(self, *_args: object, **_kwargs: object):
+            raise AIProviderTimeoutError("gemini", 0.02)
+
+        async def aclose(self) -> None:
+            nonlocal closed
+            closed += 1
+
+    monkeypatch.setattr(rag_ingestion.settings, "GEMINI_API_KEY", "test-gemini")
+    monkeypatch.setattr(
+        rag_ingestion,
+        "_build_embedding_analyzer",
+        lambda _provider: TimeoutAnalyzer(),
+    )
+
+    attempt = asyncio.run(
+        rag_ingestion._attempt_embedding_provider(
+            rag_ingestion.EMBEDDING_PROVIDER_GEMINI,
+            ["embedding text"],
+            task_type="RETRIEVAL_DOCUMENT",
+        )
+    )
+
+    assert attempt.error == rag_ingestion.EMBEDDING_ERROR_GENERATION_FAILED
+    assert attempt.embeddings is None
+    assert closed == 1
 
 
 def test_build_embedding_text_uses_translated_chunk_text() -> None:
