@@ -1,12 +1,5 @@
-# ruff: noqa: E402
-
 from datetime import UTC, datetime
-import sys
 from types import SimpleNamespace
-
-stub_scheduler = sys.modules.get("app.core.scheduler")
-if stub_scheduler is not None and not hasattr(stub_scheduler, "_build_slack_portfolio_alert_job_specs"):
-    del sys.modules["app.core.scheduler"]
 
 from app.core.scheduler import _build_slack_portfolio_alert_blocks
 from app.core.scheduler import _build_slack_portfolio_alert_job_specs
