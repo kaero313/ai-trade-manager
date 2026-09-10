@@ -14,9 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.repository import get_recent_chat_messages
 from app.db.repository import save_chat_message
+from app.db.session import AsyncSessionLocal
 from app.models.schemas import ReviewerDecision
 from app.services.ai.provider_router import AIProviderCandidate
 from app.services.ai.provider_router import AIProviderRouter
+from app.services.ai.providers.base import AI_PROVIDER_HTTP_TIMEOUT_SECONDS
 from app.services.chat.tools import build_chat_tools
 
 SupervisorRoute = Literal["rag_agent", "quant_agent", "ops_agent", "FINISH"]
@@ -100,7 +102,12 @@ def _build_chat_model(candidate: AIProviderCandidate) -> Any:
             raise RuntimeError("OPENAI_API_KEY가 설정되지 않아 Chat Orchestrator를 실행할 수 없습니다.")
         from langchain_openai import ChatOpenAI
 
-        return ChatOpenAI(model=candidate.model, api_key=settings.OPENAI_API_KEY)
+        return ChatOpenAI(
+            model=candidate.model,
+            api_key=settings.OPENAI_API_KEY,
+            timeout=AI_PROVIDER_HTTP_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
 
     if not settings.GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY 가 설정되지 않아 Chat Orchestrator 를 실행할 수 없습니다.")
@@ -116,6 +123,8 @@ def _build_chat_model(candidate: AIProviderCandidate) -> Any:
         model=candidate.model,
         temperature=0,
         google_api_key=settings.GEMINI_API_KEY,
+        request_timeout=AI_PROVIDER_HTTP_TIMEOUT_SECONDS,
+        retries=1,
     )
 
 
@@ -289,6 +298,12 @@ async def _run_worker_agent(
 
     collapsed_messages = _collapse_messages_for_gemini(messages)
     conversation: list[BaseMessage] = [SystemMessage(content=system_prompt), *collapsed_messages]
+    # supervisor 가 위임하면 마지막이 AIMessage 로 끝난다. Gemini 는 model turn 으로 끝나는
+    # 요청을 거부하므로 supervisor_node 와 같은 방식으로 사용자 turn 을 하나 붙인다.
+    if collapsed_messages and isinstance(collapsed_messages[-1], AIMessage):
+        conversation.append(
+            HumanMessage(content="위 요청을 처리하기 위해 필요한 도구를 사용하고, 결과를 한국어로 정리해 주세요.")
+        )
 
     for _ in range(MAX_TOOL_CALL_ROUNDS):
         response = await _ainvoke_tool_model(state, list(tools_by_name.values()), conversation)
@@ -544,6 +559,25 @@ def build_chat_graph():
 chat_orchestrator_graph = build_chat_graph()
 
 
+async def _stream_graph_events(
+    session_id: str,
+    input_messages: list[BaseMessage],
+) -> AsyncGenerator[dict[str, Any], None]:
+    # 그래프는 요청 세션과 다른 세션을 써야 한다. astream_events 는 그래프를 별도 태스크로
+    # 돌리므로, 소비자 쪽 save_chat_message 와 노드의 SQL 이 한 커넥션에서 겹친다.
+    async with AsyncSessionLocal() as graph_db:
+        async for event in chat_orchestrator_graph.astream_events(
+            {
+                "session_id": session_id,
+                "messages": input_messages,
+                "next_agent": "",
+                "db": graph_db,
+            },
+            version="v2",
+        ):
+            yield event
+
+
 async def run_chat_stream(
     session_id: str,
     user_message: str,
@@ -576,15 +610,7 @@ async def run_chat_stream(
 
     final_answer_saved = False
 
-    async for event in chat_orchestrator_graph.astream_events(
-        {
-            "session_id": normalized_session_id,
-            "messages": input_messages,
-            "next_agent": "",
-            "db": db,
-        },
-        version="v2",
-    ):
+    async for event in _stream_graph_events(normalized_session_id, input_messages):
         event_name = str(event.get("event") or "")
         agent_name = _resolve_graph_agent_name(event)
         event_data = event.get("data") or {}
