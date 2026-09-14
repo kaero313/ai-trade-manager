@@ -61,3 +61,10 @@ secrets/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Claude Code 하네스 (공유 설정·역할·스킬만 추적, 로컬 설정과 검증 증거는 제외)
+.claude/*
+!.claude/settings.json
+!.claude/agents/
+!.claude/skills/
+.harness/
