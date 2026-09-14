@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "default",
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)"
+    ],
+    "ask": [
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(git reset --hard)",
+      "Bash(git reset --hard *)"
+    ],
+    "allow": [
+      "Bash(./.venv/Scripts/python.exe -m ruff check *)",
+      "Bash(./.venv/Scripts/python.exe -m pytest *)",
+      "Bash(./.venv/Scripts/python.exe scripts/verify.py *)",
+      "Bash(./.venv/Scripts/python.exe scripts/harness.py *)",
+      "Bash(./.venv/Scripts/python.exe -m alembic heads)"
+    ]
+  }
+}
