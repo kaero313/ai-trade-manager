@@ -1,0 +1,39 @@
+# 역할·모델·effort·허용 경로의 원본. 생성물 .claude/agents/*.md는 직접 편집하지 않는다.
+# 갱신: ./.venv/Scripts/python.exe scripts/harness.py render
+# lead는 대화형 세션 자신이므로 역할 파일을 만들지 않는다(AGENTS.md 참조).
+# Codex 병행 시 각 역할에 codex_model을 추가하고 scripts/harness.py에 .codex 출력을 덧붙인다.
+schema_version = 1
+
+[policy]
+lead = "starting_session"
+model_unavailable = "stop_and_report"
+git_push = "explicit_request_only"
+live_broker_calls = "explicit_request_only"
+
+[roles.scout]
+description = "실제 코드 경로와 영향 범위를 읽기 전용으로 조사한다."
+claude_model = "claude-sonnet-5"
+effort = "low"
+read_only = true
+allowed_paths = []
+
+[roles.backend]
+description = "FastAPI·DB·트레이딩 로직과 회귀 테스트를 구현한다."
+claude_model = "claude-opus-5"
+effort = "high"
+read_only = false
+allowed_paths = ["app/", "migrations/", "tests/", "docs/"]
+
+[roles.frontend]
+description = "React/Vite 대시보드와 브라우저 회귀를 구현한다."
+claude_model = "claude-sonnet-5"
+effort = "medium"
+read_only = false
+allowed_paths = ["frontend/", "docs/"]
+
+[roles.reviewer]
+description = "실주문·청산·거래 모드·인증 경계 diff를 독립 검토한다. 소스를 수정하지 않는다."
+claude_model = "claude-fable-5-1"
+effort = "high"
+read_only = true
+allowed_paths = []
