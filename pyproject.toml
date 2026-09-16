@@ -40,6 +40,9 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
 asyncio_mode = "strict"
 markers = [
   "postgres: 실제 PostgreSQL 동작과 동시성을 검증하는 통합 테스트",
