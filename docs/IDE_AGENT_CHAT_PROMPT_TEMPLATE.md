@@ -21,7 +21,7 @@ IDE agent chat에는 아래 프롬프트를 그대로 넣고, 마지막 `[사용
 - Codex가 먼저 현재 리포지토리와 비교해 `이미 구현된 내용 / 남은 Delta / 충돌 여부`를 판정하도록 지시한다.
 - 범위 밖 리팩토링, 임의의 코어 아키텍처 변경, 임의의 우회 구현을 허용하지 않는다.
 - DB 스키마, 코어 아키텍처, 외부 API 계약 변경이 필요하면 반드시 `영향 승인 필요 여부` 섹션에 명시한다.
-- 관련 변경이 있으면 README, `docs/ARCHITECTURE.md`, `docs/DATABASE.md`, `Agents.md` 동기화 여부를 명시한다.
+- 관련 변경이 있으면 README, `docs/ARCHITECTURE.md`, `docs/DATABASE.md`, `AGENTS.md` 동기화 여부를 명시한다.
 - 수용 기준은 테스트 가능하고 관찰 가능한 문장으로 작성한다.
 - 검증 항목은 변경 범위에 따라 구체적으로 적는다.
 - 백엔드 변경은 `pytest`, `ruff` 기준을 반영한다.
@@ -56,7 +56,7 @@ IDE agent chat에는 아래 프롬프트를 그대로 넣고, 마지막 `[사용
 의존 관계가 있는 작업만 순차 수행하고, 독립 작업만 병렬화하라.
 동일 파일 동시 수정은 피하라.
 DB 스키마, 코어 아키텍처, 외부 API 계약 충돌이 있으면 임의 우회 구현하지 말고 Gemini 재검토로 승격하라.
-관련 변경이 있으면 README, docs/ARCHITECTURE.md, docs/DATABASE.md, Agents.md를 동기화하라.
+관련 변경이 있으면 README, docs/ARCHITECTURE.md, docs/DATABASE.md, AGENTS.md를 동기화하라.
 검증을 수행하고, 커밋은 한국어 Conventional Commits의 작은 의미 단위로 정리하라.
 
 [Codex Master Prompt] {작업명}
@@ -88,7 +88,7 @@ DB 스키마, 코어 아키텍처, 외부 API 계약 충돌이 있으면 임의 
 - README:
 - docs/ARCHITECTURE.md:
 - docs/DATABASE.md:
-- Agents.md:
+- AGENTS.md:
 
 검증:
 - backend:
