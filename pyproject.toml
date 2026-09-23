@@ -53,6 +53,10 @@ markers = [
 [tool.ruff]
 line-length = 100
 
+# ruff 버전마다 기본 규칙이 달라 CI와 로컬 결과가 어긋나지 않도록 규칙을 고정한다.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
