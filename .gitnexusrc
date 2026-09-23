@@ -1,0 +1,8 @@
+{
+  "analyze": {
+    "skipAgentsMd": true,
+    "skipSkills": true,
+    "noStats": true,
+    "defaultBranch": "main"
+  }
+}

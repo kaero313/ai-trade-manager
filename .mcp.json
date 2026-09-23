@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "gitnexus": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": ["/c", "gitnexus", "mcp"],
+      "env": {
+        "DO_NOT_TRACK": "1",
+        "SCARF_ANALYTICS": "false"
+      }
+    }
+  }
+}

@@ -68,3 +68,6 @@ Thumbs.db
 !.claude/agents/
 !.claude/skills/
 .harness/
+
+# GitNexus 코드 그래프 인덱스 (로컬 생성물, 수백 MB)
+.gitnexus/
