@@ -1,7 +1,7 @@
 # 제3자 스킬 출처 표기
 
 이 디렉터리의 스킬 중 아래 두 개는 [obra/superpowers](https://github.com/obra/superpowers)(MIT License)에서 유래했다.
-같은 사용자의 hyper-vision 프로젝트 `.agents/skills/` 사본을 그대로 복사했으며, 원본 저장소와 파일 단위로 대조하지는 않았다.
+내용을 수정하지 않고 옮겼으며, 원본 저장소의 최신 파일과 한 줄씩 대조하지는 않았다.
 
 - `systematic-debugging/` — SKILL.md, root-cause-tracing.md, defense-in-depth.md, condition-based-waiting.md와 부속 파일 전부
 - `verification-before-completion/` — SKILL.md
