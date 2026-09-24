@@ -1,3 +1,4 @@
+import asyncio
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -6,6 +7,8 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import require_public_news_rate_limit
+from app.api.dependencies import require_rate_limited_admin_token
 from app.db.session import get_db
 from app.services.news_analyzer import analyze_market_sentiment
 from app.services.news_scraper import fetch_crypto_news
@@ -702,9 +705,14 @@ async def _build_rag_status_response(client: Any | None = None) -> RagStatusResp
     )
 
 
-@router.get("/", response_model=NewsResponse)
+@router.get(
+    "/",
+    response_model=NewsResponse,
+    dependencies=[Depends(require_public_news_rate_limit)],
+)
 async def get_news() -> NewsResponse:
-    payload = fetch_crypto_news()
+    # ATM-P2-003: 동기 RSS 수집이 이벤트 루프를 막지 않도록 워커 스레드에서 실행합니다.
+    payload = await asyncio.to_thread(fetch_crypto_news)
     raw_items = payload.get("items") or []
     items = _build_news_items(raw_items)
     analysis_completed_at = str(payload.get("analysis_completed_at") or "")
@@ -715,12 +723,20 @@ async def get_news() -> NewsResponse:
     )
 
 
-@router.get("/rag/status", response_model=RagStatusResponse)
+@router.get(
+    "/rag/status",
+    response_model=RagStatusResponse,
+    dependencies=[Depends(require_rate_limited_admin_token)],
+)
 async def get_rag_status() -> RagStatusResponse:
     return await _build_rag_status_response()
 
 
-@router.get("/sentiment", response_model=SentimentResponse)
+@router.get(
+    "/sentiment",
+    response_model=SentimentResponse,
+    dependencies=[Depends(require_rate_limited_admin_token)],
+)
 async def get_news_sentiment(
     force_refresh: bool = Query(False, description="true면 캐시를 무시하고 강제 재분석합니다."),
     db: AsyncSession = Depends(get_db),
@@ -731,7 +747,8 @@ async def get_news_sentiment(
         if _cache_is_valid(snapshot, now_utc) and isinstance(snapshot.get("payload"), dict):
             return SentimentResponse(**snapshot["payload"])
 
-    news_payload = fetch_crypto_news(force_refresh=True)
+    # ATM-P2-003: 동기 RSS 수집이 이벤트 루프를 막지 않도록 워커 스레드에서 실행합니다.
+    news_payload = await asyncio.to_thread(fetch_crypto_news, force_refresh=True)
     raw_items = news_payload.get("items") or []
     news_articles = _build_news_items(raw_items)
 
