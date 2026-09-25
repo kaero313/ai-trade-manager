@@ -1,15 +1,49 @@
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILES = tuple(str(PROJECT_ROOT / name) for name in (".env", ".env.prod", ".env.local"))
+DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+
+
+def parse_cors_allowed_origins(value: str | None) -> list[str]:
+    origins: list[str] = []
+    for raw_origin in str(value or "").split(","):
+        origin = raw_origin.strip()
+        if not origin:
+            continue
+        if origin == "*":
+            raise ValueError("CORS_ALLOWED_ORIGINS에는 wildcard를 사용할 수 없습니다.")
+
+        parsed = urlsplit(origin)
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(f"허용되지 않는 CORS origin 형식입니다: {origin}")
+        try:
+            parsed.port
+        except ValueError as exc:
+            raise ValueError(f"허용되지 않는 CORS origin port입니다: {origin}") from exc
+
+        normalized = f"{parsed.scheme.lower()}://{parsed.netloc.rstrip('/')}"
+        if normalized not in origins:
+            origins.append(normalized)
+    return origins
 
 
 class Settings(BaseSettings):
     app_name: str = "ai-trade-manager"
     log_level: str = "INFO"
+    cors_allowed_origins: str = DEFAULT_CORS_ALLOWED_ORIGINS
 
     upbit_access_key: str | None = None
     upbit_secret_key: str | None = None
@@ -54,6 +88,10 @@ class Settings(BaseSettings):
             f"{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return parse_cors_allowed_origins(self.cors_allowed_origins)
 
     model_config = SettingsConfigDict(env_file=ENV_FILES, env_file_encoding="utf-8")
 
