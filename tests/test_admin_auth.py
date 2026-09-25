@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from fastapi import HTTPException
 
-from app.api.dependencies import require_admin_token
+from app.api.dependencies import require_admin_token, require_reentered_admin_token
 from app.core.config import settings
 
 
@@ -44,3 +44,22 @@ def test_admin_token_accepts_bearer_authorization(monkeypatch) -> None:
     monkeypatch.setattr(settings, "admin_api_token", "server-token")
 
     asyncio.run(require_admin_token(authorization="Bearer server-token"))
+
+
+def test_reauth_requires_explicit_x_admin_token(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "admin_api_token", "server-token")
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(require_reentered_admin_token())
+
+    assert exc_info.value.status_code == 401
+
+
+def test_reauth_returns_verified_header_token(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "admin_api_token", "server-token")
+
+    token = asyncio.run(
+        require_reentered_admin_token(x_admin_token="server-token")
+    )
+
+    assert token == "server-token"
