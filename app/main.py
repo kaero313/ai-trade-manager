@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
+from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.scheduler import start_scheduler, stop_scheduler
 from app.db.repository import get_or_create_bot_config
@@ -18,6 +19,25 @@ from app.services.trading.engine import TradingEngine
 
 logger = logging.getLogger(__name__)
 trading_engine = TradingEngine(AsyncSessionLocal)
+
+CORS_ALLOWED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+CORS_ALLOWED_HEADERS = [
+    "Accept",
+    "Authorization",
+    "Content-Type",
+    "Idempotency-Key",
+    "If-Match",
+    "X-Admin-Token",
+]
+CORS_EXPOSE_HEADERS = [
+    "ETag",
+    "Retry-After",
+    "X-Config-Version",
+    "X-RateLimit-Limit",
+    "X-RateLimit-Policy",
+    "X-RateLimit-Remaining",
+    "X-RateLimit-Reset",
+]
 
 
 @asynccontextmanager
@@ -37,7 +57,7 @@ async def lifespan(_app: FastAPI):
     try:
         yield
     finally:
-        trading_engine._is_running = False
+        trading_engine.stop()
         stop_scheduler()
         try:
             await close_opensearch_client()
@@ -56,14 +76,23 @@ async def lifespan(_app: FastAPI):
 
 def create_app() -> FastAPI:
     configure_logging()
-    app = FastAPI(title="Trading Bot", lifespan=lifespan)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+    app = FastAPI(
+        title="Trading Bot",
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
+    cors_origins = settings.cors_origins
+    if cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=cors_origins,
+            allow_credentials=False,
+            allow_methods=CORS_ALLOWED_METHODS,
+            allow_headers=CORS_ALLOWED_HEADERS,
+            expose_headers=CORS_EXPOSE_HEADERS,
+        )
 
     app.include_router(api_router, prefix="/api")
     return app
