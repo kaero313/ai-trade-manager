@@ -32,6 +32,13 @@ AI_MIN_CONFIDENCE_TRADE_KEY = "ai_min_confidence_trade"
 AI_ANALYSIS_MAX_AGE_MINUTES_KEY = "ai_analysis_max_age_minutes"
 AI_CUSTOM_PERSONA_PROMPT_KEY = "ai_custom_persona_prompt"
 LIVE_BUY_ENABLED_KEY = "live_buy_enabled"
+LIVE_ORDER_V2_ENABLED_KEY = "live_order_v2_enabled"
+PROTECTED_SYSTEM_CONFIG_KEYS = frozenset(
+    {
+        LIVE_ORDER_V2_ENABLED_KEY,
+        TRADING_MODE_KEY,
+    }
+)
 AI_MAX_BUY_WEIGHT_PCT_KEY = "ai_max_buy_weight_pct"
 AI_TRADE_TARGET_SYMBOLS_KEY = "ai_trade_target_symbols"
 AI_TRADE_EXCLUDED_SYMBOLS_KEY = "ai_trade_excluded_symbols"
@@ -94,6 +101,19 @@ DEFAULT_SLACK_PORTFOLIO_ALERT_SETTINGS_VALUE = json.dumps(
     },
     ensure_ascii=False,
 )
+
+class ProtectedSystemConfigError(ValueError):
+    def __init__(self, config_key: str) -> None:
+        super().__init__(
+            f"보호된 시스템 설정은 전용 실주문 제어 경계에서만 변경할 수 있습니다: {config_key}"
+        )
+        self.config_key = config_key
+
+
+def _reject_protected_system_config_keys(config_keys: Sequence[str]) -> None:
+    protected = sorted(set(config_keys) & PROTECTED_SYSTEM_CONFIG_KEYS)
+    if protected:
+        raise ProtectedSystemConfigError(protected[0])
 
 SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     {
