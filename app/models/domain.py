@@ -58,9 +58,18 @@ class Position(Base):
 
 class OrderHistory(Base):
     __tablename__ = "order_history"
+    __table_args__ = (UniqueConstraint("order_intent_id", name="uq_order_history_order_intent_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     position_id: Mapped[int] = mapped_column(ForeignKey("positions.id"), nullable=False, index=True)
+    order_intent_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "order_intents.id",
+            name="fk_order_history_order_intent_id_order_intents",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     ai_analysis_log_id: Mapped[int | None] = mapped_column(
         ForeignKey("ai_analysis_logs.id"),
         nullable=True,
