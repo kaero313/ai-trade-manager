@@ -1,7 +1,8 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.domain import ChatSessionSurface
 
@@ -37,11 +38,126 @@ class BotConfig(BaseModel):
     trade_mode: str = "ai"
 
 
+class LiveOrderGateStatus(BaseModel):
+    mode: Literal["ARMED", "EXIT_ONLY", "BLOCK_ALL"] = "BLOCK_ALL"
+    generation: int = Field(default=0, ge=0)
+    version: int = Field(default=0, ge=0)
+    reason_code: str = "ORDER_GATE_STATE_UNAVAILABLE"
+    reason: str = "실주문 제어 상태를 확인할 수 없어 안전하게 차단했습니다."
+    source: str = "SYSTEM"
+    changed_at: datetime | None = None
+    active_liquidation_operation_id: int | None = Field(default=None, ge=1)
+    rollout_enabled: bool = False
+    state_available: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class BotStatus(BaseModel):
     running: bool
     last_heartbeat: str | None = None
     last_error: str | None = None
     latest_action: str | None = None
+
+
+class ArmLiveOrderGateRequest(BaseModel):
+    expected_generation: int = Field(..., ge=1)
+    expected_version: int = Field(..., ge=1)
+    reason: str = Field(..., min_length=10, max_length=1000)
+    confirmation: Literal["ENABLE_LIVE_ORDERS"]
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if len(normalized) < 10:
+            raise ValueError("실주문 제어 사유는 공백을 제외하고 10자 이상이어야 합니다.")
+        return normalized
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class BlockLiveOrderGateRequest(BaseModel):
+    reason: str = Field(..., min_length=10, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if len(normalized) < 10:
+            raise ValueError("실주문 제어 사유는 공백을 제외하고 10자 이상이어야 합니다.")
+        return normalized
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class TradingModeStatus(BaseModel):
+    mode: Literal["paper", "live"] = "paper"
+    version: int = Field(default=0, ge=0)
+    reason_code: str = "TRADING_MODE_STATE_UNAVAILABLE"
+    reason: str = "거래 모드 상태를 확인할 수 없어 paper로 표시합니다."
+    source: str = "SYSTEM"
+    actor_ref: str | None = None
+    changed_at: datetime | None = None
+    state_available: bool = False
+    unavailable_reason: str | None = None
+    mirror_consistent: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class EnableLiveTradingModeRequest(BaseModel):
+    expected_version: int = Field(..., ge=1)
+    expected_gate_generation: int = Field(..., ge=1)
+    expected_gate_version: int = Field(..., ge=1)
+    reason: str = Field(..., min_length=10, max_length=1000)
+    confirmation: Literal["ENABLE_LIVE_TRADING"]
+    reauth_proof: str = Field(..., min_length=1, max_length=4096)
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if len(normalized) < 10:
+            raise ValueError("거래 모드 전환 사유는 공백을 제외하고 10자 이상이어야 합니다.")
+        return normalized
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class EnablePaperTradingModeRequest(BaseModel):
+    expected_version: int = Field(..., ge=1)
+    reason: str = Field(..., min_length=10, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if len(normalized) < 10:
+            raise ValueError("거래 모드 전환 사유는 공백을 제외하고 10자 이상이어야 합니다.")
+        return normalized
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AdminReauthRequest(BaseModel):
+    purpose: Literal["ENABLE_LIVE_TRADING"]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AdminReauthResponse(BaseModel):
+    reauth_proof: str
+    expires_at: datetime
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LiquidateAllRequest(BaseModel):
+    scope: Literal["ACCOUNT_ALL"]
+    confirmation: Literal["CANCEL_OPEN_ORDERS_AND_LIQUIDATE_ALL"]
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class AIAnalysisResponse(BaseModel):
@@ -80,6 +196,156 @@ class AIManualCycleResponse(BaseModel):
     message: str
     started_at: datetime
     finished_at: datetime
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class OrderIntentStatusItem(BaseModel):
+    id: int
+    intent_key: str
+    identifier: str
+    source_type: str
+    source_ref: str
+    market: str
+    side: str
+    ord_type: str
+    requested_price: Decimal | None = None
+    requested_volume: Decimal | None = None
+    submission_status: str
+    exchange_uuid: str | None = None
+    exchange_state: str | None = None
+    projection_status: str
+    executed_volume: Decimal | None = None
+    average_fill_price: Decimal | None = None
+    last_error_code: str | None = None
+    last_error_message: str | None = None
+    reconcile_attempt_count: int
+    not_found_count: int
+    created_at: datetime
+    updated_at: datetime
+    submitted_at: datetime | None = None
+    unknown_at: datetime | None = None
+    last_checked_at: datetime | None = None
+    first_not_found_at: datetime | None = None
+    last_not_found_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+
+class ResolveNoOrderRequest(BaseModel):
+    exchange_ui_verified: Literal[True]
+    resolution_note: str = Field(..., min_length=10, max_length=1000)
+
+    @field_validator("resolution_note")
+    @classmethod
+    def validate_resolution_note(cls, value: str) -> str:
+        normalized = value.strip()
+        if len(normalized) < 10:
+            raise ValueError("확인 사유는 공백을 제외하고 10자 이상이어야 합니다.")
+        return normalized
+
+
+class LiquidationIntentItem(BaseModel):
+    market: str
+    currency: str | None = None
+    intent_id: int | None = None
+    identifier: str | None = None
+    exchange_uuid: str | None = None
+    submission_status: str | None = None
+    exchange_state: str | None = None
+    projection_status: str | None = None
+    executed_volume: Decimal | None = None
+    remaining_volume: Decimal | None = None
+    requested_volume: Decimal | None = None
+    initial_balance: Decimal | None = None
+    initial_locked: Decimal | None = None
+    post_cancel_balance: Decimal | None = None
+    post_cancel_locked: Decimal | None = None
+    final_balance: Decimal | None = None
+    final_locked: Decimal | None = None
+    estimated_value_krw: Decimal | None = None
+    result_code: Literal[
+        "LIQUIDATED",
+        "DUST_REMAINING",
+        "LOCKED_REMAINING",
+        "UNSUPPORTED_MARKET",
+        "ORDER_FAILED",
+        "VERIFY_FAILED",
+        "LEDGER_MISMATCH",
+    ] | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LiquidationOperationSummary(BaseModel):
+    discovered_orders: int = Field(default=0, ge=0)
+    cancel_confirmed: int = Field(default=0, ge=0)
+    cancel_unknown: int = Field(default=0, ge=0)
+    attempted: int = Field(default=0, ge=0)
+    succeeded: int = Field(default=0, ge=0)
+    failed: int = Field(default=0, ge=0)
+    remaining: int = Field(default=0, ge=0)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LiquidationCancellationItem(BaseModel):
+    exchange_uuid: str
+    identifier: str | None = None
+    market: str | None = None
+    side: str | None = None
+    ownership: Literal["MANAGED", "EXTERNAL"]
+    status: Literal["DISCOVERED", "CANCELING", "UNKNOWN", "CONFIRMED", "FAILED"]
+    attempt_count: int = Field(default=0, ge=0)
+    executed_volume: Decimal | None = None
+    remaining_volume: Decimal | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LiquidationOperationResponse(BaseModel):
+    id: int
+    idempotency_key: str
+    contract_version: int = Field(default=1, ge=1)
+    cancel_scope: Literal["ACCOUNT_ALL", "LEGACY_NONE"] = "LEGACY_NONE"
+    phase: Literal[
+        "BLOCKING",
+        "DISCOVERING_ORDERS",
+        "CANCELING_ORDERS",
+        "RECONCILING_CANCELED_ORDERS",
+        "SNAPSHOTTING_TARGETS",
+        "SUBMITTING",
+        "WAITING_FILLS",
+        "VERIFYING",
+        "TERMINAL",
+    ] = "TERMINAL"
+    verification_status: Literal[
+        "PENDING",
+        "VERIFIED",
+        "ERROR",
+        "LEGACY_UNVERIFIED",
+    ] = "LEGACY_UNVERIFIED"
+    status: Literal[
+        "PREPARING",
+        "IN_PROGRESS",
+        "COMPLETED",
+        "PARTIAL",
+        "FAILED",
+        "NO_ASSETS",
+    ]
+    summary: LiquidationOperationSummary = Field(default_factory=LiquidationOperationSummary)
+    cancellations: list[LiquidationCancellationItem] = Field(default_factory=list)
+    items: list[LiquidationIntentItem] = Field(default_factory=list)
+    initial_accounts_observed_at: datetime | None = None
+    post_cancel_accounts_observed_at: datetime | None = None
+    final_accounts_observed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -125,6 +391,12 @@ class SystemConfigItem(BaseModel):
 class SystemConfigUpdateItem(BaseModel):
     config_key: str = Field(..., min_length=1)
     config_value: str = Field(...)
+
+
+class AIProviderStatusResetRequest(BaseModel):
+    expected_version: int = Field(..., ge=1, strict=True)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class AIProviderRuntimeStatusItem(BaseModel):
