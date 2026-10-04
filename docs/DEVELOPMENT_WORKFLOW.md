@@ -8,7 +8,7 @@ Claude Code와 Codex로 개발할 때 쓰는 하네스의 사용법이다. 공�
 |---|---|---|
 | `AGENTS.md` | 공통 규칙 원본. `CLAUDE.md`가 `@AGENTS.md`로 불러오고 Codex는 직접 읽는다 | O |
 | `CLAUDE.md` | Claude Code 진입점 | O |
-| `.claude/settings.json` | 권한. `.env`·`.env.local` Read 차단, `git push`·`git reset --hard`는 확인, 검증 명령은 allow | O |
+| `.claude/settings.json` | 권한. `.env`·`.env.local`·`.env.prod` Read 차단, `git push`·`git reset --hard`는 확인, 검증 명령은 allow | O |
 | `.claude/settings.local.json` | 개인 allowlist. 전역 ignore로 제외 | X |
 | `harness/agents.toml`, `harness/roles/*.md` | 역할·모델·effort·허용 경로와 역할 본문의 원본. lead 모델은 `[lead]` | O |
 | `.claude/agents/*.md` | `scripts/harness.py render` 생성물(Claude Code 역할). 직접 편집 금지 | O |
@@ -80,7 +80,7 @@ claude -p --agent <역할> --output-format stream-json --verbose --no-session-pe
 - 결과는 `.harness/runs/<YYYYmmdd-HHMMSS>-<8hex>/`의 `result.json`, `junit.xml`(pytest), `vitest-junit.xml`(프론트)에 남는다. `result.json`은 `status`, `reason`, `failed_step`, `base_commit`, 실행 전후 `workspace_sha256`(추적+미추적 파일 내용 해시), 단계별 `junit_sha256`, `steps[]`의 명령·exit code·출력 꼬리·JUnit 합계·`evidence_error`, pytest `summary`를 담는다. 보고와 커밋 메시지의 수치는 이 파일의 값을 쓴다.
 - 테스트 명령이 exit 0이어도 JUnit이 없으면 `junit_missing`, 0건이면 `zero_tests`, 실패·오류가 기록돼 있으면 `junit_unsuccessful`로 실패 처리한다. 테스트가 하나도 수집되지 않았는데 통과로 보고되는 경우를 막는다.
 - 실행 중 워킹트리가 바뀌면 `reason: workspace_mutated`로 실패 처리한다. 증거가 어느 트리를 말하는지 알 수 없기 때문이다.
-- `tests/conftest.py`가 테스트를 격리한다. `Settings`를 `.env`·`.env.local` 없이 다시 만들고 비밀값 환경변수를 지우며, 루프백과 `TEST_DATABASE_URL`의 host:port 외 소켓 연결을 차단한다. Upbit·LLM 실호출이 섞이면 여기서 즉시 실패한다. PostgreSQL이 필요한 테스트는 `test_database_url` 픽스처를 쓰면 DSN이 없을 때 자동으로 건너뛴다.
+- `tests/conftest.py`가 테스트를 격리한다. `Settings`를 `.env` 계열 파일 없이 다시 만들고 비밀값 환경변수를 지우며, 루프백과 `TEST_DATABASE_URL`의 host:port 외 소켓 연결을 차단한다. Upbit·LLM 실호출이 섞이면 여기서 즉시 실패한다. PostgreSQL이 필요한 테스트는 `test_database_url` 픽스처를 쓰면 DSN이 없을 때 자동으로 건너뛴다.
 - 하네스 스크립트 자체는 `tests/test_harness_scripts.py`가 검증한다. render drift 감지, 생성물 형식, 역할 파일이 규칙 전문을 복사하지 않는지, 역할 표 세 곳과 `agents.toml`의 일치, verify의 요약 파싱과 증거 판정을 본다.
 - 테스트 통과와 스크린샷은 화면 품질의 증거가 아니다. 프론트 변경은 사람이 앱을 열어 확인할 화면과 상태를 보고에 적는다.
 - `--frontend`는 `frontend/node_modules`가 있어야 한다. 없으면 `frontend_deps` 단계에서 멈춘다. 격리 worktree에는 node_modules가 없으므로 프론트 검증은 메인 트리에서 돌리거나 worktree에서 `npm ci`를 먼저 한다.
@@ -117,6 +117,7 @@ gitnexus detect-changes --scope staged --repo .   # 커밋 전 영향받는 실�
 ## 7. Git 규칙
 
 - 한국어 Conventional Commits, 의미 단위 마이크로 커밋. 트레일러는 붙이지 않는다.
+- 제목만으로 설명되지 않는 커밋은 본문을 이유 → 주요 변경 → 검증(게이트와 `.harness/runs/<id>`) → 남은 제약 순으로 쓴다.
 - 커밋은 사용자가 명령할 때만 만든다. 작업을 끝냈다고 스스로 커밋하지 않는다. push·`reset --hard`·강제 push는 사용자 확인이 필요하다.
 
 ## 8. CI
@@ -126,12 +127,14 @@ gitnexus detect-changes --scope staged --repo .   # 커밋 전 영향받는 실�
 | 잡 | 내용 |
 |---|---|
 | backend-quality | ruff, postgres 제외 pytest. 하네스 자체 테스트도 여기서 돌아 역할 파일 drift를 잡는다 |
-| backend-postgres | PostgreSQL 16 서비스 컨테이너에 마이그레이션 적용, postgres 테스트, 롤백 준비 데이터 투입 후 downgrade·재upgrade, `alembic check` |
+| backend-postgres | PostgreSQL 16 서비스 컨테이너에 마이그레이션 적용, postgres 테스트, 롤백 준비 데이터 투입 후 downgrade·재upgrade, 실제 DB로 앱을 띄워 `/api/health/ready`·`/live` 200 확인, `alembic check` |
 | frontend-quality | `npm ci`, lint, Vitest, build |
 
 - `alembic check`에는 `continue-on-error: true`가 붙어 있다. 마이그레이션이 모델 코드보다 먼저 반영된 구간이라 이 단계는 모델과 스키마의 차이를 보고하며 실패한다. 실패 표시는 남고 잡은 통과한다. 모델 코드가 반영돼 이 단계가 통과하기 시작하면 `continue-on-error` 줄을 지운다.
 - 처음 켜기 전에 backend-postgres 잡을 같은 PostgreSQL 16 조건으로 로컬에서 재현했다. 마이그레이션, postgres 테스트, 롤백 왕복은 통과했고 `alembic check`만 예상대로 실패했다. 모델 코드까지 얹은 상태에서는 `alembic check`도 통과했다.
-- CI는 설치 시점의 최신 라이브러리를 받는다. 로컬 venv와 버전이 달라 생기는 실패는 CI가 먼저 알려 준다. lock 파일 도입은 별도 과제다.
+- 앱 기동 단계는 `verify.py`의 `create_app()` 확인이 DB 없이 앱 객체만 만든다는 빈틈을 메운다. 단위 테스트의 대역이 각각 통과해도 실제 DB에 붙은 서버가 뜬다는 증명은 아니기 때문이다. CI에는 거래소·LLM 키가 없어 비공개 API나 유료 LLM이 호출될 수 없고, 스케줄러 작업은 정해진 시각에만 돌아 기동 직후에는 실행되지 않는다. 2026-10-02 로컬 재현: 같은 조건의 PostgreSQL 16에서 ready·live 200으로 통과했고, DB를 내리면 기동 실패로 단계가 실패했다.
+- CI는 설치 시점의 최신 라이브러리를 받는다. 로컬 venv와 버전이 달라 생기는 실패는 CI가 먼저 알려 준다. lock 파일 도입은 별도 과제다. 2026-09-23 첫 실행에서 ruff 0.16이 기본 규칙을 넓혀 로컬(0.15)에서 통과한 코드가 354건으로 실패했다. `pyproject.toml`에 규칙(`E4`, `E7`, `E9`, `F`)을 명시해 버전과 관계없이 같은 규칙으로 검사한다.
+- actions는 Node 24 기반 v7(`checkout`, `setup-python`, `setup-node`)을 쓴다.
 
 ## 9. Codex
 
@@ -163,3 +166,5 @@ Codex도 같은 `AGENTS.md`·역할 본문·스킬을 쓴다. 아래는 Claude C
 | 1.0 | 2026-09-23 | 모델 재배정: lead·backend·frontend·reviewer를 Opus 5.5로(lead·reviewer xhigh, backend·frontend high), scout는 Sonnet 5 / low 유지. lead 모델을 `.claude/settings.json`에 고정. 역할별 실제 실행으로 모델 ID 확인 절차 추가 |
 | 1.0 | 2026-09-23 | 위임 기준(lead 직접 처리와 backend·frontend·scout 위임의 경계)과 qa 역할 추가: 실주문·청산·거래 모드·인증 변경은 qa가 계약 기준 독립 테스트를 쓰고 reviewer가 그 테스트와 diff를 함께 검토 |
 | 1.0 | 2026-09-23 | Codex 병행: `agents.toml`에 `codex_model`과 `[lead]`, render가 `.codex/agents/*.toml`·`.codex/config.toml`(MCP는 `.mcp.json`에서) 생성, `.agents/skills` 링크, 실제 실행으로 여섯 역할의 모델·effort 확인, 하위 에이전트 샌드박스 상속과 신뢰 키 형식 문제 기록 |
+| 1.0 | 2026-10-02 | CI에 실제 PostgreSQL 앱 기동 확인 추가, actions v7, reviewer 관리자 인증 점검 항목, 커밋 본문 형식(이유·변경·검증·제약) |
+| 1.0 | 2026-10-02 | 하네스 적합성 점검 정리: `CLAUDE.md`·`surgical-patch`에 빠진 qa 단계 보완, frontend 역할 설명을 실제 테스트(Vitest)에 맞춤, `.env.prod`를 읽기 금지·Read 차단·검증 스냅샷 제외에 추가, 쓰지 않는 스킬 시험 문서 5개와 하네스 이전의 프롬프트 템플릿 삭제, 스킬 안의 없는 스킬 이름 참조 정리 |
