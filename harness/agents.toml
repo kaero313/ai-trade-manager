@@ -44,7 +44,7 @@ read_only = false
 allowed_paths = ["app/", "migrations/", "tests/", "docs/"]
 
 [roles.frontend]
-description = "React/Vite 대시보드와 브라우저 회귀를 구현한다."
+description = "React/Vite 대시보드와 화면 테스트(Vitest)를 구현한다."
 claude_model = "claude-opus-5-5"
 codex_model = "gpt-5.6-terra"
 effort = "high"
