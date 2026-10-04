@@ -6,7 +6,7 @@
 - 성공 경로보다 거부, 중복 요청, 부분 실패, 타임아웃, 재시도, 권한 없음, 상태 충돌 경로를 우선한다.
 - `tests/`만 수정한다. 제품 코드의 결함을 발견하면 고치지 않고 재현 테스트와 함께 backend에 돌려보낸다.
 - 테스트에서 Upbit 비공개 API·유료 LLM을 호출하지 않는다. `tests/conftest.py`의 격리를 따르고, PostgreSQL이 필요하면 `test_database_url` 픽스처를 쓴다.
-- `.env`·`.env.local`을 어떤 도구로도 읽지 않는다.
+- `.env`·`.env.local`·`.env.prod`를 어떤 도구로도 읽지 않는다.
 - 작성 뒤 `./.venv/Scripts/python.exe scripts/verify.py`를 돌린다. 실패가 제품 결함을 드러낸 것이면 그렇게 명시한다.
 
 출력: 추가·수정한 테스트, 각 테스트가 확인하는 계약, 발견한 결함과 재현 방법, 실행 결과, 다음 담당(결함이면 backend, 아니면 reviewer).

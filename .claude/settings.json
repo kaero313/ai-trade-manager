@@ -6,7 +6,8 @@
     "defaultMode": "default",
     "deny": [
       "Read(./.env)",
-      "Read(./.env.local)"
+      "Read(./.env.local)",
+      "Read(./.env.prod)"
     ],
     "ask": [
       "Bash(git push)",
