@@ -26,7 +26,7 @@ Upbit KRW 현물 자동매매 봇(FastAPI + React/Vite + PostgreSQL)이다. 응�
 |---|---|---|---|---|
 | scout | Sonnet 5 / GPT-6 Luna | low | 없음 | 코드 경로·영향 범위·HEAD 호출자 조사 |
 | backend | Opus 5.5 / GPT-5.6 Terra | high | `app/` `migrations/` `tests/` `docs/` | FastAPI·DB·트레이딩 로직·테스트 |
-| frontend | Opus 5.5 / GPT-5.6 Terra | high | `frontend/` `docs/` | 대시보드·브라우저 회귀 |
+| frontend | Opus 5.5 / GPT-5.6 Terra | high | `frontend/` `docs/` | 대시보드·화면 테스트 |
 | qa | Opus 5.5 / GPT-6 Sol | high | `tests/` | 위험 경로 변경의 계약 기준 독립 테스트 |
 | reviewer | Opus 5.5 / GPT-6 Sol | xhigh | 없음 | 독립 검토, 소스 수정 금지 |
 
@@ -38,10 +38,11 @@ Upbit KRW 현물 자동매매 봇(FastAPI + React/Vite + PostgreSQL)이다. 응�
 
 ## 4. 권한과 안전
 
-- `.env`·`.env.local`은 어떤 도구로도 읽지 않는다. Claude Code의 Read 차단(`.claude/settings.json`)은 Bash `cat`까지 막지 못하고, Codex에는 파일 단위 읽기 차단을 두지 않았으므로 이 규칙으로 보완한다. 비밀값·실계좌 값은 커밋하지 않는다.
+- `.env`·`.env.local`·`.env.prod`는 어떤 도구로도 읽지 않는다. Claude Code의 Read 차단(`.claude/settings.json`)은 Bash `cat`까지 막지 못하고, Codex에는 파일 단위 읽기 차단을 두지 않았으므로 이 규칙으로 보완한다. 비밀값·실계좌 값은 커밋하지 않는다.
 - 테스트와 검증에서 Upbit 비공개 API·유료 LLM을 호출하지 않는다. 대역(fake·monkeypatch)을 쓴다. 기본 거래 모드는 PAPER다. 실거래소 수동 진단은 `scripts/manual/`에서 사람이 직접 실행한다.
 - 커밋은 사용자가 명령할 때만 만든다. 작업을 끝냈다고 스스로 커밋하지 않고 변경은 워킹트리에 둔 채 보고한다. `git push`·`git reset --hard`는 사용자 확인이 필요하다. 강제 push와 이력 재작성은 하지 않는다.
 - 커밋 메시지는 한국어 Conventional Commits(`feat(db): ...`, `refactor(slack): ...`)를 쓰고, 모델·마이그레이션·리포지토리·API·UI·테스트·문서 단위로 잘게 나눈다. 빈 커밋이나 설명할 수 없는 커밋은 만들지 않는다. 트레일러(Co-Authored-By 등)는 붙이지 않는다.
+- 제목만으로 설명되지 않는 커밋은 본문을 이유 → 주요 변경 → 검증 → 남은 제약 순으로 쓴다. 검증에는 실행한 게이트와 `.harness/runs/<id>`(또는 실행한 명령과 결과)를 적고, 수치는 그 기록의 값을 옮긴다.
 - 섞인 변경을 나눠 커밋할 때는 격리 worktree에 후보만 복사해 검증한다. 단독으로 성립하지 않는 파일은 순서를 잡아 각 중간 상태가 성립하도록 연쇄 커밋한다.
 
 ## 5. 검증과 완료
