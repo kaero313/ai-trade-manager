@@ -1,13 +1,16 @@
 # 제3자 스킬 출처 표기
 
 이 디렉터리의 스킬 중 아래 두 개는 [obra/superpowers](https://github.com/obra/superpowers)(MIT License)에서 유래했다.
-내용을 수정하지 않고 옮겼으며, 원본 저장소의 최신 파일과 한 줄씩 대조하지는 않았다.
+원본 저장소의 최신 파일과 한 줄씩 대조하지는 않았다.
 
-- `systematic-debugging/` — SKILL.md, root-cause-tracing.md, defense-in-depth.md, condition-based-waiting.md와 부속 파일 전부
+- `systematic-debugging/` — SKILL.md, root-cause-tracing.md, defense-in-depth.md, condition-based-waiting.md,
+  condition-based-waiting-example.ts, find-polluter.sh
 - `verification-before-completion/` — SKILL.md
 
-`systematic-debugging/SKILL.md`가 언급하는 `superpowers:test-driven-development`는 이 프로젝트에 포함하지 않았고,
-`superpowers:verification-before-completion`은 `verification-before-completion`으로 포함돼 있다.
+바꾼 곳은 `systematic-debugging/SKILL.md`의 스킬 이름 두 곳뿐이다. 이 프로젝트에 없는
+`superpowers:test-driven-development`는 `surgical-patch`로, `superpowers:verification-before-completion`은
+`verification-before-completion`으로 바꿨다. 원본에 있던 스킬 작성 기록과 스킬 시험 시나리오
+(CREATION-LOG.md, test-academic.md, test-pressure-1~3.md)는 이 프로젝트에서 쓰지 않아 뺐다.
 
 `verify-and-stop`, `surgical-patch`, `safe-refactor`는 이 프로젝트가 한국어로 작성한 자체 스킬이다.
 
