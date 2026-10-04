@@ -8,8 +8,8 @@ jobs:
   backend-quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -43,8 +43,8 @@ jobs:
       TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/ai_trade_manager_test
       CI: "true"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -297,6 +297,24 @@ jobs:
           PY
       - run: alembic downgrade d3a9f7c1b2e4
       - run: alembic upgrade head
+      # 단위 시험의 create_app 기동과 달리 실제 PostgreSQL에 붙은 서버를 띄워 준비 상태를 확인한다.
+      # CI에는 거래소·LLM 키가 없어 비공개 API나 유료 LLM 호출이 일어날 수 없다.
+      - name: 실제 PostgreSQL로 앱 기동 확인
+        shell: bash
+        run: |
+          python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > uvicorn.log 2>&1 &
+          pid=$!
+          ready=""
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/api/health/ready; then ready=1; break; fi
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+          done
+          if [ -n "$ready" ]; then curl -fsS http://127.0.0.1:8000/api/health/live || ready=""; fi
+          kill "$pid" 2>/dev/null || true
+          wait "$pid" 2>/dev/null || true
+          echo; cat uvicorn.log
+          test -n "$ready"
       # 마이그레이션이 모델 코드보다 먼저 반영된 구간이라 이 단계는 모델과 스키마의 차이를
       # 보고하며 실패한다. 실패 표시는 남기고 잡은 통과시킨다.
       # 모델 코드가 반영돼 이 단계가 통과하기 시작하면 continue-on-error 줄을 지운다.
@@ -310,8 +328,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
