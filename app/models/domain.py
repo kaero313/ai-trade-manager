@@ -319,6 +319,34 @@ class TradingModeControlEvent(Base):
 
 class AIAnalysisLog(Base):
     __tablename__ = "ai_analysis_logs"
+    __table_args__ = (
+        CheckConstraint(
+            "stage IN ('TRADE_ANALYSIS', 'BUY_PRECHECK', 'LEGACY_UNKNOWN')",
+            name="ck_ai_analysis_logs_stage",
+        ),
+        CheckConstraint(
+            "length(trim(provider)) > 0",
+            name="ck_ai_analysis_logs_provider_not_blank",
+        ),
+        CheckConstraint(
+            "length(trim(model)) > 0",
+            name="ck_ai_analysis_logs_model_not_blank",
+        ),
+        CheckConstraint(
+            "length(trim(prompt_version)) > 0",
+            name="ck_ai_analysis_logs_prompt_version_not_blank",
+        ),
+        CheckConstraint(
+            "context_sha256 IS NULL OR context_sha256 ~ '^[0-9a-f]{64}$'",
+            name="ck_ai_analysis_logs_context_sha256_hex",
+        ),
+        Index(
+            "ix_ai_analysis_logs_symbol_stage_created_at",
+            "symbol",
+            "stage",
+            "created_at",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     symbol: Mapped[str] = mapped_column(String, nullable=False)
@@ -326,6 +354,21 @@ class AIAnalysisLog(Base):
     confidence: Mapped[int] = mapped_column(Integer, nullable=False)
     recommended_weight: Mapped[int] = mapped_column(Integer, nullable=False)
     reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    stage: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    fallback_used: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    parent_analysis_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "ai_analysis_logs.id",
+            name="fk_ai_analysis_logs_parent_analysis_id",
+            ondelete="RESTRICT",
+        ),
+        nullable=True,
+        index=True,
+    )
+    prompt_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    context_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -333,7 +376,9 @@ class AIAnalysisLog(Base):
     )
     accuracy_label: Mapped[str | None] = mapped_column(String, nullable=True)
     actual_price_diff_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
-    accuracy_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accuracy_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 LIQUIDATION_ACTIVE_PREDICATE = "status IN ('PREPARING', 'IN_PROGRESS')"

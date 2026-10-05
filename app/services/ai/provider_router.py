@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import math
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,13 +20,14 @@ from app.db.repository import DEFAULT_AI_PROVIDER_PRIORITY_VALUE
 from app.db.repository import DEFAULT_AI_PROVIDER_SETTINGS_VALUE
 from app.db.repository import DEFAULT_AI_PROVIDER_STATUS_VALUE
 from app.db.repository import get_system_config_value
-from app.db.repository import upsert_system_config
 from app.services.ai.analyzer import AIAnalyzerFactory
 from app.services.ai.providers.base import AIProviderRateLimitError
+from app.services.ai.providers.base import AIProviderTimeoutError
 from app.services.ai.providers.base import is_provider_rate_limit_error
 from app.services.ai.providers.base import normalize_utc
 from app.services.ai.providers.base import resolve_provider_block_until
 from app.services.ai.providers.base import utc_now
+from app.services.system_config_service import mutate_internal_json_config
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,8 @@ AI_PURPOSE_CHAT = "chat"
 AI_PURPOSE_NEWS_SENTIMENT = "news_sentiment"
 AI_PURPOSE_NEWS_TRANSLATION = "news_translation"
 AI_PURPOSE_BACKTEST_BRIEFING = "backtest_briefing"
+DEFAULT_AI_PROVIDER_DEADLINE_ATTEMPT_SECONDS = 20.0
+DEFAULT_AI_PROVIDER_DEADLINE_TOTAL_SECONDS = 35.0
 DEFAULT_PROVIDER_MODELS = {
     "gemini": GEMINI_TEXT_MODEL,
     "openai": OPENAI_TEXT_MODEL,
@@ -58,10 +63,61 @@ class AIProviderExecutionResult(Generic[T]):
     value: T
     provider: str
     model: str
+    fallback_used: bool
+
+
+@dataclass(frozen=True)
+class AIProviderDeadline:
+    attempt_seconds: float
+    total_seconds: float
+
+    def __post_init__(self) -> None:
+        if (
+            not math.isfinite(self.attempt_seconds)
+            or not math.isfinite(self.total_seconds)
+            or self.attempt_seconds <= 0
+            or self.total_seconds <= 0
+        ):
+            raise ValueError("AI provider deadline은 유한한 양수여야 합니다.")
+
+
+AI_PROVIDER_DEADLINES = {
+    AI_PURPOSE_BUY_PRECHECK: AIProviderDeadline(15.0, 15.0),
+    AI_PURPOSE_TRADE_ANALYSIS: AIProviderDeadline(20.0, 35.0),
+    AI_PURPOSE_PORTFOLIO_BRIEFING: AIProviderDeadline(20.0, 35.0),
+    AI_PURPOSE_NEWS_SENTIMENT: AIProviderDeadline(20.0, 35.0),
+    AI_PURPOSE_BACKTEST_BRIEFING: AIProviderDeadline(20.0, 35.0),
+    AI_PURPOSE_CHAT: AIProviderDeadline(30.0, 45.0),
+    AI_PURPOSE_NEWS_TRANSLATION: AIProviderDeadline(30.0, 60.0),
+}
+
+
+def resolve_provider_deadline(purpose: str | None) -> AIProviderDeadline:
+    normalized_purpose = str(purpose or "").strip()
+    return AI_PROVIDER_DEADLINES.get(
+        normalized_purpose,
+        AIProviderDeadline(
+            DEFAULT_AI_PROVIDER_DEADLINE_ATTEMPT_SECONDS,
+            DEFAULT_AI_PROVIDER_DEADLINE_TOTAL_SECONDS,
+        ),
+    )
 
 
 class AIProviderUnavailableError(RuntimeError):
     """설정된 AI provider를 모두 사용할 수 없는 경우."""
+
+
+async def _close_analyzer(analyzer: Any) -> None:
+    try:
+        aclose = getattr(analyzer, "aclose", None)
+        if callable(aclose):
+            await aclose()
+            return
+        close = getattr(analyzer, "close", None)
+        if callable(close):
+            close()
+    except Exception as exc:
+        logger.warning("AI provider analyzer 정리 실패: %s", exc, exc_info=True)
 
 
 def _loads_json(raw_value: str | None, fallback: Any) -> Any:
@@ -382,42 +438,42 @@ class AIProviderRouter:
             preferred_provider=preferred_provider,
         )
 
-    async def _load_status(self) -> dict[str, dict[str, Any]]:
-        status_raw = await get_system_config_value(
-            self.db,
-            AI_PROVIDER_STATUS_KEY,
-            DEFAULT_AI_PROVIDER_STATUS_VALUE,
-        )
-        return _normalize_status(_loads_json(status_raw, {}))
-
-    async def _save_status(self, status: dict[str, dict[str, Any]]) -> None:
-        await upsert_system_config(
-            self.db,
-            AI_PROVIDER_STATUS_KEY,
-            json.dumps(status, ensure_ascii=False, sort_keys=True),
-            "AI provider별 쿼터 차단/성공 상태(JSON 객체)",
-        )
-
     async def mark_success(self, provider: str) -> None:
         provider_name = provider.strip().lower()
-        status = await self._load_status()
-        current = status.get(provider_name, {})
-        current.pop("blocked_until", None)
-        current.pop("reason", None)
-        current.pop("last_error", None)
-        current.pop("last_error_at", None)
-        current["last_success_at"] = _serialize_datetime(utc_now())
-        status[provider_name] = current
-        await self._save_status(status)
+
+        def mutate(raw_status: dict[str, Any]) -> dict[str, Any]:
+            status = _normalize_status(raw_status)
+            current = status.get(provider_name, {})
+            current.pop("blocked_until", None)
+            current.pop("reason", None)
+            current.pop("last_error", None)
+            current.pop("last_error_at", None)
+            current["last_success_at"] = _serialize_datetime(utc_now())
+            status[provider_name] = current
+            return status
+
+        await mutate_internal_json_config(
+            self.db,
+            config_key=AI_PROVIDER_STATUS_KEY,
+            mutator=mutate,
+        )
 
     async def mark_error(self, provider: str, error: Exception) -> None:
         provider_name = provider.strip().lower()
-        status = await self._load_status()
-        current = status.get(provider_name, {})
-        current["last_error_at"] = _serialize_datetime(utc_now())
-        current["last_error"] = str(error)[:500]
-        status[provider_name] = current
-        await self._save_status(status)
+
+        def mutate(raw_status: dict[str, Any]) -> dict[str, Any]:
+            status = _normalize_status(raw_status)
+            current = status.get(provider_name, {})
+            current["last_error_at"] = _serialize_datetime(utc_now())
+            current["last_error"] = str(error)[:500]
+            status[provider_name] = current
+            return status
+
+        await mutate_internal_json_config(
+            self.db,
+            config_key=AI_PROVIDER_STATUS_KEY,
+            mutator=mutate,
+        )
 
     async def mark_rate_limited(self, provider: str, error: Exception) -> None:
         provider_name = provider.strip().lower()
@@ -426,14 +482,21 @@ class AIProviderRouter:
             blocked_until = resolve_provider_block_until(provider_name, error)
 
         reason = str(getattr(error, "reason", "") or "rate_limit")
-        status = await self._load_status()
-        current = status.get(provider_name, {})
-        current["blocked_until"] = _serialize_datetime(blocked_until)
-        current["reason"] = reason
-        current["last_error_at"] = _serialize_datetime(utc_now())
-        current["last_error"] = str(error)[:500]
-        status[provider_name] = current
-        await self._save_status(status)
+        def mutate(raw_status: dict[str, Any]) -> dict[str, Any]:
+            status = _normalize_status(raw_status)
+            current = status.get(provider_name, {})
+            current["blocked_until"] = _serialize_datetime(blocked_until)
+            current["reason"] = reason
+            current["last_error_at"] = _serialize_datetime(utc_now())
+            current["last_error"] = str(error)[:500]
+            status[provider_name] = current
+            return status
+
+        await mutate_internal_json_config(
+            self.db,
+            config_key=AI_PROVIDER_STATUS_KEY,
+            mutator=mutate,
+        )
 
     async def execute(
         self,
@@ -442,6 +505,7 @@ class AIProviderRouter:
         preferred_provider: str | None = None,
         purpose: str | None = None,
         allow_fallback: bool = True,
+        deadline: AIProviderDeadline | None = None,
     ) -> AIProviderExecutionResult[T]:
         candidates = await self.get_candidates(
             preferred_provider=preferred_provider,
@@ -451,10 +515,37 @@ class AIProviderRouter:
         if not candidates:
             raise AIProviderUnavailableError("사용 가능한 AI provider가 없습니다.")
 
+        deadline_policy = deadline or resolve_provider_deadline(purpose)
+        loop = asyncio.get_running_loop()
+        started_at = loop.time()
         last_error: Exception | None = None
+        attempt_count = 0
         for candidate in candidates:
+            remaining_seconds = deadline_policy.total_seconds - (loop.time() - started_at)
+            if remaining_seconds <= 0:
+                break
+            attempt_seconds = min(
+                deadline_policy.attempt_seconds,
+                remaining_seconds,
+            )
+            attempt_count += 1
             try:
-                value = await operation(candidate)
+                async with asyncio.timeout(attempt_seconds):
+                    value = await operation(candidate)
+            except TimeoutError:
+                timeout_error = AIProviderTimeoutError(
+                    candidate.provider,
+                    attempt_seconds,
+                )
+                last_error = timeout_error
+                await self.mark_error(candidate.provider, timeout_error)
+                logger.warning(
+                    "AI provider deadline 초과로 다음 provider를 시도합니다: provider=%s model=%s attempt_seconds=%s",
+                    candidate.provider,
+                    candidate.model,
+                    attempt_seconds,
+                )
+                continue
             except AIProviderRateLimitError as exc:
                 last_error = exc
                 await self.mark_rate_limited(candidate.provider, exc)
@@ -485,6 +576,7 @@ class AIProviderRouter:
                 value=value,
                 provider=candidate.provider,
                 model=candidate.model,
+                fallback_used=attempt_count > 1,
             )
 
         detail = f"마지막 오류: {last_error}" if last_error is not None else "후보 없음"
@@ -500,7 +592,10 @@ class AIProviderRouter:
     ) -> AIProviderExecutionResult[str]:
         async def _operation(candidate: AIProviderCandidate) -> str:
             analyzer = AIAnalyzerFactory.get_analyzer(candidate.provider, model=candidate.model)
-            return await analyzer.generate_report(prompt)
+            try:
+                return await analyzer.generate_report(prompt)
+            finally:
+                await _close_analyzer(analyzer)
 
         return await self.execute(
             _operation,
@@ -521,11 +616,14 @@ class AIProviderRouter:
     ) -> AIProviderExecutionResult[StructuredResponseT]:
         async def _operation(candidate: AIProviderCandidate) -> StructuredResponseT:
             analyzer = AIAnalyzerFactory.get_analyzer(candidate.provider, model=candidate.model)
-            return await analyzer.generate_structured_analysis(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                response_model=response_model,
-            )
+            try:
+                return await analyzer.generate_structured_analysis(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    response_model=response_model,
+                )
+            finally:
+                await _close_analyzer(analyzer)
 
         return await self.execute(
             _operation,

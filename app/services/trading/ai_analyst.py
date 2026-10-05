@@ -28,6 +28,11 @@ from app.services.portfolio.aggregator import PortfolioService
 from app.services.rag.opensearch_client import INDEX_NAME
 from app.services.rag.opensearch_client import ensure_market_news_index
 from app.services.rag.opensearch_client import get_opensearch_client
+from app.services.trading.analysis_lineage import AI_ANALYSIS_DETERMINISTIC_HOLD_MODEL
+from app.services.trading.analysis_lineage import AI_ANALYSIS_STAGE_TRADE
+from app.services.trading.analysis_lineage import AI_ANALYSIS_SYSTEM_PROVIDER
+from app.services.trading.analysis_lineage import TRADE_ANALYSIS_PROMPT_VERSION
+from app.services.trading.analysis_lineage import hash_analysis_context
 
 logger = logging.getLogger(__name__)
 
@@ -566,6 +571,12 @@ async def _search_news_documents(symbol: str, market_row: dict[str, Any] | None)
         return {"items": [], "error": "NEWS_SEARCH_FAILED"}
 
 
+async def search_news_for_buy_precheck(symbol: str) -> dict[str, Any]:
+    """BUY 직전 검증용 심볼 뉴스 스냅샷을 한 번 조회합니다."""
+
+    return await _search_news_documents(_normalize_symbol(symbol), None)
+
+
 async def _resolve_technical_timeframe(db: AsyncSession) -> str:
     try:
         interval_minutes = _parse_positive_int(
@@ -964,6 +975,11 @@ async def _persist_ai_analysis_log(
     db: AsyncSession,
     symbol: str,
     analysis: AIAnalysisResponse,
+    *,
+    provider: str,
+    model: str,
+    fallback_used: bool,
+    context_sha256: str,
 ) -> AIAnalysisLog:
     analysis_log = AIAnalysisLog(
         symbol=_normalize_symbol(symbol),
@@ -971,6 +987,13 @@ async def _persist_ai_analysis_log(
         confidence=analysis.confidence,
         recommended_weight=analysis.recommended_weight,
         reasoning=analysis.reasoning,
+        stage=AI_ANALYSIS_STAGE_TRADE,
+        provider=provider,
+        model=model,
+        fallback_used=fallback_used,
+        parent_analysis_id=None,
+        prompt_version=TRADE_ANALYSIS_PROMPT_VERSION,
+        context_sha256=context_sha256,
     )
     try:
         db.add(analysis_log)
@@ -990,6 +1013,7 @@ async def _load_recent_failure_feedback(db: AsyncSession, symbol: str) -> str:
     result = await db.execute(
         select(AIAnalysisLog)
         .where(AIAnalysisLog.symbol == _normalize_symbol(symbol))
+        .where(AIAnalysisLog.stage == AI_ANALYSIS_STAGE_TRADE)
         .where(AIAnalysisLog.accuracy_label == "FAIL")
         .order_by(
             desc(AIAnalysisLog.accuracy_checked_at),
@@ -1044,15 +1068,23 @@ async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisLog:
         )
 
     system_prompt = build_analysis_system_prompt(custom_persona_prompt, self_correction_feedback)
+    user_prompt = _build_analysis_user_prompt(normalized_symbol, context_text)
+    context_sha256 = hash_analysis_context(user_prompt)
+    provider = AI_ANALYSIS_SYSTEM_PROVIDER
+    model = AI_ANALYSIS_DETERMINISTIC_HOLD_MODEL
+    fallback_used = True
 
     try:
         routed_result = await AIProviderRouter(db).generate_structured_analysis(
             system_prompt=system_prompt,
-            user_prompt=_build_analysis_user_prompt(normalized_symbol, context_text),
+            user_prompt=user_prompt,
             response_model=AIAnalysisResponse,
             purpose="trade_analysis",
         )
         analysis = routed_result.value
+        provider = routed_result.provider
+        model = routed_result.model
+        fallback_used = routed_result.fallback_used
     except AIProviderRateLimitError as exc:
         logger.warning("AI 구조화 분석 quota 초과: symbol=%s error=%s", normalized_symbol, exc)
         raise
@@ -1063,4 +1095,12 @@ async def execute_ai_analysis(db: AsyncSession, symbol: str) -> AIAnalysisLog:
         logger.error("AI 구조화 분석 실패: symbol=%s error=%s", normalized_symbol, exc, exc_info=True)
         analysis = _build_fallback_analysis()
 
-    return await _persist_ai_analysis_log(db, normalized_symbol, analysis)
+    return await _persist_ai_analysis_log(
+        db,
+        normalized_symbol,
+        analysis,
+        provider=provider,
+        model=model,
+        fallback_used=fallback_used,
+        context_sha256=context_sha256,
+    )

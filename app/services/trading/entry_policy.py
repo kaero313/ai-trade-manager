@@ -14,6 +14,7 @@ from app.db.repository import AI_TRADE_EXCLUDED_SYMBOLS_KEY
 from app.db.repository import AI_TRADE_TARGET_SYMBOLS_KEY
 from app.db.repository import get_system_config_value
 from app.models.domain import AIAnalysisLog
+from app.services.trading.analysis_lineage import AI_ANALYSIS_STAGE_TRADE
 from app.schemas.portfolio import AssetItem, PortfolioSummary
 from app.services.trading.ai_analyst import gather_market_context
 from app.services.trading.ai_analyst import is_fallback_news_item
@@ -233,6 +234,7 @@ async def load_buy_confidence_calibration(
     result = await db.execute(
         select(AIAnalysisLog.accuracy_label)
         .where(AIAnalysisLog.symbol == normalize_symbol(symbol))
+        .where(AIAnalysisLog.stage == AI_ANALYSIS_STAGE_TRADE)
         .where(AIAnalysisLog.decision == "BUY")
         .where(AIAnalysisLog.accuracy_label.in_(("SUCCESS", "FAIL")))
         .order_by(desc(AIAnalysisLog.accuracy_checked_at), desc(AIAnalysisLog.created_at))

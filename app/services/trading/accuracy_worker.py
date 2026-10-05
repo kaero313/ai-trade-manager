@@ -6,6 +6,7 @@ from sqlalchemy import asc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import AIAnalysisLog
+from app.services.trading.analysis_lineage import AI_ANALYSIS_STAGE_TRADE
 from app.services.brokers.factory import BrokerFactory
 
 logger = logging.getLogger(__name__)
@@ -142,6 +143,7 @@ async def update_ai_analysis_accuracy(db: AsyncSession) -> int:
     try:
         result = await db.execute(
             select(AIAnalysisLog)
+            .where(AIAnalysisLog.stage == AI_ANALYSIS_STAGE_TRADE)
             .where(AIAnalysisLog.accuracy_label.is_(None))
             .where(AIAnalysisLog.decision.in_(("BUY", "SELL")))
             .where(AIAnalysisLog.created_at <= eligible_before)
