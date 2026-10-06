@@ -7,7 +7,7 @@ from typing import Any
 from langchain_core.tools import tool
 from sqlalchemy import desc, select
 
-from app.db.repository import list_system_configs, search_chat_history
+from app.db.repository import get_system_config, list_system_configs, search_chat_history
 from app.db.session import AsyncSessionLocal
 from app.models.domain import AIAnalysisLog, Asset, OrderHistory, Position
 from app.services.brokers.factory import BrokerFactory
@@ -17,6 +17,8 @@ from app.services.market.sentiment_fetcher import (
     get_or_refresh_market_sentiment,
 )
 from app.services.portfolio.aggregator import PortfolioService
+from app.services.system_config_service import SystemConfigServiceError
+from app.services.system_config_service import normalize_public_config_value
 
 indicator_calculator = IndicatorCalculator()
 
@@ -180,7 +182,11 @@ def build_chat_tools(session_id: str) -> list[Any]:
         for log in logs:
             lines.append(
                 f"- {_format_datetime(log.created_at)} | 종목={log.symbol} | 결정={log.decision} | "
-                f"확신도={log.confidence} | 추천비중={log.recommended_weight}% | reasoning={_truncate_text(log.reasoning, 300)}"
+                f"stage={log.stage} | provider={log.provider} | model={log.model} | "
+                f"fallback={log.fallback_used} | parent_analysis_id={log.parent_analysis_id} | "
+                f"prompt_version={log.prompt_version} | context_sha256={log.context_sha256 or '-'} | "
+                f"확신도={log.confidence} | 추천비중={log.recommended_weight}% | "
+                f"reasoning={_truncate_text(log.reasoning, 300)}"
             )
         return "\n".join(lines)
 
@@ -294,11 +300,26 @@ def build_chat_tools(session_id: str) -> list[Any]:
         normalized_new_value = "" if new_value is None else str(new_value).strip()
         if not normalized_config_key:
             return "제안할 config_key 를 입력해 주세요."
+        try:
+            canonical_value = normalize_public_config_value(
+                normalized_config_key,
+                normalized_new_value,
+            )
+            async with AsyncSessionLocal() as db:
+                current = await get_system_config(db, normalized_config_key)
+        except SystemConfigServiceError as exc:
+            return f"설정 변경을 제안할 수 없습니다: {exc}"
+        except Exception as exc:
+            return f"현재 설정을 조회할 수 없습니다: {exc}"
+        if current is None:
+            return f"설정 변경을 제안할 수 없습니다: {normalized_config_key} 행이 없습니다."
         return json.dumps(
             {
                 "action": "config_change",
                 "config_key": normalized_config_key,
-                "new_value": normalized_new_value,
+                "current_value": current.config_value,
+                "new_value": canonical_value,
+                "expected_version": current.version,
                 "requires_approval": True,
             },
             ensure_ascii=False,
@@ -319,7 +340,8 @@ def build_chat_tools(session_id: str) -> list[Any]:
         lines = ["[현재 시스템 설정 목록]"]
         for config in configs:
             lines.append(
-                f"- key={config.config_key} | value={config.config_value} | description={config.description or '-'}"
+                f"- key={config.config_key} | value={config.config_value} | "
+                f"version={config.version} | description={config.description or '-'}"
             )
         return "\n".join(lines)
 
