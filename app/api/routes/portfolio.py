@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, func, select
+from sqlalchemy import case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repository import get_portfolio_snapshots
@@ -19,6 +19,8 @@ from app.models.schemas import PortfolioSnapshotListResponse
 from app.services.ai.provider_router import AIProviderRouter
 from app.services.ai.provider_router import AIProviderUnavailableError
 from app.services.portfolio.aggregator import PortfolioService
+from app.services.trading.analysis_lineage import AI_ANALYSIS_STAGE_LEGACY
+from app.services.trading.analysis_lineage import AI_ANALYSIS_STAGE_TRADE
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -92,11 +94,23 @@ async def _load_latest_analysis_map(
             func.row_number()
             .over(
                 partition_by=AIAnalysisLog.symbol,
-                order_by=(desc(AIAnalysisLog.created_at), desc(AIAnalysisLog.id)),
+                order_by=(
+                    case(
+                        (AIAnalysisLog.stage == AI_ANALYSIS_STAGE_TRADE, 0),
+                        else_=1,
+                    ),
+                    desc(AIAnalysisLog.created_at),
+                    desc(AIAnalysisLog.id),
+                ),
             )
             .label("row_number"),
         )
         .where(AIAnalysisLog.symbol.in_(symbols))
+        .where(
+            AIAnalysisLog.stage.in_(
+                (AI_ANALYSIS_STAGE_TRADE, AI_ANALYSIS_STAGE_LEGACY)
+            )
+        )
         .subquery()
     )
 
