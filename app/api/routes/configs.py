@@ -7,37 +7,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import require_admin_token
 from app.core.scheduler import reload_scheduler_jobs
-from app.db.repository import AI_BRIEFING_TIME_KEY
-from app.db.repository import AUTONOMOUS_AI_INTERVAL_HOURS_KEY
-from app.db.repository import AUTONOMOUS_AI_INTERVAL_MINUTES_KEY
-from app.db.repository import NEWS_INTERVAL_HOURS_KEY
 from app.db.repository import PAPER_TRADING_KRW_BALANCE_KEY
-from app.db.repository import SENTIMENT_INTERVAL_MINUTES_KEY
-from app.db.repository import SLACK_PORTFOLIO_ALERT_SETTINGS_KEY
-from app.db.repository import bulk_upsert_system_configs
 from app.db.repository import list_system_configs
 from app.db.session import get_db
 from app.models.domain import OrderHistory, Position, SystemConfig
 from app.models.schemas import AIProviderRuntimeStatusResponse
+from app.models.schemas import AIProviderStatusResetRequest
 from app.models.schemas import SystemConfigItem
 from app.models.schemas import SystemConfigUpdateItem
 from app.services.ai.provider_router import AIProviderRouter
+from app.services.system_config_service import SystemConfigConflictError
+from app.services.system_config_service import SystemConfigMissingError
+from app.services.system_config_service import SystemConfigMutation
+from app.services.system_config_service import SystemConfigProtectedError
+from app.services.system_config_service import SystemConfigValidationError
+from app.services.system_config_service import SCHEDULER_RELOAD_CONFIG_KEYS
+from app.services.system_config_service import reset_ai_provider_status
+from app.services.system_config_service import update_public_system_configs
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 DEFAULT_RESET_PAPER_BALANCE = "10000000"
 PAPER_BALANCE_DESCRIPTION = "모의투자용 가상 KRW 자본금"
-
-SCHEDULER_CONFIG_KEYS = {
-    NEWS_INTERVAL_HOURS_KEY,
-    SENTIMENT_INTERVAL_MINUTES_KEY,
-    AI_BRIEFING_TIME_KEY,
-    AUTONOMOUS_AI_INTERVAL_HOURS_KEY,
-    AUTONOMOUS_AI_INTERVAL_MINUTES_KEY,
-    SLACK_PORTFOLIO_ALERT_SETTINGS_KEY,
-}
-
 
 @router.get("/configs", response_model=list[SystemConfigItem])
 async def get_system_configs(db: AsyncSession = Depends(get_db)) -> list[SystemConfigItem]:
@@ -48,6 +40,7 @@ async def get_system_configs(db: AsyncSession = Depends(get_db)) -> list[SystemC
             config_key=config.config_key,
             config_value=config.config_value,
             description=config.description,
+            version=config.version,
         )
         for config in configs
     ]
@@ -66,19 +59,41 @@ async def update_system_configs(
     if len(config_keys) != len(set(config_keys)):
         raise HTTPException(status_code=400, detail="중복된 config_key 는 허용되지 않습니다.")
 
-    configs = await bulk_upsert_system_configs(
-        db,
-        [(item.config_key, item.config_value) for item in payload],
-    )
+    try:
+        configs = await update_public_system_configs(
+            db,
+            [
+                SystemConfigMutation(
+                    config_key=item.config_key,
+                    config_value=item.config_value,
+                    expected_version=item.expected_version,
+                )
+                for item in payload
+            ],
+        )
+    except (SystemConfigConflictError, SystemConfigProtectedError, SystemConfigMissingError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except SystemConfigValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if any(config_key in SCHEDULER_CONFIG_KEYS for config_key in config_keys):
+    configs = await list_system_configs(db)
+
+    if any(config_key in SCHEDULER_RELOAD_CONFIG_KEYS for config_key in config_keys):
         try:
             await reload_scheduler_jobs()
-        except Exception:
+        except Exception as exc:
             logger.error(
                 "SystemConfig 저장 후 스케줄러 리로드 적용에 실패했습니다.",
                 exc_info=True,
             )
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "SCHEDULER_RELOAD_FAILED",
+                    "saved": True,
+                    "message": "설정은 저장되었지만 스케줄러 반영에 실패했습니다. 설정을 다시 조회하세요.",
+                },
+            ) from exc
 
     return [
         SystemConfigItem(
@@ -86,6 +101,7 @@ async def update_system_configs(
             config_key=config.config_key,
             config_value=config.config_value,
             description=config.description,
+            version=config.version,
         )
         for config in configs
     ]
@@ -97,6 +113,22 @@ async def get_ai_provider_runtime_status(
 ) -> AIProviderRuntimeStatusResponse:
     payload = await AIProviderRouter(db).get_runtime_status()
     return AIProviderRuntimeStatusResponse.model_validate(payload)
+
+
+@router.post("/ai/providers/status/reset", response_model=SystemConfigItem)
+async def reset_ai_provider_runtime_status(
+    payload: AIProviderStatusResetRequest,
+    db: AsyncSession = Depends(get_db),
+    _admin: None = Depends(require_admin_token),
+) -> SystemConfigItem:
+    try:
+        config = await reset_ai_provider_status(
+            db,
+            expected_version=payload.expected_version,
+        )
+    except (SystemConfigConflictError, SystemConfigMissingError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return SystemConfigItem.model_validate(config)
 
 
 @router.post("/paper/reset")
@@ -123,8 +155,9 @@ async def reset_paper_trading_state(
                 description=PAPER_BALANCE_DESCRIPTION,
             )
             db.add(paper_balance_config)
-        else:
+        elif paper_balance_config.config_value != DEFAULT_RESET_PAPER_BALANCE:
             paper_balance_config.config_value = DEFAULT_RESET_PAPER_BALANCE
+            paper_balance_config.version += 1
 
         await db.commit()
         return {

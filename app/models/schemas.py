@@ -386,11 +386,17 @@ class SystemConfigItem(BaseModel):
     config_key: str = Field(...)
     config_value: str = Field(...)
     description: str | None = Field(default=None)
+    version: int = Field(..., ge=1)
+
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
 
 
 class SystemConfigUpdateItem(BaseModel):
     config_key: str = Field(..., min_length=1)
     config_value: str = Field(...)
+    expected_version: int = Field(..., ge=1, strict=True)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class AIProviderStatusResetRequest(BaseModel):
@@ -463,6 +469,9 @@ class ChatMessageItem(BaseModel):
 class ChatApproveRequest(BaseModel):
     config_key: str = Field(..., min_length=1)
     config_value: str = Field(...)
+    expected_version: int = Field(..., ge=1, strict=True)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class ReviewerDecision(BaseModel):
