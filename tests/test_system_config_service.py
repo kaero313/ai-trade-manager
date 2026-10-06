@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -25,6 +27,11 @@ from app.services.system_config_service import mutate_internal_json_config
 from app.services.system_config_service import normalize_public_config_value
 from app.services.system_config_service import reset_ai_provider_status
 from app.services.system_config_service import update_public_system_configs
+
+
+_ROOT = Path(__file__).resolve().parents[1]
+_APP_ROOT = _ROOT / "app"
+_LEGACY_CONFIG_WRITERS = {"upsert_system_config", "bulk_upsert_system_configs"}
 
 
 class _Scalars:
@@ -77,6 +84,34 @@ def _row(key: str, value: str, version: int = 1) -> SimpleNamespace:
         description=None,
         version=version,
     )
+
+
+@pytest.mark.architecture
+def test_application_cannot_bypass_central_system_config_writer() -> None:
+    violations: list[str] = []
+    for path in _APP_ROOT.rglob("*.py"):
+        relative = path.relative_to(_ROOT).as_posix()
+        if relative == "app/db/repository.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "app.db.repository":
+                for alias in node.names:
+                    if alias.name in _LEGACY_CONFIG_WRITERS:
+                        violations.append(f"{relative}:{node.lineno}:{alias.name}")
+            if isinstance(node, ast.Attribute) and node.attr in _LEGACY_CONFIG_WRITERS:
+                violations.append(f"{relative}:{node.lineno}:{node.attr}")
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "getattr"
+                and len(node.args) >= 2
+                and isinstance(node.args[1], ast.Constant)
+                and node.args[1].value in _LEGACY_CONFIG_WRITERS
+            ):
+                violations.append(f"{relative}:{node.lineno}:dynamic-getattr")
+
+    assert not violations, "중앙 SystemConfig writer 우회 참조:\n" + "\n".join(violations)
 
 
 @pytest.mark.parametrize(
