@@ -6,8 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.repository import PAPER_TRADING_KRW_BALANCE_KEY
-from app.db.repository import TRADING_MODE_KEY
 from app.db.repository import get_system_config_value
+from app.db.trading_mode_repository import (
+    TRADING_MODE_LIVE,
+    TRADING_MODE_PAPER,
+    TradingModeRepository,
+    TradingModeStateUnavailableError,
+)
 from app.models.domain import Asset
 from app.models.domain import OrderHistory
 from app.models.domain import Position
@@ -15,7 +20,7 @@ from app.models.domain import SystemConfig
 from app.services.brokers.base import BaseBrokerClient
 from app.services.brokers.factory import BrokerFactory
 
-DEFAULT_TRADING_MODE = "live"
+DEFAULT_TRADING_MODE = TRADING_MODE_PAPER
 DEFAULT_PAPER_KRW_BALANCE = 10_000_000.0
 PAPER_BROKER_NAME = "PAPER"
 PAPER_BALANCE_DESCRIPTION = "모의투자용 가상 KRW 자본금"
@@ -46,12 +51,22 @@ def _extract_target_currency(symbol: str) -> str:
 
 def _normalize_trading_mode(raw_value: str | None) -> str:
     normalized = str(raw_value or "").strip().lower()
-    return "paper" if normalized == "paper" else DEFAULT_TRADING_MODE
+    if normalized in {TRADING_MODE_PAPER, TRADING_MODE_LIVE}:
+        return normalized
+    return DEFAULT_TRADING_MODE
 
 
 async def get_trading_mode(db: AsyncSession) -> str:
-    raw_value = await get_system_config_value(db, TRADING_MODE_KEY, DEFAULT_TRADING_MODE)
-    return _normalize_trading_mode(raw_value)
+    status = await TradingModeRepository().status(db)
+    if (
+        not status.state_available
+        or status.control is None
+        or status.mode not in {TRADING_MODE_PAPER, TRADING_MODE_LIVE}
+    ):
+        raise TradingModeStateUnavailableError(
+            status.unavailable_reason or "거래 모드 제어 원장과 mirror를 확인할 수 없습니다."
+        )
+    return status.mode
 
 
 async def load_paper_cash_balance(db: AsyncSession) -> float:
@@ -253,6 +268,7 @@ async def apply_paper_fill(
         cash_after = current_cash + (resolved_price * resolved_qty)
 
     cash_config.config_value = _fmt_number(cash_after)
+    cash_config.version = int(cash_config.version or 0) + 1
     db.add(
         OrderHistory(
             position_id=position.id,
