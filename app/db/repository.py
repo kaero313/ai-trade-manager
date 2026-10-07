@@ -4,6 +4,7 @@ from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import delete, desc, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.domain import AIChatMessage as AIChatMessageORM
@@ -102,6 +103,7 @@ DEFAULT_SLACK_PORTFOLIO_ALERT_SETTINGS_VALUE = json.dumps(
     ensure_ascii=False,
 )
 
+
 class ProtectedSystemConfigError(ValueError):
     def __init__(self, config_key: str) -> None:
         super().__init__(
@@ -158,7 +160,7 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
     },
     {
         "config_key": TRADING_MODE_KEY,
-        "config_value": "live",
+        "config_value": "paper",
         "description": "거래 실행 모드(live/paper)",
     },
     {
@@ -185,6 +187,11 @@ SYSTEM_CONFIG_SEEDS: tuple[dict[str, str], ...] = (
         "config_key": LIVE_BUY_ENABLED_KEY,
         "config_value": "false",
         "description": "live 모드 AI 신규 매수 허용 여부",
+    },
+    {
+        "config_key": LIVE_ORDER_V2_ENABLED_KEY,
+        "config_value": "false",
+        "description": "멱등 실주문 실행 경계 활성화 여부",
     },
     {
         "config_key": AI_MAX_BUY_WEIGHT_PCT_KEY,
@@ -267,10 +274,17 @@ async def get_or_create_bot_config(db: AsyncSession) -> BotConfigORM:
     bot_config = BotConfigORM(
         id=1,
         config_json=BotConfigSchema().model_dump(),
-        is_active=True,
+        is_active=False,
     )
     db.add(bot_config)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        existing = await db.get(BotConfigORM, 1)
+        if existing is None:
+            raise
+        return existing
     await db.refresh(bot_config)
     return bot_config
 
@@ -304,7 +318,13 @@ async def upsert_system_config(
     config_value: str,
     description: str | None = None,
 ) -> SystemConfigORM:
-    config = await get_system_config(db, config_key)
+    _reject_protected_system_config_keys((config_key,))
+    result = await db.execute(
+        select(SystemConfigORM)
+        .where(SystemConfigORM.config_key == config_key)
+        .with_for_update()
+    )
+    config = result.scalar_one_or_none()
     if config is None:
         config = SystemConfigORM(
             config_key=config_key,
@@ -313,9 +333,13 @@ async def upsert_system_config(
         )
         db.add(config)
     else:
+        value_changed = config.config_value != config_value
+        description_changed = description is not None and config.description != description
         config.config_value = config_value
         if description is not None:
             config.description = description
+        if value_changed or description_changed:
+            config.version = int(config.version or 0) + 1
 
     await db.commit()
     await db.refresh(config)
@@ -329,6 +353,7 @@ async def bulk_upsert_system_configs(
     if not items:
         return await list_system_configs(db)
 
+    _reject_protected_system_config_keys([config_key for config_key, _ in items])
     values_by_key = {config_key: config_value for config_key, config_value in items}
     result = await db.execute(
         select(SystemConfigORM).where(SystemConfigORM.config_key.in_(values_by_key))
@@ -348,53 +373,41 @@ async def bulk_upsert_system_configs(
             )
             continue
 
-        existing_config.config_value = config_value
+        if existing_config.config_value != config_value:
+            existing_config.config_value = config_value
+            existing_config.version = int(existing_config.version or 0) + 1
 
     await db.commit()
     return await list_system_configs(db)
 
 
 async def seed_system_configs_if_empty(db: AsyncSession) -> None:
-    result = await db.execute(select(SystemConfigORM.config_key))
-    existing_keys = set(result.scalars().all())
-    should_commit = False
+    last_error: IntegrityError | None = None
+    for _attempt in range(3):
+        result = await db.execute(select(SystemConfigORM.config_key))
+        existing_keys = set(result.scalars().all())
+        missing_configs = [
+            SystemConfigORM(
+                config_key=item["config_key"],
+                config_value=item["config_value"],
+                description=item["description"],
+            )
+            for item in SYSTEM_CONFIG_SEEDS
+            if item["config_key"] not in existing_keys
+        ]
+        if not missing_configs:
+            return
 
-    missing_configs = [
-        SystemConfigORM(
-            config_key=item["config_key"],
-            config_value=item["config_value"],
-            description=item["description"],
-        )
-        for item in SYSTEM_CONFIG_SEEDS
-        if item["config_key"] not in existing_keys
-    ]
-
-    if missing_configs:
         db.add_all(missing_configs)
-        should_commit = True
+        try:
+            await db.commit()
+            return
+        except IntegrityError as exc:
+            last_error = exc
+            await db.rollback()
 
-    if MAX_ALLOCATION_PCT_KEY in existing_keys:
-        max_allocation_config = await get_system_config(db, MAX_ALLOCATION_PCT_KEY)
-        if (
-            max_allocation_config is not None
-            and str(max_allocation_config.config_value).strip() == "10"
-        ):
-            max_allocation_config.config_value = "30"
-            should_commit = True
-
-    if AI_MAX_BUY_WEIGHT_PCT_KEY in existing_keys:
-        max_buy_weight_config = await get_system_config(db, AI_MAX_BUY_WEIGHT_PCT_KEY)
-        if max_buy_weight_config is not None:
-            try:
-                max_buy_weight = float(str(max_buy_weight_config.config_value).strip())
-            except (TypeError, ValueError, AttributeError):
-                max_buy_weight = 30.0
-            if max_buy_weight > 30.0:
-                max_buy_weight_config.config_value = "30"
-                should_commit = True
-
-    if should_commit:
-        await db.commit()
+    if last_error is not None:
+        raise last_error
 
 
 def normalize_bot_config_payload(raw_payload: Any) -> dict[str, Any]:
