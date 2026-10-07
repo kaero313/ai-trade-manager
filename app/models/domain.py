@@ -24,6 +24,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
 
+# ATM-P2-001: 금융 수치는 이진 부동소수점 저장 오차를 피하기 위해 NUMERIC(38, 18)로 저장합니다.
+# 기존 소비 코드와의 호환을 위해 Python 값은 float로 유지합니다(asdecimal=False).
+FINANCIAL_NUMERIC = Numeric(38, 18, asdecimal=False)
+
+
 class ChatSessionSurface(StrEnum):
     AI_BANKER = "ai_banker"
     PORTFOLIO = "portfolio"
@@ -41,11 +46,14 @@ class Asset(Base):
 
 class Position(Base):
     __tablename__ = "positions"
+    __table_args__ = (
+        UniqueConstraint("asset_id", "is_paper", name="uq_positions_asset_id_is_paper"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), nullable=False, index=True)
-    avg_entry_price: Mapped[float] = mapped_column(Float, nullable=False)
-    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    avg_entry_price: Mapped[float] = mapped_column(FINANCIAL_NUMERIC, nullable=False)
+    quantity: Mapped[float] = mapped_column(FINANCIAL_NUMERIC, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
     is_paper: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -78,8 +86,8 @@ class OrderHistory(Base):
     side: Mapped[str] = mapped_column(String, nullable=False)
     order_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     is_paper: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    price: Mapped[float] = mapped_column(Float, nullable=False)
-    qty: Mapped[float] = mapped_column(Float, nullable=False)
+    price: Mapped[float] = mapped_column(FINANCIAL_NUMERIC, nullable=False)
+    qty: Mapped[float] = mapped_column(FINANCIAL_NUMERIC, nullable=False)
     broker: Mapped[str] = mapped_column(String, nullable=False)
     executed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -90,10 +98,34 @@ class OrderHistory(Base):
 
 class BotConfig(Base):
     __tablename__ = "bot_configs"
+    __table_args__ = (
+        CheckConstraint("config_version >= 1", name="ck_bot_configs_config_version"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     config_json: Mapped[dict] = mapped_column(JSON, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    config_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
+    runtime_last_heartbeat: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    runtime_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    runtime_latest_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    runtime_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
 
 class SystemConfig(Base):
@@ -1299,9 +1331,7 @@ class AIChatMessage(Base):
 
 class Favorite(Base):
     __tablename__ = "favorites"
-    __table_args__ = (
-        UniqueConstraint("symbol", name="uq_favorites_symbol"),
-    )
+    __table_args__ = (UniqueConstraint("symbol", name="uq_favorites_symbol"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     symbol: Mapped[str] = mapped_column(String, nullable=False)
@@ -1317,8 +1347,8 @@ class PortfolioSnapshot(Base):
     __tablename__ = "portfolio_snapshots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    total_net_worth: Mapped[float] = mapped_column(Float, nullable=False)
-    total_pnl: Mapped[float] = mapped_column(Float, nullable=False)
+    total_net_worth: Mapped[float] = mapped_column(FINANCIAL_NUMERIC, nullable=False)
+    total_pnl: Mapped[float] = mapped_column(FINANCIAL_NUMERIC, nullable=False)
     snapshot_data: Mapped[list[dict]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -58,6 +58,31 @@ class BotStatus(BaseModel):
     last_heartbeat: str | None = None
     last_error: str | None = None
     latest_action: str | None = None
+    live_order_mode: Literal["ARMED", "EXIT_ONLY", "BLOCK_ALL"] = "BLOCK_ALL"
+    live_order_generation: int = Field(default=0, ge=0)
+    live_order_version: int = Field(default=0, ge=0)
+    live_order_reason_code: str = "ORDER_GATE_STATE_UNAVAILABLE"
+    live_order_reason: str = "실주문 제어 상태를 확인할 수 없어 안전하게 차단했습니다."
+    live_order_source: str = "SYSTEM"
+    live_order_changed_at: datetime | None = None
+    live_order_active_liquidation_operation_id: int | None = Field(default=None, ge=1)
+    live_order_liquidation_status: str | None = None
+    live_order_liquidation_phase: str | None = None
+    live_order_liquidation_remaining: int | None = Field(default=None, ge=0)
+    live_order_rollout_enabled: bool = False
+    live_order_state_available: bool = False
+    trading_mode: Literal["paper", "live"] = "paper"
+    trading_mode_version: int = Field(default=0, ge=0)
+    trading_mode_reason_code: str = "TRADING_MODE_STATE_UNAVAILABLE"
+    trading_mode_reason: str = "거래 모드 상태를 확인할 수 없어 paper로 표시합니다."
+    trading_mode_source: str = "SYSTEM"
+    trading_mode_actor_ref: str | None = None
+    trading_mode_changed_at: datetime | None = None
+    trading_mode_state_available: bool = False
+    trading_mode_unavailable_reason: str | None = None
+    trading_mode_mirror_consistent: bool = False
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class ArmLiveOrderGateRequest(BaseModel):
@@ -192,7 +217,10 @@ class AIManualCycleResponse(BaseModel):
     trade_evaluated: bool
     order_created: bool
     order_id: int | None = None
+    order_intent_id: int | None = None
     order_side: Literal["BUY", "SELL"] | None = None
+    submission_status: str | None = None
+    exchange_state: str | None = None
     message: str
     started_at: datetime
     finished_at: datetime
