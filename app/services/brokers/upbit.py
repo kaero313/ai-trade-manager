@@ -111,10 +111,6 @@ def _is_retryable_api_exception(exc: BaseException) -> bool:
     return False
 
 
-def _is_retryable_order_exception(exc: BaseException) -> bool:
-    return isinstance(exc, httpx.TimeoutException)
-
-
 def _log_retry_warning(retry_state: RetryCallState) -> None:
     exception = retry_state.outcome.exception() if retry_state.outcome else None
     if exception is None:
@@ -445,13 +441,6 @@ class UpbitBroker(BaseBrokerClient):
         }
         return await self._request("GET", "/v1/orders/uuids", params=params, auth=True)
 
-    @retry(
-        retry=retry_if_exception(_is_retryable_order_exception),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        stop=stop_after_attempt(5),
-        before_sleep=_log_retry_warning,
-        reraise=True,
-    )
     async def create_order(
         self,
         market: str,
@@ -461,28 +450,47 @@ class UpbitBroker(BaseBrokerClient):
         price: str | None = None,
         identifier: str | None = None,
     ) -> Any:
+        normalized_identifier = str(identifier or "").strip()
+        if not normalized_identifier:
+            raise ValueError("identifier is required")
+
         payload = {
             "market": market,
             "side": side,
             "ord_type": ord_type,
             "volume": volume,
             "price": price,
-            "identifier": identifier,
+            "identifier": normalized_identifier,
         }
         return await self._request("POST", "/v1/orders", json=payload, auth=True)
 
-    @retry(
-        retry=retry_if_exception(_is_retryable_api_exception),
-        wait=wait_exponential(multiplier=1, min=1, max=10),
-        stop=stop_after_attempt(5),
-        before_sleep=_log_retry_warning,
-        reraise=True,
-    )
     async def cancel_order(self, uuid_: str | None = None, identifier: str | None = None) -> Any:
         if not uuid_ and not identifier:
             raise ValueError("uuid_ or identifier is required")
         params = {"uuid": uuid_, "identifier": identifier}
         return await self._request("DELETE", "/v1/order", params=params, auth=True)
+
+    async def cancel_orders_by_ids(self, uuids: list[str]) -> Any:
+        if not isinstance(uuids, list):
+            raise ValueError("uuids must be a list")
+        if not 1 <= len(uuids) <= 20:
+            raise ValueError("uuids must contain between 1 and 20 items")
+
+        normalized_uuids: list[str] = []
+        for uuid_ in uuids:
+            if not isinstance(uuid_, str) or not uuid_.strip():
+                raise ValueError("uuids must not contain blank items")
+            normalized_uuids.append(uuid_.strip())
+
+        if len(set(normalized_uuids)) != len(normalized_uuids):
+            raise ValueError("uuids must not contain duplicates")
+
+        return await self._request(
+            "DELETE",
+            "/v1/orders/uuids",
+            params={"uuids[]": normalized_uuids},
+            auth=True,
+        )
 
 
 upbit_broker = UpbitBroker()
