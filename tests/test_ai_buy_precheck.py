@@ -1,4 +1,11 @@
+import json
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
 from app.models.schemas import AIAnalysisResponse
+from app.schemas.portfolio import PortfolioSummary
+from app.services.trading.ai_executor import _build_buy_precheck_system_prompt
+from app.services.trading.ai_executor import _build_buy_precheck_user_prompt
 from app.services.trading.ai_executor import _is_buy_precheck_approved
 
 
@@ -51,3 +58,30 @@ def test_buy_precheck_rejects_low_confidence_or_weight() -> None:
 
     assert _is_buy_precheck_approved(low_confidence, 85) is False
     assert _is_buy_precheck_approved(zero_weight, 85) is False
+
+
+def test_buy_precheck_prompt_declares_reduce_only_authority() -> None:
+    system_prompt = _build_buy_precheck_system_prompt()
+    user_prompt = _build_buy_precheck_user_prompt(
+        symbol="KRW-BTC",
+        analysis=SimpleNamespace(
+            decision="BUY",
+            confidence=90,
+            recommended_weight=12,
+            reasoning="primary",
+            created_at=datetime.now(UTC),
+        ),
+        entry_gate=SimpleNamespace(to_log_dict=lambda: {"allowed": True}),
+        portfolio=PortfolioSummary(
+            total_net_worth=100_000,
+            total_pnl=0,
+            items=[],
+        ),
+        trading_mode="live",
+        min_confidence=75,
+    )
+    payload = json.loads(user_prompt)
+
+    assert "늘릴 수 없" in system_prompt
+    assert payload["1차_AI_판단"]["recommended_weight"] == 12
+    assert any("초과할 수 없습니다" in rule for rule in payload["판정_규칙"])
