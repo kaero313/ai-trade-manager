@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 from fastapi import FastAPI
 
+from app.api.dependencies import ROUTE_RATE_LIMIT_POLICIES
 from app.api.dependencies import get_api_rate_limit_service
 from app.api.dependencies import require_rate_limited_admin_token
 from app.api.router import api_router
@@ -80,6 +81,28 @@ def test_api_router_protects_every_route_outside_public_allowlist() -> None:
                 actual_public_routes.add(route_key)
 
     assert actual_public_routes == PUBLIC_ROUTES
+
+
+def test_every_actual_api_route_has_exactly_one_explicit_rate_limit_policy() -> None:
+    app = _introspection_app()
+    schema = app.openapi()
+    actual_routes = {
+        (method.upper(), path)
+        for path, operations in schema["paths"].items()
+        for method in operations
+        if method.upper() not in {"HEAD", "OPTIONS", "PARAMETERS"}
+    }
+
+    assert len(actual_routes) == 61
+    assert actual_routes == set(ROUTE_RATE_LIMIT_POLICIES)
+    for health_route in (
+        ("GET", "/api/health"),
+        ("GET", "/api/health/live"),
+        ("GET", "/api/health/ready"),
+    ):
+        assert ROUTE_RATE_LIMIT_POLICIES[health_route] is (
+            ApiRateLimitPolicy.HEALTH_EXEMPT
+        )
 
 
 class _HealthDb:
