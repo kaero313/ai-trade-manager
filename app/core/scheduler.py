@@ -10,7 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.base import BaseTrigger
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from sqlalchemy import desc, select
+from sqlalchemy import case, desc, select
 
 from app.api.routes.ai import analyze_portfolio
 from app.api.routes.news import get_news_sentiment
@@ -21,9 +21,10 @@ from app.db.repository import DEFAULT_SLACK_PORTFOLIO_ALERT_SETTINGS_VALUE
 from app.db.repository import NEWS_INTERVAL_HOURS_KEY
 from app.db.repository import SENTIMENT_INTERVAL_MINUTES_KEY
 from app.db.repository import SLACK_PORTFOLIO_ALERT_SETTINGS_KEY
+from app.db.repository import get_or_create_bot_config
 from app.db.repository import get_system_config_value
 from app.db.repository import save_portfolio_snapshot
-from app.db.session import AsyncSessionLocal
+from app.db.session import AsyncSessionLocal, engine
 from app.models.domain import AIAnalysisLog
 from app.models.domain import Favorite
 from app.services.market.sentiment_fetcher import refresh_market_sentiment_cache
@@ -32,12 +33,20 @@ from app.services.rag.opensearch_client import INDEX_NAME
 from app.services.rag.opensearch_client import get_opensearch_client
 from app.services.ai.providers.base import AIProviderRateLimitError
 from app.services.bot_service import update_bot_runtime_status
+from app.services.brokers.factory import BrokerFactory
 from app.services.trading.accuracy_worker import update_ai_analysis_accuracy
 from app.services.trading.ai_analyst import execute_ai_analysis
+from app.services.trading.analysis_lineage import AI_ANALYSIS_STAGE_LEGACY
+from app.services.trading.analysis_lineage import AI_ANALYSIS_STAGE_TRADE
+from app.services.trading.ai_executor import RiskCheckResult
+from app.services.trading.ai_executor import RiskCheckStatus
 from app.services.trading.ai_executor import execute_hard_tp_sl_check
 from app.services.trading.ai_executor import execute_ai_trade
 from app.services.trading.entry_policy import filter_trade_symbols
 from app.services.trading.entry_policy import load_entry_gate_config
+from app.services.trading.liquidation import LiquidationCoordinator
+from app.services.trading.live_order_execution import LiveOrderExecutionService
+from app.services.trading.live_order_submission_barrier import LiveOrderSubmissionBarrier
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +59,9 @@ AUTONOMOUS_AI_ANALYST_JOB_ID = "autonomous_ai_analyst_watchlist"
 AI_ACCURACY_CHECK_JOB_ID = "ai_accuracy_check"
 PORTFOLIO_SNAPSHOT_JOB_ID = "portfolio_snapshot_hourly"
 SLACK_PORTFOLIO_ALERT_JOB_PREFIX = "slack_portfolio_alert"
+LIVE_ORDER_RECONCILIATION_JOB_ID = "live_order_reconciliation"
 DEFAULT_PROVIDER = "auto"
+LIVE_ORDER_RECONCILIATION_INTERVAL_SECONDS = 15
 
 DEFAULT_NEWS_INTERVAL_HOURS = 12
 DEFAULT_SENTIMENT_INTERVAL_MINUTES = 5
@@ -118,6 +129,7 @@ SLACK_ALERT_PRESET_TIMES: dict[str, list[str]] = {
 
 scheduler = AsyncIOScheduler(timezone=SCHEDULER_TIMEZONE)
 _scheduler_loop: asyncio.AbstractEventLoop | None = None
+_live_order_reconciliation_task: asyncio.Task[None] | None = None
 
 
 async def run_market_news_ingestion_job() -> dict[str, Any]:
@@ -449,6 +461,13 @@ def _build_portfolio_snapshot_trigger() -> CronTrigger:
     )
 
 
+def _build_live_order_reconciliation_trigger() -> IntervalTrigger:
+    return IntervalTrigger(
+        seconds=LIVE_ORDER_RECONCILIATION_INTERVAL_SECONDS,
+        timezone=SCHEDULER_TIMEZONE,
+    )
+
+
 def _upsert_scheduler_job(
     job_id: str,
     func,
@@ -520,6 +539,14 @@ def register_portfolio_snapshot_jobs() -> None:
         PORTFOLIO_SNAPSHOT_JOB_ID,
         save_portfolio_snapshot_job,
         _build_portfolio_snapshot_trigger(),
+    )
+
+
+def register_live_order_reconciliation_job() -> None:
+    _upsert_scheduler_job(
+        LIVE_ORDER_RECONCILIATION_JOB_ID,
+        live_order_reconciliation_job,
+        _build_live_order_reconciliation_trigger(),
     )
 
 
@@ -600,6 +627,7 @@ async def reload_scheduler_jobs() -> SchedulerRuntimeConfig:
     register_autonomous_ai_analyst_jobs(runtime_config)
     register_ai_accuracy_jobs(runtime_config)
     register_portfolio_snapshot_jobs()
+    register_live_order_reconciliation_job()
     register_slack_portfolio_alert_jobs(runtime_config)
     logger.info(
         "Scheduler jobs reloaded: news_interval_hours=%s sentiment_interval_minutes=%s ai_briefing_time=%02d:%02d autonomous_ai_interval_minutes=%s slack_portfolio_alert_jobs=%s",
@@ -620,6 +648,7 @@ async def start_scheduler() -> None:
 
     _scheduler_loop = asyncio.get_running_loop()
     await reload_scheduler_jobs()
+    await live_order_reconciliation_job()
     scheduler.start()
     logger.info("APScheduler started: timezone=%s", SCHEDULER_TIMEZONE)
 
@@ -644,6 +673,27 @@ def trigger_daily_ai_briefing_now() -> None:
         asyncio.create_task(_run_manual_daily_ai_briefing_job())
 
     _scheduler_loop.call_soon_threadsafe(_schedule_manual_job)
+
+
+def trigger_live_order_reconciliation_now() -> None:
+    """DB가 SSOT인 복구 작업을 즉시 깨우는 지연 최적화 힌트입니다."""
+    if _scheduler_loop is None or _scheduler_loop.is_closed():
+        logger.warning("실주문 복구 worker를 즉시 깨울 이벤트 루프가 없습니다.")
+        return
+
+    def _schedule_reconciliation() -> None:
+        global _live_order_reconciliation_task
+        if (
+            _live_order_reconciliation_task is not None
+            and not _live_order_reconciliation_task.done()
+        ):
+            return
+        _live_order_reconciliation_task = asyncio.create_task(
+            live_order_reconciliation_job(),
+            name="live-order-reconciliation-now",
+        )
+
+    _scheduler_loop.call_soon_threadsafe(_schedule_reconciliation)
 
 
 async def _run_manual_daily_ai_briefing_job() -> None:
@@ -720,18 +770,68 @@ async def save_portfolio_snapshot_job() -> None:
         )
 
 
+async def live_order_reconciliation_job() -> None:
+    """미확정 실주문을 조회하고 청산 작업 상태를 갱신한다.
+
+    일반 주문 의도 복구는 조회만 수행합니다. 청산 worker는 계정 주문 취소와
+    대상 스냅샷을 끝낸 뒤 중앙 주문 서비스를 통해 청산 매도를 제출할 수 있습니다.
+    """
+    try:
+        broker = BrokerFactory.get_broker("UPBIT")
+        order_results = await LiveOrderExecutionService(
+            AsyncSessionLocal,
+            broker,
+            LiveOrderSubmissionBarrier(engine),
+        ).reconcile_due(limit=20)
+        refreshed_operations = await LiquidationCoordinator(
+            AsyncSessionLocal,
+            broker,
+            LiveOrderSubmissionBarrier(engine),
+        ).refresh_in_progress_operations()
+        if order_results or refreshed_operations:
+            logger.info(
+                "실주문 재조정 완료: intent_count=%s liquidation_count=%s",
+                len(order_results),
+                refreshed_operations,
+            )
+    except Exception:
+        logger.error(
+            "실주문 재조정 작업 중 오류가 발생했습니다. 스케줄러는 계속 실행합니다.",
+            exc_info=True,
+        )
+
+
 async def autonomous_ai_analyst_job() -> None:
     try:
         liquidated_symbols: set[str] = set()
+        risk_check = RiskCheckResult(
+            status=RiskCheckStatus.UNKNOWN,
+            reasons=("RISK_CHECK_NOT_COMPLETED",),
+        )
         async with AsyncSessionLocal() as db:
+            bot_config = await get_or_create_bot_config(db)
+            if not bool(bot_config.is_active):
+                latest_action = "봇 정지 상태로 자율주행 AI 분석 건너뜀"
+                await update_bot_runtime_status(
+                    db,
+                    latest_action=latest_action,
+                )
+                logger.info(latest_action)
+                return
+
             try:
-                liquidated_symbols = await execute_hard_tp_sl_check(db)
+                risk_check = await execute_hard_tp_sl_check(db)
+                liquidated_symbols = set(risk_check.liquidated_symbols)
                 if liquidated_symbols:
                     logger.info(
                         "하드 TP/SL 선제 청산 완료: liquidated_symbols=%s",
                         sorted(liquidated_symbols),
                     )
             except Exception:
+                risk_check = RiskCheckResult(
+                    status=RiskCheckStatus.UNKNOWN,
+                    reasons=("HARD_RISK_CHECK_FAILED",),
+                )
                 logger.error(
                     "하드 TP/SL 선제 청산 작업이 실패했습니다. 기존 AI 분석 루프는 계속 진행합니다.",
                     exc_info=True,
@@ -792,7 +892,12 @@ async def autonomous_ai_analyst_job() -> None:
                     continue
 
                 try:
-                    await execute_ai_trade(db, symbol, analysis_id=analysis_log.id)
+                    await execute_ai_trade(
+                        db,
+                        symbol,
+                        analysis_id=analysis_log.id,
+                        risk_check=risk_check,
+                    )
                     logger.info(
                         "Watchlist 자율주행 AI 집행 완료: symbol=%s analysis_id=%s",
                         symbol,
@@ -1057,7 +1162,16 @@ async def _load_favorite_ai_signals(
         analysis_result = await db.execute(
             select(AIAnalysisLog)
             .where(AIAnalysisLog.symbol == symbol)
-            .order_by(desc(AIAnalysisLog.created_at), desc(AIAnalysisLog.id))
+            .where(
+                AIAnalysisLog.stage.in_(
+                    (AI_ANALYSIS_STAGE_TRADE, AI_ANALYSIS_STAGE_LEGACY)
+                )
+            )
+            .order_by(
+                case((AIAnalysisLog.stage == AI_ANALYSIS_STAGE_TRADE, 0), else_=1),
+                desc(AIAnalysisLog.created_at),
+                desc(AIAnalysisLog.id),
+            )
             .limit(1)
         )
         analysis = analysis_result.scalar_one_or_none()
@@ -1362,7 +1476,9 @@ async def slack_portfolio_alert_job(rule: dict[str, Any]) -> None:
                 reference_symbols = await _load_alert_reference_symbols(db, portfolio)
                 market_impact_news_items = await _load_market_impact_news_items(reference_symbols)
 
-        slack_bot.send_message(
+        # ATM-P2-003: 동기 Slack SDK 호출이 이벤트 루프를 막지 않도록 워커 스레드에서 실행합니다.
+        await asyncio.to_thread(
+            slack_bot.send_message,
             text="Slack 포트폴리오 알림",
             blocks=_build_slack_portfolio_alert_blocks(
                 normalized_rule,
@@ -1374,7 +1490,10 @@ async def slack_portfolio_alert_job(rule: dict[str, Any]) -> None:
         )
     except Exception:
         logger.exception("Slack 포트폴리오 알림 생성 중 오류가 발생했습니다.")
-        slack_bot.send_message("⚠️ [알림 실패] Slack 포트폴리오 알림 생성 중 오류가 발생했습니다.")
+        await asyncio.to_thread(
+            slack_bot.send_message,
+            "⚠️ [알림 실패] Slack 포트폴리오 알림 생성 중 오류가 발생했습니다.",
+        )
 
 
 async def daily_ai_briefing(force_refresh_news: bool = False, provider: str = DEFAULT_PROVIDER) -> None:
@@ -1394,13 +1513,18 @@ async def daily_ai_briefing(force_refresh_news: bool = False, provider: str = DE
             report=report,
             provider=resolved_provider,
         )
-        slack_bot.send_message(
+        # ATM-P2-003: 동기 Slack SDK 호출이 이벤트 루프를 막지 않도록 워커 스레드에서 실행합니다.
+        await asyncio.to_thread(
+            slack_bot.send_message,
             text="🧠 AI 모닝 브리핑",
             blocks=blocks,
         )
     except Exception:
         logger.exception("daily_ai_briefing 생성 중 오류가 발생했습니다.")
-        slack_bot.send_message("⚠️ [브리핑 실패] AI 모닝 브리핑 생성 중 오류가 발생했습니다.")
+        await asyncio.to_thread(
+            slack_bot.send_message,
+            "⚠️ [브리핑 실패] AI 모닝 브리핑 생성 중 오류가 발생했습니다.",
+        )
 
 
 def _build_briefing_blocks(
