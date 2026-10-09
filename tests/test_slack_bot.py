@@ -23,11 +23,9 @@ class FakeSocketModeHandler:
 
 
 def _configure_slack_env(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "SLACK_BOT_TOKEN", "xoxb-test")
-    monkeypatch.setattr(settings, "SLACK_APP_TOKEN", "xapp-test")
-    monkeypatch.setattr(settings, "SLACK_ALLOWED_USER_ID", "U123")
-    monkeypatch.setattr(settings, "slack_bot_token", None)
-    monkeypatch.setattr(settings, "slack_app_token", None)
+    monkeypatch.setattr(settings, "slack_bot_token", "xoxb-test")
+    monkeypatch.setattr(settings, "slack_app_token", "xapp-test")
+    monkeypatch.setattr(settings, "slack_allowed_user_id", "U123")
     monkeypatch.setattr(settings, "slack_allowed_user_ids", None)
 
 
@@ -71,11 +69,9 @@ def test_slack_bot_start_does_not_duplicate_alive_listener(monkeypatch) -> None:
 
 
 def test_slack_bot_start_skips_when_required_env_is_missing(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "SLACK_BOT_TOKEN", "")
-    monkeypatch.setattr(settings, "SLACK_APP_TOKEN", "")
-    monkeypatch.setattr(settings, "SLACK_ALLOWED_USER_ID", "")
     monkeypatch.setattr(settings, "slack_bot_token", None)
     monkeypatch.setattr(settings, "slack_app_token", None)
+    monkeypatch.setattr(settings, "slack_allowed_user_id", None)
     monkeypatch.setattr(settings, "slack_allowed_user_ids", None)
     bot = SlackBot()
     initialized = False

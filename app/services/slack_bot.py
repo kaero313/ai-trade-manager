@@ -3,13 +3,25 @@ import logging
 import threading
 from functools import wraps
 from typing import Any, Callable
+from uuid import uuid4
 
 from app.core.config import settings
-from app.db.session import AsyncSessionLocal
-from app.services.bot_service import get_bot_status, start_bot, stop_bot
+from app.db.live_order_control_repository import CONTROL_SOURCE_SLACK
+from app.db.session import AsyncSessionLocal, engine
+from app.models.schemas import BotStatus
+from app.services.bot_service import get_bot_status, start_bot
 from app.services.portfolio.aggregator import PortfolioService
+from app.services.trading.live_order_control import (
+    BlockLiveOrdersCommand,
+    LiveOrderControlService,
+)
+from app.services.trading.live_order_submission_barrier import LiveOrderSubmissionBarrier
 
 logger = logging.getLogger(__name__)
+
+
+def _live_order_control_service() -> LiveOrderControlService:
+    return LiveOrderControlService(barrier=LiveOrderSubmissionBarrier(engine))
 
 
 class SlackBot:
@@ -23,15 +35,15 @@ class SlackBot:
 
     @property
     def _bot_token(self) -> str:
-        return (settings.SLACK_BOT_TOKEN or settings.slack_bot_token or "").strip()
+        return (settings.slack_bot_token or "").strip()
 
     @property
     def _app_token(self) -> str:
-        return (settings.SLACK_APP_TOKEN or settings.slack_app_token or "").strip()
+        return (settings.slack_app_token or "").strip()
 
     @property
     def _allowed_user_id(self) -> str:
-        primary = (settings.SLACK_ALLOWED_USER_ID or "").strip()
+        primary = (settings.slack_allowed_user_id or "").strip()
         if primary:
             return primary
 
@@ -276,8 +288,11 @@ class SlackBot:
             **_: Any,
         ) -> None:
             try:
-                total_net_worth, is_running = asyncio.run(self._load_status_snapshot())
-                blocks = self._build_status_blocks(total_net_worth=total_net_worth, is_running=is_running)
+                total_net_worth, status = asyncio.run(self._load_status_snapshot())
+                blocks = self._build_status_blocks(
+                    total_net_worth=total_net_worth,
+                    status=status,
+                )
                 respond(text="봇 상태 리포트", blocks=blocks)
             except Exception:
                 logger.exception("Slack /status 처리 중 오류가 발생했습니다.")
@@ -286,15 +301,20 @@ class SlackBot:
         @app.command("/stop")
         @self.require_auth
         def _on_stop(
+            body: dict[str, Any],
             respond: Callable[..., Any],
             **_: Any,
         ) -> None:
             try:
-                asyncio.run(self._execute_stop())
-                respond("봇 가동이 비상 중지되었습니다.")
+                user_id = self._extract_user_id(body)
+                asyncio.run(self._execute_stop(user_id=user_id))
+                respond("🛑 봇 런타임 정지와 신규 실주문 차단(BLOCK_ALL)이 완료되었습니다.")
             except Exception:
                 logger.exception("Slack /stop 처리 중 오류가 발생했습니다.")
-                respond("봇 중지 처리 중 오류가 발생했습니다.")
+                respond(
+                    "봇 정지와 실주문 차단에 실패했습니다. 성공 상태로 처리하지 않았으며 "
+                    "/status로 현재 상태를 확인해 주세요."
+                )
 
         @app.command("/start")
         @self.require_auth
@@ -303,8 +323,12 @@ class SlackBot:
             **_: Any,
         ) -> None:
             try:
-                asyncio.run(self._execute_start())
-                respond("🚀 봇 가동이 다시 시작되었습니다.")
+                status = asyncio.run(self._execute_start())
+                respond(
+                    "🚀 분석 런타임이 다시 시작되었습니다. 실주문 차단 상태는 유지되며 "
+                    "gate를 자동 재무장하지 않았습니다. "
+                    f"현재 실주문 상태: {status.live_order_mode}"
+                )
             except Exception:
                 logger.exception("Slack /start 처리 중 오류가 발생했습니다.")
                 respond("봇 시작 처리 중 오류가 발생했습니다.")
@@ -324,21 +348,39 @@ class SlackBot:
                 logger.exception("Slack /briefing 처리 중 오류가 발생했습니다.")
                 respond("브리핑 생성 요청 처리 중 오류가 발생했습니다.")
 
-    async def _load_status_snapshot(self) -> tuple[float, bool]:
+    async def _load_status_snapshot(self) -> tuple[float, BotStatus]:
         async with AsyncSessionLocal() as db:
             summary = await PortfolioService(db).get_aggregated_portfolio()
             status = await get_bot_status(db)
-        return summary.total_net_worth, status.running
+        return summary.total_net_worth, status
 
-    async def _execute_stop(self) -> None:
+    async def _execute_stop(self, *, user_id: str) -> BotStatus:
+        if not self._is_authorized(user_id):
+            raise PermissionError("검증되지 않은 Slack 사용자는 봇을 정지할 수 없습니다.")
+        command = BlockLiveOrdersCommand(
+            request_id=uuid4(),
+            reason_code="MESSENGER_STOP",
+            reason_text="검증된 Slack 운영자가 봇 런타임과 신규 실주문을 함께 정지했습니다.",
+            source=CONTROL_SOURCE_SLACK,
+            actor_ref=f"slack:{user_id}",
+        )
+        await _live_order_control_service().stop_bot(command)
         async with AsyncSessionLocal() as db:
-            await stop_bot(db)
+            return await get_bot_status(db)
 
-    async def _execute_start(self) -> None:
+    async def _execute_start(self) -> BotStatus:
         async with AsyncSessionLocal() as db:
-            await start_bot(db)
+            return await start_bot(db)
 
-    def _build_status_blocks(self, total_net_worth: float, is_running: bool) -> list[dict[str, Any]]:
+    def _build_status_blocks(
+        self,
+        total_net_worth: float,
+        status: BotStatus,
+    ) -> list[dict[str, Any]]:
+        rollout_label = "ON" if status.live_order_rollout_enabled else "OFF"
+        active_operation = status.live_order_active_liquidation_operation_id or "-"
+        liquidation_phase = status.live_order_liquidation_phase or "-"
+        liquidation_remaining = status.live_order_liquidation_remaining or 0
         return [
             {
                 "type": "section",
@@ -347,7 +389,16 @@ class SlackBot:
                     "text": (
                         "*현재 총 자산:* "
                         f"{self._format_krw(total_net_worth)}\n"
-                        f"*봇 상태:* [{self._format_running_label(is_running)}]"
+                        "*런타임 상태:* "
+                        f"[{self._format_running_label(status.running)}]\n"
+                        "\n*실주문 Gate*\n"
+                        f"• 모드: `{status.live_order_mode}`\n"
+                        f"• generation/version: "
+                        f"`{status.live_order_generation}/{status.live_order_version}`\n"
+                        f"• rollout: `{rollout_label}`\n"
+                        f"• 활성 청산 operation: `{active_operation}`\n"
+                        f"• 청산 phase/잔여: `{liquidation_phase}/{liquidation_remaining}`\n"
+                        f"• 사유: {status.live_order_reason}"
                     ),
                 },
             },

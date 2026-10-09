@@ -52,15 +52,15 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
+    telegram_allowed_user_id: str | None = None
 
     slack_webhook_url: str | None = None
     slack_timeout: float = 10.0
-    SLACK_BOT_TOKEN: str = ""
-    SLACK_APP_TOKEN: str = ""
-    SLACK_ALLOWED_USER_ID: str = ""
     slack_bot_token: str | None = None
     slack_app_token: str | None = None
-    slack_signing_secret: str | None = None
+    # 신규 배포는 단수 SLACK_ALLOWED_USER_ID를 사용합니다.
+    # 복수형은 기존 환경 파일 하위호환용이며 첫 항목만 사용됩니다.
+    slack_allowed_user_id: str | None = None
     slack_allowed_user_ids: str | None = None
     slack_trade_channel_ids: str | None = None
     OPENAI_API_KEY: str | None = None
