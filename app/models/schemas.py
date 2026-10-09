@@ -195,6 +195,13 @@ class AIAnalysisResponse(BaseModel):
 class AIAnalysisLogItem(BaseModel):
     id: int
     symbol: str
+    stage: Literal["TRADE_ANALYSIS", "BUY_PRECHECK", "LEGACY_UNKNOWN"]
+    provider: str
+    model: str
+    fallback_used: bool | None
+    parent_analysis_id: int | None
+    prompt_version: str
+    context_sha256: str | None
     decision: Literal["BUY", "SELL", "HOLD"]
     confidence: int
     recommended_weight: int
